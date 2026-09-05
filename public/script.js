@@ -1,6 +1,6 @@
-const DB_KEY = 'attendance_tracker_v11';
-const HISTORY_KEY = 'attendance_history_v1';
-const CALENDAR_KEY = 'academic_calendar_v1';
+const DB_KEY = 'attendance_tracker_v12';
+const HISTORY_KEY = 'attendance_history_v2';
+const CALENDAR_KEY = 'academic_calendar_v2';
 const TARGET_PERCENTAGE = 75;
 
 let courses = loadFromDatabase();
@@ -13,7 +13,7 @@ if(localStorage.getItem('darkMode') === 'true') document.body.classList.add('dar
 function toggleDarkMode() {
   document.body.classList.toggle('dark-mode');
   localStorage.setItem('darkMode', document.body.classList.contains('dark-mode'));
-  closeModal();
+  // Removed closeModal() here so the user can see the switch animation play out in the sidebar
 }
 
 function getTodayString() {
@@ -41,7 +41,7 @@ const masterScheduleMap = {
 function buildInitialDatabase() {
   const initialCourses = [];
   Object.keys(masterScheduleMap).forEach((code, index) => {
-    initialCourses.push({ id: index + 1, name: masterScheduleMap[code].name, code: code, present: 0, absent: 0, schedule: masterScheduleMap[code].schedule });
+    initialCourses.push({ id: Date.now() + index, name: masterScheduleMap[code].name, code: code, present: 0, absent: 0, schedule: masterScheduleMap[code].schedule });
   });
   return initialCourses;
 }
@@ -84,7 +84,7 @@ function startLiveClock() {
 }
 
 function getTodayDateString() {
-  const now = new Date(); return `${now.getFullYear()}-${now.getMonth()+1}-${now.getDate()}`;
+  const now = new Date(); return `${now.getFullYear()}-${(now.getMonth()+1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
 }
 function isTodayHoliday() { return localStorage.getItem('holiday_' + getTodayDateString()) === 'true'; }
 
@@ -102,33 +102,53 @@ function updateHolidayButton() {
   else { btn.classList.remove('active'); btn.innerText = 'Mark Today Holiday'; }
 }
 
+function compressImage(file, maxWidth = 1200) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target.result;
+      img.onload = () => {
+        const elem = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+        elem.width = width;
+        elem.height = height;
+        const ctx = elem.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve({ base64: elem.toDataURL('image/jpeg', 0.85).split(',')[1], mimeType: 'image/jpeg' });
+      };
+      img.onerror = (err) => reject(err);
+    };
+    reader.onerror = (err) => reject(err);
+  });
+}
+
 async function processAcademicCalendar(event) {
   const file = event.target.files[0];
   if (!file) return;
-
   document.getElementById('aiLoading').classList.add('active');
   closeModal();
 
   try {
-    const base64String = await new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result.split(',')[1]);
-      reader.readAsDataURL(file);
-    });
-
+    const { base64, mimeType } = await compressImage(file);
     const response = await fetch('/api/scan', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ imageBase64: base64String, mimeType: file.type })
+      body: JSON.stringify({ imageBase64: base64, mimeType: mimeType })
     });
 
-    if (!response.ok) throw new Error('API Error');
+    if (!response.ok) throw new Error(`API Error: ${response.status}`);
     academicCalendar = await response.json();
     localStorage.setItem(CALENDAR_KEY, JSON.stringify(academicCalendar));
     alert("Calendar Synced Successfully!");
-    
   } catch (error) {
-    console.error(error); alert("Failed to read calendar. Ensure the image is clear.");
+    console.error(error); alert("Failed to read calendar. (Note: AI features only work on the live Vercel link, not local Live Server).");
   } finally {
     document.getElementById('aiLoading').classList.remove('active');
     event.target.value = '';
@@ -138,7 +158,6 @@ async function processAcademicCalendar(event) {
 async function processOCR(event) {
   const file = event.target.files[0];
   if (!file) return;
-
   document.getElementById('ocrLoading').classList.add('active');
   closeModal();
 
@@ -158,23 +177,17 @@ async function processOCR(event) {
     if (matchedAny || isSectionI) {
       courses = buildInitialDatabase(); saveToDatabase(); renderUI();
       alert("Timetable Recognized! Subjects loaded perfectly.");
-    } else {
-      alert("Could not recognize this as the timetable.");
-    }
-  } catch (error) {
-    alert("Error reading image."); console.error(error);
-  } finally {
-    document.getElementById('ocrLoading').classList.remove('active');
-    event.target.value = ''; 
-  }
+    } else { alert("Could not recognize this as the timetable."); }
+  } catch (error) { alert("Error reading image."); console.error(error);
+  } finally { document.getElementById('ocrLoading').classList.remove('active'); event.target.value = ''; }
 }
 
 function markFullDayPresent(dateString, element) {
   const dateObj = new Date(dateString);
   const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const dayName = days[dateObj.getDay()];
-
   let classesUpdated = 0;
+  
   courses.forEach(course => {
     if (course.schedule && course.schedule[dayName]) {
       course.schedule[dayName].forEach(() => { course.present += 1; classesUpdated += 1; });
@@ -183,11 +196,8 @@ function markFullDayPresent(dateString, element) {
 
   if (classesUpdated > 0) {
     addHistory(`Full Day Present: ${dateString} (${classesUpdated} classes)`);
-    element.classList.add('present'); 
-    renderUI();
-  } else {
-    alert("No classes scheduled for this day.");
-  }
+    element.classList.add('present'); renderUI();
+  } else { alert("No classes scheduled for this day."); }
 }
 
 function toggleMenu() { document.getElementById('sidebar').classList.toggle('open'); document.getElementById('menuOverlay').classList.toggle('active'); }
@@ -202,40 +212,22 @@ function openModal(type) {
   let html = `<button class="close-btn" onclick="closeModal()">×</button>`;
 
   if (type === 'userManual') {
-    html += `<h2>How to Use This App</h2>
-      <div style="max-height: 60vh; overflow-y: auto; padding-right: 10px; text-align: left;">
-        <div class="manual-section">
-          <h3>1. Getting Started</h3>
-          <p>This app starts completely empty. Go to the menu to add your courses manually, or use the <b>Upload Timetable (OCR)</b> tool to instantly load your schedule from an image.</p>
-        </div>
-        <div class="manual-section">
-          <h3>2. Academic Calendar (Gemini AI)</h3>
-          <p>Upload a picture of your university calendar. The AI will scan for holidays and important dates. Tap the clock at the top right to view it and batch-mark full days.</p>
-        </div>
-        <div class="manual-section">
-          <h3>3. The Bunk Meter</h3>
-          <p>The app automatically tracks your 75% attendance threshold. It tells you exactly how many classes you can safely afford to miss, or how many you need to attend.</p>
-        </div>
-        <div class="manual-section">
-          <h3>4. History Log</h3>
-          <p>Every attendance mark is timestamped and saved in the History Log so you can always verify your records.</p>
-        </div>
-      </div>`;
-  }
-  else if (type === 'historyLog') {
+    html += `<h2>How to Use This App</h2><div style="max-height: 60vh; overflow-y: auto; padding-right: 10px; text-align: left;">
+      <div class="manual-section"><h3>1. Getting Started</h3><p>App starts empty. Go to the menu to add courses manually, or use the <b>Upload Timetable (OCR)</b> tool.</p></div>
+      <div class="manual-section"><h3>2. Academic Calendar (AI)</h3><p>Upload your calendar. AI scans for holidays. Tap the top-right clock to batch-mark full days.</p></div>
+      <div class="manual-section"><h3>3. The Bunk Meter</h3><p>The app tracks your 75% threshold, telling you if you can bunk safely or need to attend.</p></div>
+    </div>`;
+  } else if (type === 'historyLog') {
     html += `<h2>History Log</h2><div class="history-list">`;
     if (historyLog.length === 0) html += `<p style="color:var(--text-sub);">No history yet.</p>`;
     historyLog.forEach(log => { html += `<div class="history-item"><span>${log.action}</span><span style="color:var(--text-sub); font-size:0.75rem;">${log.time}</span></div>`; });
     html += `</div>`;
-  }
-  else if (type === 'setupCalendar') {
-    html += `<h2>Upload Academic Calendar</h2><p style="color:var(--text-sub); margin-bottom:15px;">Gemini will scan the document for holidays.</p><input type="file" accept="image/*" class="modal-input" onchange="processAcademicCalendar(event)" />`;
-  }
-  else if (type === 'calendarMode') {
-    if (!academicCalendar) {
-      html += `<h2>Academic Calendar</h2><p style="color:var(--text-sub);">Please upload a calendar in the menu first.</p>`;
-    } else {
-      html += `<h2>Batch Mark Attendance</h2><p style="font-size:0.8rem; margin-bottom:15px; text-align:center; color:var(--text-sub);">Tap a day to mark all its classes present.</p><div class="cal-grid">`;
+  } else if (type === 'setupCalendar') {
+    html += `<h2>Upload Academic Calendar</h2><input type="file" accept="image/*" class="modal-input" onchange="processAcademicCalendar(event)" />`;
+  } else if (type === 'calendarMode') {
+    if (!academicCalendar) html += `<h2>Calendar</h2><p style="color:var(--text-sub);">Upload a calendar first.</p>`;
+    else {
+      html += `<h2>Batch Mark Attendance</h2><div class="cal-grid">`;
       const start = new Date();
       for (let i = 0; i < 14; i++) {
         const d = new Date(start); d.setDate(start.getDate() + i);
@@ -245,12 +237,80 @@ function openModal(type) {
         else if (academicCalendar.importantDates && academicCalendar.importantDates.includes(dateStr)) statusClass = 'important';
         html += `<div class="cal-day ${statusClass}" onclick="markFullDayPresent('${dateStr}', this)">${d.getDate()}</div>`;
       }
-      html += `</div><div style="margin-top:15px; display:flex; gap:10px; font-size:0.75rem; justify-content:center;"><span style="color:#e74c3c">■ Holiday</span> <span style="color:#3498db">■ Important</span> <span style="color:#2ecc71">■ Present</span></div>`;
+      html += `</div><div style="margin-top:15px; display:flex; justify-content:center; gap:10px; font-size:0.75rem;"><span style="color:#e74c3c">■ Holiday</span> <span style="color:#3498db">■ Important</span></div>`;
     }
+  } else if (type === 'addTimetable') {
+    html += `<h2>Upload Timetable</h2><input type="file" accept="image/*" class="modal-input" onchange="processOCR(event)" />`; 
+  } else if (type === 'addCourse') {
+    html += `<h2>Add Custom Course</h2>
+      <div style="text-align:left; margin-top:15px;">
+        <label style="font-size:0.85rem; color:var(--text-sub);">Course Name</label>
+        <input type="text" id="newCourseName" class="modal-input" placeholder="e.g. Data Structures" />
+        <label style="font-size:0.85rem; color:var(--text-sub);">Course Code (Optional)</label>
+        <input type="text" id="newCourseCode" class="modal-input" placeholder="e.g. 25CSE201" />
+        <button class="btn-present" style="width:100%; padding:12px;" onclick="handleAddCourse()">Add Course</button>
+      </div>`;
+  } else if (type === 'editAttendance') {
+    html += `<h2>Edit Attendance</h2><div style="max-height: 55vh; overflow-y: auto; margin-top: 15px;">`;
+    if (courses.length === 0) html += `<p style="color:var(--text-sub);">No courses available to edit.</p>`;
+    else {
+      courses.forEach(c => {
+        html += `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; border-bottom:1px solid var(--border-color); padding-bottom:8px;">
+            <span style="font-size:0.9rem; font-weight:700; max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${c.name}</span>
+            <div style="display:flex; gap:6px; align-items:center;">
+              <input type="number" min="0" value="${c.present}" id="edit-present-${c.id}" style="width:50px; padding:4px; text-align:center;" title="Present" />
+              <input type="number" min="0" value="${c.absent}" id="edit-absent-${c.id}" style="width:50px; padding:4px; text-align:center;" title="Absent" />
+              <button class="holiday-btn" onclick="saveIndividualAttendance(${c.id})">Save</button>
+            </div>
+          </div>`;
+      });
+    }
+    html += `</div>`;
+  } else if (type === 'removeCourse') {
+    html += `<h2>Remove Course</h2><div style="max-height: 55vh; overflow-y: auto; margin-top: 15px;">`;
+    if (courses.length === 0) html += `<p style="color:var(--text-sub);">No courses to remove.</p>`;
+    else {
+      courses.forEach(c => {
+        html += `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; border-bottom:1px solid var(--border-color); padding-bottom:8px;">
+            <span style="font-size:0.9rem; font-weight:700;">${c.name}</span>
+            <button class="btn-absent" style="padding:6px 12px; font-size:0.8rem;" onclick="removeCourseById(${c.id})">Delete</button>
+          </div>`;
+      });
+    }
+    html += `</div>`;
   }
-  else if (type === 'addTimetable') { html += `<h2>Upload Timetable</h2><input type="file" accept="image/*" class="modal-input" onchange="processOCR(event)" />`; }
   
   modalContent.innerHTML = html;
+}
+
+function handleAddCourse() {
+  const name = document.getElementById('newCourseName').value.trim();
+  const code = document.getElementById('newCourseCode').value.trim();
+  if (!name) return alert("Please enter a course name.");
+  courses.push({ id: Date.now(), name: name, code: code || 'CUSTOM', present: 0, absent: 0, schedule: {} });
+  addHistory(`Added Course: ${name}`); saveToDatabase(); renderUI(); closeModal();
+}
+
+function saveIndividualAttendance(id) {
+  const course = courses.find(c => c.id === id);
+  const p = document.getElementById(`edit-present-${id}`).value;
+  const a = document.getElementById(`edit-absent-${id}`).value;
+  if (course) {
+    course.present = Math.max(0, parseInt(p, 10) || 0);
+    course.absent = Math.max(0, parseInt(a, 10) || 0);
+    addHistory(`Updated: ${course.name} (P:${course.present}, A:${course.absent})`);
+    saveToDatabase(); renderUI(); alert(`Saved attendance for ${course.name}`);
+  }
+}
+
+function removeCourseById(id) {
+  const course = courses.find(c => c.id === id);
+  if (!course) return;
+  if (confirm(`Are you sure you want to remove ${course.name}?`)) {
+    courses = courses.filter(c => c.id !== id);
+    addHistory(`Removed Course: ${course.name}`);
+    saveToDatabase(); renderUI(); openModal('removeCourse');
+  }
 }
 
 function getBunkStatus(present, absent) {
@@ -298,14 +358,13 @@ function renderUI() {
 
   const listContainer = document.getElementById('courseList');
   listContainer.innerHTML = '';
-  if (courses.length === 0) { listContainer.innerHTML = `<p style="color:var(--text-sub); text-align:center;">No Courses Found</p>`; return; }
+  if (courses.length === 0) { listContainer.innerHTML = `<p style="color:var(--text-sub); text-align:center; grid-column: 1/-1; padding: 40px 0;">No Courses Found. Add courses from the sidebar or scan a timetable.</p>`; return; }
 
   const holidayMode = isTodayHoliday();
   courses.forEach(course => {
     const total = course.present + course.absent;
     const percentage = total === 0 ? 0 : Math.round((course.present / total) * 100);
     const dashOffset = (2 * Math.PI * 38) - ((percentage / 100) * (2 * Math.PI * 38));
-
     let actionHTML = holidayMode ? `<div class="action-bar" id="action-${course.id}"><span style="font-weight: 800; color: #e74c3c;">HOLIDAY</span></div>` : `<div class="action-bar" id="action-${course.id}"><button class="btn-present" onclick="markAttendance(${course.id}, 'present')">PRESENT</button><button class="btn-absent" onclick="markAttendance(${course.id}, 'absent')">ABSENT</button></div>`;
 
     listContainer.innerHTML += `
@@ -336,12 +395,5 @@ function toggleActionBar(id) {
   bar.classList.toggle('slide-in');
 }
 
-startLiveClock(); 
-updateHolidayButton(); 
-renderUI(); 
-setInterval(renderUI, 60000);
-
-if (!localStorage.getItem('appManualShown')) {
-  localStorage.setItem('appManualShown', 'true');
-  openModal('userManual');
-}
+startLiveClock(); updateHolidayButton(); renderUI(); setInterval(renderUI, 60000);
+if (!localStorage.getItem('appManualShown')) { localStorage.setItem('appManualShown', 'true'); openModal('userManual'); }

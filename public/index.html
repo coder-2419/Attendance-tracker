@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Attendance Tracker</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#ffffff">
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+</head>
+<body>
+
+  <header class="header">
+    <div class="header-left">
+      <button class="menu-btn" onclick="toggleMenu()">☰</button>
+    </div>
+    <div class="header-center">
+      <h1>ATTENDANCE TRACKER</h1>
+    </div>
+    <div class="header-right">
+      <div id="liveClock" class="live-clock" style="cursor:pointer;" onclick="openModal('calendarMode')"></div>
+    </div>
+  </header>
+
+  <div class="overlay" id="menuOverlay" onclick="toggleMenu()"></div>
+  <nav class="sidebar" id="sidebar">
+    <ul>
+      <li onclick="toggleDarkMode()">Toggle Dark Mode</li>
+      <li onclick="openModal('userManual')">How to Use the App</li>
+      <li onclick="openModal('historyLog')">View History Log</li>
+      <li onclick="openModal('setupCalendar')">Upload Academic Calendar</li>
+      <li onclick="openModal('addTimetable')">Upload Timetable (OCR)</li>
+      <li onclick="openModal('editAttendance')">Edit Attendance</li>
+      <li onclick="openModal('addCourse')">Add Custom Course</li>
+      <li onclick="openModal('removeCourse')">Remove Course</li>
+    </ul>
+  </nav>
+
+  <div id="aiLoading" class="ocr-loading-overlay">
+    <div class="spinner"></div>
+    <p>Gemini is reading the calendar... <br><span style="font-size: 0.8rem; font-weight: normal;">Extracting holidays & important dates</span></p>
+  </div>
+  
+  <div id="ocrLoading" class="ocr-loading-overlay">
+    <div class="spinner"></div>
+    <p>Scanning Timetable...</p>
+  </div>
+
+  <div class="modal-overlay" id="modalOverlay" onclick="closeModal(event)">
+    <div class="modal-content" id="modalContent" onclick="event.stopPropagation()"></div>
+  </div>
+
+  <main class="main-content">
+    <div class="timetable-container">
+      <div class="schedule-header">
+        <h3>Weekly Schedule</h3>
+        <button id="holidayBtn" class="holiday-btn" onclick="toggleHoliday()">Mark Today Holiday</button>
+      </div>
+      <div class="day-selector" id="daySelector">
+        <button onclick="changeDay('Monday')">Mon</button>
+        <button onclick="changeDay('Tuesday')">Tue</button>
+        <button onclick="changeDay('Wednesday')">Wed</button>
+        <button onclick="changeDay('Thursday')">Thu</button>
+        <button onclick="changeDay('Friday')">Fri</button>
+        <button onclick="changeDay('Saturday')">Sat</button>
+      </div>
+      <div id="timetableContainer" class="timetable-bar"></div>
+    </div>
+    <div id="courseList" class="course-list-container"></div>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>

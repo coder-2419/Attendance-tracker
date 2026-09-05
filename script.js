@@ -1,8 +1,8 @@
-const DB_KEY = 'attendance_tracker_v23';
-const HISTORY_KEY = 'attendance_history_v23';
-const CALENDAR_KEY = 'academic_calendar_v23';
-const MARKED_DATES_KEY = 'marked_dates_v23';
-const MANUAL_SHOWN_KEY = 'appManualShown_v23';
+const DB_KEY = 'attendance_tracker_v24';
+const HISTORY_KEY = 'attendance_history_v24';
+const CALENDAR_KEY = 'academic_calendar_v24';
+const MARKED_DATES_KEY = 'marked_dates_v24';
+const MANUAL_SHOWN_KEY = 'appManualShown_v24';
 
 let targetPercentage = parseInt(localStorage.getItem('target_percentage')) || 75;
 let historyLog = JSON.parse(localStorage.getItem(HISTORY_KEY)) || [];
@@ -16,12 +16,6 @@ if(localStorage.getItem('darkMode') === 'true') document.body.classList.add('dar
 function toggleDarkMode() {
   document.body.classList.toggle('dark-mode');
   localStorage.setItem('darkMode', document.body.classList.contains('dark-mode'));
-}
-
-// Bypasses sticky PWA caches by injecting a unique timestamp request into the URL
-function forceRefreshApp() {
-  const currentUrl = window.location.href.split('?')[0];
-  window.location.href = currentUrl + '?v=' + new Date().getTime();
 }
 
 function getTodayString() {

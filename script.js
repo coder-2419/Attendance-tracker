@@ -1,4 +1,3 @@
-// Updated keys to v13 to guarantee a completely wiped, empty app on first load
 const DB_KEY = 'attendance_tracker_v13';
 const HISTORY_KEY = 'attendance_history_v13';
 const CALENDAR_KEY = 'academic_calendar_v13';
@@ -27,7 +26,8 @@ function getTodayString() {
 }
 
 function getTodayDateString() {
-  const now = new Date(); return `${now.getFullYear()}-${(now.getMonth()+1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
+  const now = new Date(); 
+  return `${now.getFullYear()}-${(now.getMonth()+1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
 }
 
 const masterScheduleMap = {
@@ -49,7 +49,14 @@ const masterScheduleMap = {
 function buildInitialDatabase() {
   const initialCourses = [];
   Object.keys(masterScheduleMap).forEach((code, index) => {
-    initialCourses.push({ id: Date.now() + index, name: masterScheduleMap[code].name, code: code, present: 0, absent: 0, schedule: masterScheduleMap[code].schedule });
+    initialCourses.push({ 
+      id: Date.now() + index, 
+      name: masterScheduleMap[code].name, 
+      code: code, 
+      present: 0, 
+      absent: 0, 
+      schedule: masterScheduleMap[code].schedule 
+    });
   });
   return initialCourses;
 }
@@ -88,27 +95,37 @@ function startLiveClock() {
   if (!clockElement) return;
   setInterval(() => {
     const now = new Date();
-    clockElement.innerHTML = `<div class="clock-time">${now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true })}</div><div class="clock-date">${now.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}</div>`;
+    clockElement.innerHTML = `
+      <div class="clock-time">${now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true })}</div>
+      <div class="clock-date">${now.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}</div>
+    `;
   }, 1000);
 }
 
-function isTodayHoliday() { return localStorage.getItem('holiday_' + getTodayDateString()) === 'true'; }
+function isTodayHoliday() { 
+  return localStorage.getItem('holiday_' + getTodayDateString()) === 'true'; 
+}
 
 function toggleHoliday() {
   const todayStr = getTodayDateString();
   if (isTodayHoliday()) localStorage.removeItem('holiday_' + todayStr);
   else localStorage.setItem('holiday_' + todayStr, 'true');
-  updateHolidayButton(); renderUI(); 
+  updateHolidayButton(); 
+  renderUI(); 
 }
 
 function updateHolidayButton() {
   const btn = document.getElementById('holidayBtn');
   if (!btn) return;
-  if (isTodayHoliday()) { btn.classList.add('active'); btn.innerText = 'HOLIDAY ACTIVE'; } 
-  else { btn.classList.remove('active'); btn.innerText = 'Mark Today Holiday'; }
+  if (isTodayHoliday()) { 
+    btn.classList.add('active'); 
+    btn.innerText = 'HOLIDAY ACTIVE'; 
+  } else { 
+    btn.classList.remove('active'); 
+    btn.innerText = 'Mark Today Holiday'; 
+  }
 }
 
-// ---- SPLIT-SCREEN CALENDAR SETUP LOGIC ----
 let setupBlobUrl = null;
 let setupTempData = {};
 let setupStartDate = null;
@@ -156,7 +173,9 @@ function buildSetupCalendar(startStr, endStr) {
         <div class="cal-weekdays"><span>Su</span><span>M</span><span>Tu</span><span>W</span><span>Th</span><span>F</span><span>Sa</span></div>
         <div class="cal-grid-month">`;
     
-    for (let i = 0; i < firstDay; i++) { html += `<div class="cal-day empty"></div>`; }
+    for (let i = 0; i < firstDay; i++) { 
+      html += `<div class="cal-day empty"></div>`; 
+    }
     
     for (let i = 1; i <= daysInMonth; i++) {
       const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
@@ -213,7 +232,14 @@ function closeSplitScreen() {
   }
 }
 
-// ---- UPDATED OCR WITH SMART FALLBACK ----
+function loadSectionOneDirectly() {
+  courses = buildInitialDatabase(); 
+  saveToDatabase(); 
+  renderUI();
+  closeModal();
+  alert("Section-I Schedule (Room 205) loaded successfully!");
+}
+
 async function processOCR(event) {
   const file = event.target.files[0];
   if (!file) return;
@@ -225,29 +251,20 @@ async function processOCR(event) {
     const { data: { text } } = await worker.recognize(file);
     await worker.terminate();
     
-    // Clean string completely to prevent Tesseract space/hyphen misreads
     const cleanText = text.toLowerCase().replace(/[^a-z0-9]/g, '');
-    
-    // Super-broad matching logic: checks for days, course codes, or section markers
     const keywords = ['section', '205', 'physics', 'computer', 'period', 'monday', 'wednesday', 'thursday', 'friday', 'saturday', '25civ', '25ece', '25phy', '25mat', '25cse', '25hss'];
     const isTimetable = keywords.some(keyword => cleanText.includes(keyword));
 
     if (isTimetable) {
-      courses = buildInitialDatabase(); 
-      saveToDatabase(); 
-      renderUI();
-      alert("Timetable Recognized! Subjects and schedule loaded successfully.");
+      loadSectionOneDirectly();
     } else { 
-      // Smart Fallback if the OCR fails due to image colors
-      if(confirm("The image colors made it hard to scan, but do you want to load the Section-I (Room 205) schedule anyway?")) {
-         courses = buildInitialDatabase(); 
-         saveToDatabase(); 
-         renderUI();
-         alert("Section-I Schedule loaded manually.");
+      if (confirm("The scanner could not cleanly read the schedule labels. Do you want to load the Section-I (Room 205) schedule directly?")) {
+        loadSectionOneDirectly();
       }
     }
   } catch (error) { 
-    alert("Error reading image."); console.error(error);
+    alert("Error reading image."); 
+    console.error(error);
   } finally { 
     document.getElementById('ocrLoading').classList.remove('active'); 
     event.target.value = ''; 
@@ -303,8 +320,15 @@ function toggleFullDayPresent(dateString) {
   }
 }
 
-function toggleMenu() { document.getElementById('sidebar').classList.toggle('open'); document.getElementById('menuOverlay').classList.toggle('active'); }
-function closeModal(e) { if (e && e.target !== document.getElementById('modalOverlay') && !e.target.classList.contains('close-btn')) return; document.getElementById('modalOverlay').classList.remove('active'); }
+function toggleMenu() { 
+  document.getElementById('sidebar').classList.toggle('open'); 
+  document.getElementById('menuOverlay').classList.toggle('active'); 
+}
+
+function closeModal(e) { 
+  if (e && e.target !== document.getElementById('modalOverlay') && !e.target.classList.contains('close-btn')) return; 
+  document.getElementById('modalOverlay').classList.remove('active'); 
+}
 
 function openModal(type) {
   document.getElementById('sidebar').classList.remove('open');
@@ -315,19 +339,36 @@ function openModal(type) {
   let html = `<button class="close-btn" onclick="closeModal()">×</button>`;
 
   if (type === 'userManual') {
-    html += `<h2>How to Use This App</h2><div style="max-height: 60vh; overflow-y: auto; padding-right: 10px; text-align: left;">
-      <div class="manual-section"><h3>1. Getting Started</h3><p>App starts empty. Go to the menu to add courses manually, or use the <b>Upload Timetable (OCR)</b> tool.</p></div>
-      <div class="manual-section"><h3>2. Academic Calendar</h3><p>Use the Sync option to launch Setup Mode. Mark holidays in Red and important dates in Blue.</p></div>
-      <div class="manual-section"><h3>3. Batch Mark Attendance</h3><p>Tap the clock icon. Tap any past or current date to mark attendance for the whole day (Green). Tap again to undo.</p></div>
-      <div class="manual-section"><h3>4. The Bunk Meter</h3><p>Tracks your configured threshold, telling you if you can bunk safely or need to attend.</p></div>
-    </div>`;
+    html += `
+      <h2>How to Use This App</h2>
+      <div style="max-height: 60vh; overflow-y: auto; padding-right: 10px; text-align: left;">
+        <div class="manual-section" style="margin-bottom:15px;">
+          <h3 style="font-size:1rem; margin-bottom:4px;">1. Getting Started</h3>
+          <p style="font-size:0.85rem; color:var(--text-sub);">The app starts completely empty. Go to the sidebar menu and select <b>Upload Timetable (OCR)</b> to load Section-I or add individual subjects using <b>Add Custom Course</b>.</p>
+        </div>
+        <div class="manual-section" style="margin-bottom:15px;">
+          <h3 style="font-size:1rem; margin-bottom:4px;">2. Academic Calendar Setup</h3>
+          <p style="font-size:0.85rem; color:var(--text-sub);">Upload your academic calendar PDF or photo to enter side-by-side mode. Tap dates on the bottom grid: <b>1 tap = Red (Holiday)</b>, <b>2 taps = Blue (Important)</b>.</p>
+        </div>
+        <div class="manual-section" style="margin-bottom:15px;">
+          <h3 style="font-size:1rem; margin-bottom:4px;">3. Batch Mark Attendance</h3>
+          <p style="font-size:0.85rem; color:var(--text-sub);">Tap the clock in the top right to open the monthly view. Tap any past/present date to turn it <b>Green (Present)</b> and automatically increment all classes scheduled for that day. Tap again to undo.</p>
+        </div>
+        <div class="manual-section" style="margin-bottom:15px;">
+          <h3 style="font-size:1rem; margin-bottom:4px;">4. Bunk Meter & Tracking</h3>
+          <p style="font-size:0.85rem; color:var(--text-sub);">Set your target percentage in the menu (e.g., 75% or 85%). Each card displays your status: safe bunks remaining or the exact number of classes you must attend.</p>
+        </div>
+      </div>`;
   } else if (type === 'historyLog') {
     html += `<h2>History Log</h2><div class="history-list">`;
     if (historyLog.length === 0) html += `<p style="color:var(--text-sub);">No history yet.</p>`;
-    historyLog.forEach(log => { html += `<div class="history-item"><span>${log.action}</span><span style="color:var(--text-sub); font-size:0.75rem;">${log.time}</span></div>`; });
+    historyLog.forEach(log => { 
+      html += `<div class="history-item"><span>${log.action}</span><span style="color:var(--text-sub); font-size:0.75rem;">${log.time}</span></div>`; 
+    });
     html += `</div>`;
   } else if (type === 'setupCalendar') {
-    html += `<h2>Upload Academic Calendar</h2>
+    html += `
+      <h2>Upload Academic Calendar</h2>
       <div style="text-align:left; margin-top:15px;">
         <label style="font-size:0.85rem; color:var(--text-sub);">Select Calendar (Image or PDF)</label>
         <input type="file" id="calFileInput" accept="image/*, application/pdf" class="modal-input" />
@@ -342,7 +383,7 @@ function openModal(type) {
       </div>`;
   } else if (type === 'calendarMode') {
     if (!academicCalendar) {
-      html += `<h2>Calendar</h2><p style="color:var(--text-sub);">Sync the calendar from the menu first.</p>`;
+      html += `<h2>Calendar</h2><p style="color:var(--text-sub); margin-top:15px;">Sync the calendar from the menu first.</p>`;
     } else {
       const year = currentCalDate.getFullYear();
       const month = currentCalDate.getMonth();
@@ -386,9 +427,14 @@ function openModal(type) {
         </div>`;
     }
   } else if (type === 'addTimetable') {
-    html += `<h2>Upload Timetable</h2><input type="file" accept="image/*" class="modal-input" onchange="processOCR(event)" />`; 
+    html += `
+      <h2>Upload Timetable</h2>
+      <p style="color:var(--text-sub); margin-top:8px; margin-bottom:15px; font-size:0.9rem;">Upload your timetable image or load the Section-I schedule directly.</p>
+      <input type="file" accept="image/*" class="modal-input" onchange="processOCR(event)" />
+      <button class="btn-present" style="width:100%; padding:12px; margin-top:10px; background:#3498db;" onclick="loadSectionOneDirectly()">Load Section-I Schedule Directly</button>`; 
   } else if (type === 'setTarget') {
-    html += `<h2>Set Target Attendance</h2>
+    html += `
+      <h2>Set Target Attendance</h2>
       <div style="text-align:left; margin-top:15px;">
         <p style="font-size:0.85rem; color:var(--text-sub); margin-bottom:10px;">Enter the minimum attendance percentage required by your institution.</p>
         <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px;">
@@ -398,7 +444,8 @@ function openModal(type) {
         <button class="btn-present" style="width:100%; padding:12px;" onclick="saveTargetPercentage()">Save Target</button>
       </div>`;
   } else if (type === 'addCourse') {
-    html += `<h2>Add Custom Course</h2>
+    html += `
+      <h2>Add Custom Course</h2>
       <div style="text-align:left; margin-top:15px;">
         <label style="font-size:0.85rem; color:var(--text-sub);">Course Name</label>
         <input type="text" id="newCourseName" class="modal-input" placeholder="e.g. Data Structures" />
@@ -439,14 +486,16 @@ function openModal(type) {
           </div>
           <button class="btn-present" style="width:100%; padding:14px;" onclick="saveSingleCourseAttendance()">Save Changes</button>
         </div>`;
-        setTimeout(loadCourseToEdit, 0); 
+      setTimeout(loadCourseToEdit, 0); 
     }
   } else if (type === 'removeCourse') {
     html += `<h2>Remove Course</h2><div style="max-height: 55vh; overflow-y: auto; margin-top: 15px;">`;
-    if (courses.length === 0) html += `<p style="color:var(--text-sub);">No courses to remove.</p>`;
-    else {
+    if (courses.length === 0) {
+      html += `<p style="color:var(--text-sub);">No courses to remove.</p>`;
+    } else {
       courses.forEach(c => {
-        html += `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; border-bottom:1px solid var(--border-color); padding-bottom:8px;">
+        html += `
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; border-bottom:1px solid var(--border-color); padding-bottom:8px;">
             <span style="font-size:0.9rem; font-weight:700;">${c.name}</span>
             <button class="btn-absent" style="padding:6px 12px; font-size:0.8rem;" onclick="removeCourseById(${c.id})">Delete</button>
           </div>`;
@@ -482,11 +531,7 @@ function syncEditFields(source) {
   let pct = parseFloat(pctEl.value) || 0;
 
   if (source === 'present' || source === 'total') {
-    if (t > 0) {
-      pctEl.value = Math.round((p / t) * 100);
-    } else {
-      pctEl.value = 0;
-    }
+    pctEl.value = t > 0 ? Math.round((p / t) * 100) : 0;
   } else if (source === 'percent') {
     if (t > 0) {
       pEl.value = Math.round((pct / 100) * t);
@@ -522,7 +567,10 @@ function handleAddCourse() {
   const code = document.getElementById('newCourseCode').value.trim();
   if (!name) return alert("Please enter a course name.");
   courses.push({ id: Date.now(), name: name, code: code || 'CUSTOM', present: 0, absent: 0, schedule: {} });
-  addHistory(`Added Course: ${name}`); saveToDatabase(); renderUI(); closeModal();
+  addHistory(`Added Course: ${name}`); 
+  saveToDatabase(); 
+  renderUI(); 
+  closeModal();
 }
 
 function saveTargetPercentage() {
@@ -544,7 +592,9 @@ function removeCourseById(id) {
   if (confirm(`Are you sure you want to remove ${course.name}?`)) {
     courses = courses.filter(c => c.id !== id);
     addHistory(`Removed Course: ${course.name}`);
-    saveToDatabase(); renderUI(); openModal('removeCourse');
+    saveToDatabase(); 
+    renderUI(); 
+    openModal('removeCourse');
   }
 }
 
@@ -555,14 +605,19 @@ function getBunkStatus(present, absent) {
   
   if (currentPercent >= targetPercentage) {
     const buffer = Math.floor((present / (targetPercentage / 100)) - total);
-    return buffer > 0 ? `<span class="bunk-meter bunk-safe">Safe to bunk ${buffer} classes</span>` : `<span class="bunk-meter bunk-safe">On track (0 buffer)</span>`;
+    return buffer > 0 
+      ? `<span class="bunk-meter bunk-safe">Safe to bunk ${buffer} classes</span>` 
+      : `<span class="bunk-meter bunk-safe">On track (0 buffer)</span>`;
   } else {
     const required = Math.ceil(((targetPercentage / 100) * total - present) / (1 - (targetPercentage / 100)));
     return `<span class="bunk-meter bunk-danger">Attend next ${required} classes</span>`;
   }
 }
 
-function changeDay(dayName) { currentSelectedDay = dayName; renderUI(); }
+function changeDay(dayName) { 
+  currentSelectedDay = dayName; 
+  renderUI(); 
+}
 
 function renderUI() {
   document.querySelectorAll('.day-selector button').forEach(btn => {
@@ -577,16 +632,32 @@ function renderUI() {
     timeContainer.innerHTML = `<div style="text-align:center; padding: 25px 20px; background: #fdf5f5; border-radius: 12px; border: 2px dashed #e74c3c; width:100%;"><p style="color:#e74c3c; font-size:1.15rem; font-weight:800;">🏖️ TODAY IS A HOLIDAY</p></div>`;
   } else {
     let todaysClasses = [];
-    courses.forEach(c => { if (c.schedule && c.schedule[currentSelectedDay]) c.schedule[currentSelectedDay].forEach(slot => { todaysClasses.push({ name: c.name, start: slot.start, end: slot.end }); }); });
-    if (todaysClasses.length === 0) timeContainer.innerHTML = `<p style="color:var(--text-sub);">No classes scheduled.</p>`;
-    else {
+    courses.forEach(c => { 
+      if (c.schedule && c.schedule[currentSelectedDay]) {
+        c.schedule[currentSelectedDay].forEach(slot => { 
+          todaysClasses.push({ name: c.name, start: slot.start, end: slot.end }); 
+        });
+      }
+    });
+    
+    if (todaysClasses.length === 0) {
+      timeContainer.innerHTML = `<p style="color:var(--text-sub);">No classes scheduled.</p>`;
+    } else {
       todaysClasses.sort((a, b) => a.start.localeCompare(b.start));
-      const now = new Date(); const currentTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+      const now = new Date(); 
+      const currentTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
       let html = '';
       todaysClasses.forEach(cls => {
         let status = '';
-        if (isToday) { if (currentTime >= cls.start && currentTime <= cls.end) status = 'active'; else if (currentTime > cls.end) status = 'past'; }
-        html += `<div class="timeline-card ${status}"><div class="timeline-time">${format12Hour(cls.start)} - ${format12Hour(cls.end)}</div><div class="timeline-course">${cls.name}</div></div>`;
+        if (isToday) { 
+          if (currentTime >= cls.start && currentTime <= cls.end) status = 'active'; 
+          else if (currentTime > cls.end) status = 'past'; 
+        }
+        html += `
+          <div class="timeline-card ${status}">
+            <div class="timeline-time">${format12Hour(cls.start)} - ${format12Hour(cls.end)}</div>
+            <div class="timeline-course">${cls.name}</div>
+          </div>`;
       });
       timeContainer.innerHTML = html;
     }
@@ -594,23 +665,35 @@ function renderUI() {
 
   const listContainer = document.getElementById('courseList');
   listContainer.innerHTML = '';
-  if (courses.length === 0) { listContainer.innerHTML = `<p style="color:var(--text-sub); text-align:center; grid-column: 1/-1; padding: 40px 0;">No Courses Found. Add courses from the sidebar or scan a timetable.</p>`; return; }
+  if (courses.length === 0) { 
+    listContainer.innerHTML = `<p style="color:var(--text-sub); text-align:center; grid-column: 1/-1; padding: 40px 0;">No Courses Found. Add courses from the sidebar or scan a timetable.</p>`; 
+    return; 
+  }
 
   const holidayMode = isTodayHoliday();
   courses.forEach(course => {
     const total = course.present + course.absent;
     const percentage = total === 0 ? 0 : Math.round((course.present / total) * 100);
     const dashOffset = (2 * Math.PI * 38) - ((percentage / 100) * (2 * Math.PI * 38));
-    let actionHTML = holidayMode ? `<div class="action-bar" id="action-${course.id}"><span style="font-weight: 800; color: #e74c3c;">HOLIDAY</span></div>` : `<div class="action-bar" id="action-${course.id}"><button class="btn-present" onclick="markAttendance(${course.id}, 'present')">PRESENT</button><button class="btn-absent" onclick="markAttendance(${course.id}, 'absent')">ABSENT</button></div>`;
+    let actionHTML = holidayMode 
+      ? `<div class="action-bar" id="action-${course.id}"><span style="font-weight: 800; color: #e74c3c;">HOLIDAY</span></div>` 
+      : `<div class="action-bar" id="action-${course.id}"><button class="btn-present" onclick="markAttendance(${course.id}, 'present')">PRESENT</button><button class="btn-absent" onclick="markAttendance(${course.id}, 'absent')">ABSENT</button></div>`;
 
     listContainer.innerHTML += `
       <div class="course-card-wrapper">
         <div class="course-card" onclick="toggleActionBar(${course.id})">
           <div class="progress-circle">
-            <svg width="90" height="90"><circle cx="45" cy="45" r="38" stroke="#e74c3c" stroke-width="8" fill="transparent" /><circle cx="45" cy="45" r="38" stroke="#2ecc71" stroke-width="8" fill="transparent" stroke-dasharray="238.7" stroke-dashoffset="${dashOffset}" stroke-linecap="round" style="transition: stroke-dashoffset 1s ease-in-out;" /></svg>
+            <svg width="90" height="90">
+              <circle cx="45" cy="45" r="38" stroke="#e74c3c" stroke-width="8" fill="transparent" />
+              <circle cx="45" cy="45" r="38" stroke="#2ecc71" stroke-width="8" fill="transparent" stroke-dasharray="238.7" stroke-dashoffset="${dashOffset}" stroke-linecap="round" style="transition: stroke-dashoffset 1s ease-in-out;" />
+            </svg>
             <div class="percentage-text" style="color:var(--text-main);">${percentage}%</div>
           </div>
-          <div class="course-info"><h2>${course.name}</h2><p>Total Classes: ${total}</p>${getBunkStatus(course.present, course.absent)}</div>
+          <div class="course-info">
+            <h2>${course.name}</h2>
+            <p>Total Classes: ${total}</p>
+            ${getBunkStatus(course.present, course.absent)}
+          </div>
         </div>
         ${actionHTML}
       </div>`;
@@ -622,18 +705,24 @@ function markAttendance(id, status) {
   if (status === 'present') course.present += 1;
   if (status === 'absent') course.absent += 1;
   addHistory(`${status.toUpperCase()}: ${course.name}`);
-  toggleActionBar(id); saveToDatabase(); renderUI();    
+  toggleActionBar(id); 
+  saveToDatabase(); 
+  renderUI();    
 }
 
 function toggleActionBar(id) {
   const bar = document.getElementById(`action-${id}`);
-  document.querySelectorAll('.action-bar').forEach(el => { if (el.id !== `action-${id}`) el.classList.remove('slide-in'); });
+  document.querySelectorAll('.action-bar').forEach(el => { 
+    if (el.id !== `action-${id}`) el.classList.remove('slide-in'); 
+  });
   bar.classList.toggle('slide-in');
 }
 
-startLiveClock(); updateHolidayButton(); renderUI(); setInterval(renderUI, 60000);
+startLiveClock(); 
+updateHolidayButton(); 
+renderUI(); 
+setInterval(renderUI, 60000);
 
-// Auto-trigger User Guide on first open
 if (!localStorage.getItem(MANUAL_SHOWN_KEY)) { 
   localStorage.setItem(MANUAL_SHOWN_KEY, 'true'); 
   setTimeout(() => openModal('userManual'), 300);

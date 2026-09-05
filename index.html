@@ -33,7 +33,6 @@
     <ul>
       <li onclick="openModal('userManual')">How to Use the App</li>
       <li onclick="openModal('historyLog')">View History Log</li>
-      <!-- Changed from Upload to Sync -->
       <li onclick="openModal('setupCalendar')">Sync Academic Calendar</li>
       <li onclick="openModal('addTimetable')">Upload Timetable (OCR)</li>
       <li onclick="openModal('setTarget')">Set Target Attendance</li>
@@ -43,9 +42,23 @@
     </ul>
   </nav>
 
-  <!-- Removed AI Loading Spinner completely -->
   <div id="ocrLoading" class="ocr-loading-overlay"><div class="spinner"></div><p>Scanning Timetable...</p></div>
   <div class="modal-overlay" id="modalOverlay" onclick="closeModal(event)"><div class="modal-content" id="modalContent" onclick="event.stopPropagation()"></div></div>
+
+  <!-- Split Screen Setup UI -->
+  <div class="split-screen-overlay" id="splitScreenOverlay">
+    <div class="split-top">
+      <button class="close-btn" style="z-index: 10; color: #fff; background: rgba(0,0,0,0.6); border-radius: 50%; width: 40px; height: 40px; top: 10px; right: 10px;" onclick="closeSplitScreen()">×</button>
+      <iframe id="filePreview" src=""></iframe>
+    </div>
+    <div class="split-bottom">
+      <div class="setup-header">
+        <h3 style="font-size: 0.85rem;">Paint: <span style="color:#9b2226">1x Red (Holiday)</span> | <span style="color:#005f73">2x Blue (Important)</span></h3>
+        <button class="btn-present" style="padding: 8px 15px; font-size: 0.85rem;" onclick="saveSetupCalendar()">Save & Close</button>
+      </div>
+      <div id="setupCalendarContainer" class="setup-container"></div>
+    </div>
+  </div>
 
   <main class="main-content">
     <div class="timetable-container">

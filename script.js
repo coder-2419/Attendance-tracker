@@ -1,12 +1,15 @@
 const DB_KEY = 'attendance_tracker_v12';
 const HISTORY_KEY = 'attendance_history_v2';
 const CALENDAR_KEY = 'academic_calendar_v2';
+const MARKED_DATES_KEY = 'marked_dates_v1';
 
 let targetPercentage = parseInt(localStorage.getItem('target_percentage')) || 75;
 let courses = loadFromDatabase();
 let historyLog = JSON.parse(localStorage.getItem(HISTORY_KEY)) || [];
 let academicCalendar = JSON.parse(localStorage.getItem(CALENDAR_KEY)) || null;
+let markedDates = JSON.parse(localStorage.getItem(MARKED_DATES_KEY)) || [];
 let currentSelectedDay = getTodayString();
+let currentCalDate = new Date(); 
 
 if(localStorage.getItem('darkMode') === 'true') document.body.classList.add('dark-mode');
 
@@ -19,6 +22,10 @@ function getTodayString() {
   const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const today = days[new Date().getDay()];
   return today === 'Sunday' ? 'Monday' : today; 
+}
+
+function getTodayDateString() {
+  const now = new Date(); return `${now.getFullYear()}-${(now.getMonth()+1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
 }
 
 const masterScheduleMap = {
@@ -53,6 +60,7 @@ function loadFromDatabase() {
 function saveToDatabase() {
   localStorage.setItem(DB_KEY, JSON.stringify(courses));
   localStorage.setItem(HISTORY_KEY, JSON.stringify(historyLog));
+  localStorage.setItem(MARKED_DATES_KEY, JSON.stringify(markedDates));
 }
 
 function addHistory(action) {
@@ -82,9 +90,6 @@ function startLiveClock() {
   }, 1000);
 }
 
-function getTodayDateString() {
-  const now = new Date(); return `${now.getFullYear()}-${(now.getMonth()+1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
-}
 function isTodayHoliday() { return localStorage.getItem('holiday_' + getTodayDateString()) === 'true'; }
 
 function toggleHoliday() {
@@ -101,25 +106,108 @@ function updateHolidayButton() {
   else { btn.classList.remove('active'); btn.innerText = 'Mark Today Holiday'; }
 }
 
-// ---- NEW MANUAL CALENDAR LOAD INSTEAD OF AI ----
-function loadNMITCalendar() {
-  academicCalendar = {
-    startDate: "2026-08-03",
-    endDate: "2026-11-30",
-    holidays: [
-      "2026-08-15", "2026-08-17", "2026-09-14", "2026-10-02", 
-      "2026-10-21", "2026-11-09", "2026-11-10", "2026-12-25", "2026-12-26"
-    ],
-    importantDates: [
-      "2026-09-09", "2026-09-10", "2026-09-11", "2026-09-12",
-      "2026-09-26", "2026-10-09",
-      "2026-10-31", "2026-11-02", "2026-11-03", "2026-11-04"
-    ]
-  };
-  localStorage.setItem(CALENDAR_KEY, JSON.stringify(academicCalendar));
-  renderUI();
+let setupBlobUrl = null;
+let setupTempData = {};
+let setupStartDate = null;
+let setupEndDate = null;
+
+function startCalendarSetup() {
+  const fileInput = document.getElementById('calFileInput');
+  setupStartDate = document.getElementById('termStart').value;
+  setupEndDate = document.getElementById('termEnd').value;
+
+  if (!fileInput.files.length || !setupStartDate || !setupEndDate) {
+    return alert("Please upload a file and select both start and end dates.");
+  }
+  if (new Date(setupStartDate) > new Date(setupEndDate)) {
+    return alert("Start date cannot be after the end date.");
+  }
+
+  const file = fileInput.files[0];
+  setupBlobUrl = URL.createObjectURL(file);
+  document.getElementById('filePreview').src = setupBlobUrl;
+  
+  setupTempData = {}; 
+  buildSetupCalendar(setupStartDate, setupEndDate);
+  
   closeModal();
-  alert("NMIT Odd Semester (2026-27) Calendar successfully synced!");
+  document.getElementById('splitScreenOverlay').classList.add('active');
+}
+
+function buildSetupCalendar(startStr, endStr) {
+  const container = document.getElementById('setupCalendarContainer');
+  let html = '';
+  let curr = new Date(startStr);
+  const end = new Date(endStr);
+  
+  while (curr <= end || (curr.getMonth() === end.getMonth() && curr.getFullYear() === end.getFullYear())) {
+    const year = curr.getFullYear();
+    const month = curr.getMonth();
+    const firstDay = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const monthNames = ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"];
+    
+    html += `
+      <div class="setup-month">
+        <div class="setup-month-title">${monthNames[month]} ${year}</div>
+        <div class="cal-weekdays"><span>Su</span><span>M</span><span>Tu</span><span>W</span><span>Th</span><span>F</span><span>Sa</span></div>
+        <div class="cal-grid-month">`;
+    
+    for (let i = 0; i < firstDay; i++) { html += `<div class="cal-day empty"></div>`; }
+    
+    for (let i = 1; i <= daysInMonth; i++) {
+      const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
+      const iterDate = new Date(year, month, i);
+      const isOutOfBounds = iterDate < new Date(startStr) || iterDate > new Date(endStr);
+      const isSunday = iterDate.getDay() === 0 ? 'sunday' : '';
+      
+      if (isOutOfBounds) {
+        html += `<div class="cal-day empty"></div>`;
+      } else {
+        html += `<div class="cal-day ${isSunday}" id="setup-${dateStr}" onclick="cyclePaintMode('${dateStr}', this)"><span>${i}</span></div>`;
+      }
+    }
+    html += `</div></div>`;
+    curr.setMonth(curr.getMonth() + 1); 
+  }
+  container.innerHTML = html;
+}
+
+function cyclePaintMode(dateStr, element) {
+  if (element.classList.contains('holiday')) {
+    element.classList.remove('holiday');
+    element.classList.add('important');
+    setupTempData[dateStr] = 'important';
+  } else if (element.classList.contains('important')) {
+    element.classList.remove('important');
+    delete setupTempData[dateStr];
+  } else {
+    element.classList.add('holiday');
+    setupTempData[dateStr] = 'holiday';
+  }
+}
+
+function saveSetupCalendar() {
+  let holidays = [];
+  let importantDates = [];
+  for (const [date, type] of Object.entries(setupTempData)) {
+    if (type === 'holiday') holidays.push(date);
+    if (type === 'important') importantDates.push(date);
+  }
+  academicCalendar = { startDate: setupStartDate, endDate: setupEndDate, holidays: holidays, importantDates: importantDates };
+  localStorage.setItem(CALENDAR_KEY, JSON.stringify(academicCalendar));
+  alert("Calendar Saved Successfully!");
+  closeSplitScreen();
+  renderUI(); 
+}
+
+function closeSplitScreen() {
+  document.getElementById('splitScreenOverlay').classList.remove('active');
+  if (setupBlobUrl) {
+    URL.revokeObjectURL(setupBlobUrl);
+    setupBlobUrl = null;
+    document.getElementById('filePreview').src = '';
+  }
 }
 
 async function processOCR(event) {
@@ -149,22 +237,53 @@ async function processOCR(event) {
   } finally { document.getElementById('ocrLoading').classList.remove('active'); event.target.value = ''; }
 }
 
-function markFullDayPresent(dateString, element) {
+function changeCalendarMonth(dir) {
+  currentCalDate.setMonth(currentCalDate.getMonth() + dir);
+  openModal('calendarMode');
+}
+
+function toggleFullDayPresent(dateString) {
+  const todayStr = getTodayDateString();
+  
+  if (dateString > todayStr) {
+    alert("You cannot mark attendance for future dates.");
+    return;
+  }
+
   const dateObj = new Date(dateString);
   const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const dayName = days[dateObj.getDay()];
   let classesUpdated = 0;
   
+  const isAlreadyMarked = markedDates.includes(dateString);
+
   courses.forEach(course => {
     if (course.schedule && course.schedule[dayName]) {
-      course.schedule[dayName].forEach(() => { course.present += 1; classesUpdated += 1; });
+      course.schedule[dayName].forEach(() => { 
+        if (isAlreadyMarked) {
+          course.present = Math.max(0, course.present - 1); 
+        } else {
+          course.present += 1; 
+        }
+        classesUpdated += 1; 
+      });
     }
   });
 
   if (classesUpdated > 0) {
-    addHistory(`Full Day Present: ${dateString} (${classesUpdated} classes)`);
-    element.classList.add('present'); renderUI();
-  } else { alert("No classes scheduled for this day."); }
+    if (isAlreadyMarked) {
+      markedDates = markedDates.filter(d => d !== dateString);
+      addHistory(`Reversed Full Day: ${dateString}`);
+    } else {
+      markedDates.push(dateString);
+      addHistory(`Full Day Present: ${dateString}`);
+    }
+    saveToDatabase(); 
+    openModal('calendarMode'); 
+    renderUI(); 
+  } else { 
+    alert("No classes scheduled for this day."); 
+  }
 }
 
 function toggleMenu() { document.getElementById('sidebar').classList.toggle('open'); document.getElementById('menuOverlay').classList.toggle('active'); }
@@ -181,8 +300,9 @@ function openModal(type) {
   if (type === 'userManual') {
     html += `<h2>How to Use This App</h2><div style="max-height: 60vh; overflow-y: auto; padding-right: 10px; text-align: left;">
       <div class="manual-section"><h3>1. Getting Started</h3><p>App starts empty. Go to the menu to add courses manually, or use the <b>Upload Timetable (OCR)</b> tool.</p></div>
-      <div class="manual-section"><h3>2. Academic Calendar</h3><p>Use the Sync option in the menu to load your semester dates. Tap the top-right clock to batch-mark full days.</p></div>
-      <div class="manual-section"><h3>3. The Bunk Meter</h3><p>The app tracks your configured threshold, telling you if you can bunk safely or need to attend.</p></div>
+      <div class="manual-section"><h3>2. Academic Calendar</h3><p>Use the Sync option to launch Setup Mode. Mark holidays in Red and important dates in Blue.</p></div>
+      <div class="manual-section"><h3>3. Batch Mark Attendance</h3><p>Tap the clock icon. Tap any past or current date to mark attendance for the whole day (Green). Tap again to undo.</p></div>
+      <div class="manual-section"><h3>4. The Bunk Meter</h3><p>Tracks your configured threshold, telling you if you can bunk safely or need to attend.</p></div>
     </div>`;
   } else if (type === 'historyLog') {
     html += `<h2>History Log</h2><div class="history-list">`;
@@ -190,23 +310,63 @@ function openModal(type) {
     historyLog.forEach(log => { html += `<div class="history-item"><span>${log.action}</span><span style="color:var(--text-sub); font-size:0.75rem;">${log.time}</span></div>`; });
     html += `</div>`;
   } else if (type === 'setupCalendar') {
-    html += `<h2>Sync Academic Calendar</h2>
-      <p style="color:var(--text-sub); margin-bottom: 20px; font-size:0.9rem;">Load the official NMIT Odd Semester (2026-27) holiday and MSE dates into your app locally.</p>
-      <button class="btn-present" style="width:100%; padding: 14px;" onclick="loadNMITCalendar()">Sync NMIT Calendar Dates</button>`;
+    html += `<h2>Upload Academic Calendar</h2>
+      <div style="text-align:left; margin-top:15px;">
+        <label style="font-size:0.85rem; color:var(--text-sub);">Select Calendar (Image or PDF)</label>
+        <input type="file" id="calFileInput" accept="image/*, application/pdf" class="modal-input" />
+        
+        <label style="font-size:0.85rem; color:var(--text-sub);">Term Start Date</label>
+        <input type="date" id="termStart" class="modal-input" />
+        
+        <label style="font-size:0.85rem; color:var(--text-sub);">Term End Date</label>
+        <input type="date" id="termEnd" class="modal-input" />
+        
+        <button class="btn-present" style="width:100%; padding:12px;" onclick="startCalendarSetup()">Start Setup Mode</button>
+      </div>`;
   } else if (type === 'calendarMode') {
-    if (!academicCalendar) html += `<h2>Calendar</h2><p style="color:var(--text-sub);">Sync the calendar from the menu first.</p>`;
-    else {
-      html += `<h2>Batch Mark Attendance</h2><div class="cal-grid">`;
-      const start = new Date();
-      for (let i = 0; i < 14; i++) {
-        const d = new Date(start); d.setDate(start.getDate() + i);
-        const dateStr = d.toISOString().split('T')[0];
+    if (!academicCalendar) {
+      html += `<h2>Calendar</h2><p style="color:var(--text-sub);">Sync the calendar from the menu first.</p>`;
+    } else {
+      const year = currentCalDate.getFullYear();
+      const month = currentCalDate.getMonth();
+      const firstDay = new Date(year, month, 1).getDay();
+      const daysInMonth = new Date(year, month + 1, 0).getDate();
+      const monthNames = ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"];
+      const todayStr = getTodayDateString();
+
+      html += `
+        <div class="month-header">
+          <button class="month-nav" onclick="changeCalendarMonth(-1)">&#10094;</button>
+          <h2>${monthNames[month]} ${year}</h2>
+          <button class="month-nav" onclick="changeCalendarMonth(1)">&#10095;</button>
+        </div>
+        <div class="cal-weekdays"><span>Su</span><span>M</span><span>Tu</span><span>W</span><span>Th</span><span>F</span><span>Sa</span></div>
+        <div class="cal-grid-month">`;
+
+      for (let i = 0; i < firstDay; i++) {
+        html += `<div class="cal-day empty"></div>`;
+      }
+
+      for (let i = 1; i <= daysInMonth; i++) {
+        const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
+        
         let statusClass = '';
         if (academicCalendar.holidays && academicCalendar.holidays.includes(dateStr)) statusClass = 'holiday';
         else if (academicCalendar.importantDates && academicCalendar.importantDates.includes(dateStr)) statusClass = 'important';
-        html += `<div class="cal-day ${statusClass}" onclick="markFullDayPresent('${dateStr}', this)">${d.getDate()}</div>`;
+
+        const isSunday = new Date(year, month, i).getDay() === 0 ? 'sunday' : '';
+        const isFuture = dateStr > todayStr ? 'future' : '';
+        const isMarked = markedDates.includes(dateStr) ? 'present' : '';
+        
+        html += `<div class="cal-day ${statusClass} ${isSunday} ${isFuture} ${isMarked}" onclick="toggleFullDayPresent('${dateStr}')"><span>${i}</span></div>`;
       }
-      html += `</div><div style="margin-top:15px; display:flex; justify-content:center; gap:10px; font-size:0.75rem;"><span style="color:#e74c3c">■ Holiday</span> <span style="color:#3498db">■ Important</span></div>`;
+      
+      html += `</div>
+        <div style="margin-top:20px; display:flex; justify-content:center; gap:15px; font-size:0.85rem; font-weight:700;">
+          <span style="color:#9b2226">■ Holiday</span> 
+          <span style="color:#005f73">■ Important</span>
+          <span style="color:#2ecc71">■ Present</span>
+        </div>`;
     }
   } else if (type === 'addTimetable') {
     html += `<h2>Upload Timetable</h2><input type="file" accept="image/*" class="modal-input" onchange="processOCR(event)" />`; 
@@ -230,21 +390,40 @@ function openModal(type) {
         <button class="btn-present" style="width:100%; padding:12px;" onclick="handleAddCourse()">Add Course</button>
       </div>`;
   } else if (type === 'editAttendance') {
-    html += `<h2>Edit Attendance</h2><div style="max-height: 55vh; overflow-y: auto; margin-top: 15px;">`;
-    if (courses.length === 0) html += `<p style="color:var(--text-sub);">No courses available to edit.</p>`;
-    else {
-      courses.forEach(c => {
-        html += `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; border-bottom:1px solid var(--border-color); padding-bottom:8px;">
-            <span style="font-size:0.9rem; font-weight:700; max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${c.name}</span>
-            <div style="display:flex; gap:6px; align-items:center;">
-              <input type="number" min="0" value="${c.present}" id="edit-present-${c.id}" style="width:50px; padding:4px; text-align:center;" title="Present" />
-              <input type="number" min="0" value="${c.absent}" id="edit-absent-${c.id}" style="width:50px; padding:4px; text-align:center;" title="Absent" />
-              <button class="holiday-btn" onclick="saveIndividualAttendance(${c.id})">Save</button>
+    if (courses.length === 0) {
+      html += `<h2>Edit Attendance</h2><p style="color:var(--text-sub); margin-top:15px;">No courses available to edit.</p>`;
+    } else {
+      let options = courses.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+      html += `
+        <h2>Edit Attendance</h2>
+        <div style="margin-top:15px; text-align: left;">
+          <label style="font-size:0.85rem; color:var(--text-sub);">Select Course</label>
+          <select id="editCourseSelect" class="modal-input" onchange="loadCourseToEdit()" style="margin-bottom: 25px;">
+            ${options}
+          </select>
+          <div style="display:flex; gap:15px; align-items:stretch; margin-bottom:25px;">
+            <div style="display:flex; flex-direction:column; gap:15px; flex:1;">
+              <div>
+                <label style="font-size:0.85rem; color:var(--text-sub);">Present</label>
+                <input type="number" id="editPresent" class="modal-input" style="margin-bottom:0; padding:10px;" min="0" oninput="syncEditFields('present')" />
+              </div>
+              <div>
+                <label style="font-size:0.85rem; color:var(--text-sub);">Total Classes</label>
+                <input type="number" id="editTotal" class="modal-input" style="margin-bottom:0; padding:10px;" min="0" oninput="syncEditFields('total')" />
+              </div>
             </div>
-          </div>`;
-      });
+            <div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; background:var(--bg-color); padding:15px; border-radius:12px; border:1px solid var(--border-color); box-shadow: inset 0 2px 5px rgba(0,0,0,0.05);">
+              <label style="font-size:0.85rem; color:var(--text-sub); margin-bottom:8px;">Percentage</label>
+              <div style="display:flex; align-items:center; gap:5px;">
+                <input type="number" id="editPercent" class="modal-input" style="margin-bottom:0; width:70px; text-align:center; font-size:1.2rem; font-weight:800; padding:8px;" min="0" max="100" oninput="syncEditFields('percent')" />
+                <span style="font-size:1.2rem; font-weight:800;">%</span>
+              </div>
+            </div>
+          </div>
+          <button class="btn-present" style="width:100%; padding:14px;" onclick="saveSingleCourseAttendance()">Save Changes</button>
+        </div>`;
+        setTimeout(loadCourseToEdit, 0); 
     }
-    html += `</div>`;
   } else if (type === 'removeCourse') {
     html += `<h2>Remove Course</h2><div style="max-height: 55vh; overflow-y: auto; margin-top: 15px;">`;
     if (courses.length === 0) html += `<p style="color:var(--text-sub);">No courses to remove.</p>`;
@@ -262,61 +441,63 @@ function openModal(type) {
   modalContent.innerHTML = html;
 }
 
-function saveTargetPercentage() {
-  const inputVal = document.getElementById('targetInput').value;
-  const newTarget = parseInt(inputVal, 10);
-  if (isNaN(newTarget) || newTarget < 1 || newTarget > 100) {
-    alert("Please enter a valid percentage between 1 and 100.");
-    return;
-  }
-  targetPercentage = newTarget;
-  localStorage.setItem('target_percentage', targetPercentage);
-  renderUI();
-  closeModal();
-}
-
-function handleAddCourse() {
-  const name = document.getElementById('newCourseName').value.trim();
-  const code = document.getElementById('newCourseCode').value.trim();
-  if (!name) return alert("Please enter a course name.");
-  courses.push({ id: Date.now(), name: name, code: code || 'CUSTOM', present: 0, absent: 0, schedule: {} });
-  addHistory(`Added Course: ${name}`); saveToDatabase(); renderUI(); closeModal();
-}
-
-function saveIndividualAttendance(id) {
-  const course = courses.find(c => c.id === id);
-  const p = document.getElementById(`edit-present-${id}`).value;
-  const a = document.getElementById(`edit-absent-${id}`).value;
-  if (course) {
-    course.present = Math.max(0, parseInt(p, 10) || 0);
-    course.absent = Math.max(0, parseInt(a, 10) || 0);
-    addHistory(`Updated: ${course.name} (P:${course.present}, A:${course.absent})`);
-    saveToDatabase(); renderUI(); alert(`Saved attendance for ${course.name}`);
-  }
-}
-
-function removeCourseById(id) {
-  const course = courses.find(c => c.id === id);
+function loadCourseToEdit() {
+  const select = document.getElementById('editCourseSelect');
+  if (!select) return;
+  const course = courses.find(c => c.id === parseInt(select.value, 10));
   if (!course) return;
-  if (confirm(`Are you sure you want to remove ${course.name}?`)) {
-    courses = courses.filter(c => c.id !== id);
-    addHistory(`Removed Course: ${course.name}`);
-    saveToDatabase(); renderUI(); openModal('removeCourse');
+  
+  const total = course.present + course.absent;
+  const percent = total === 0 ? 0 : Math.round((course.present / total) * 100);
+  
+  document.getElementById('editPresent').value = course.present;
+  document.getElementById('editTotal').value = total;
+  document.getElementById('editPercent').value = percent;
+}
+
+function syncEditFields(source) {
+  const pEl = document.getElementById('editPresent');
+  const tEl = document.getElementById('editTotal');
+  const pctEl = document.getElementById('editPercent');
+  
+  let p = parseFloat(pEl.value) || 0;
+  let t = parseFloat(tEl.value) || 0;
+  let pct = parseFloat(pctEl.value) || 0;
+
+  if (source === 'present' || source === 'total') {
+    if (t > 0) {
+      pctEl.value = Math.round((p / t) * 100);
+    } else {
+      pctEl.value = 0;
+    }
+  } else if (source === 'percent') {
+    if (t > 0) {
+      pEl.value = Math.round((pct / 100) * t);
+    }
   }
 }
 
-function getBunkStatus(present, absent) {
-  const total = present + absent;
-  if (total === 0) return `<span class="bunk-meter" style="color:var(--text-sub);">No classes yet</span>`;
-  const currentPercent = (present / total) * 100;
+function saveSingleCourseAttendance() {
+  const select = document.getElementById('editCourseSelect');
+  if (!select) return;
   
-  if (currentPercent >= targetPercentage) {
-    const buffer = Math.floor((present / (targetPercentage / 100)) - total);
-    return buffer > 0 ? `<span class="bunk-meter bunk-safe">Safe to bunk ${buffer} classes</span>` : `<span class="bunk-meter bunk-safe">On track (0 buffer)</span>`;
-  } else {
-    const required = Math.ceil(((targetPercentage / 100) * total - present) / (1 - (targetPercentage / 100)));
-    return `<span class="bunk-meter bunk-danger">Attend next ${required} classes</span>`;
-  }
+  const courseId = parseInt(select.value, 10);
+  const course = courses.find(c => c.id === courseId);
+  if (!course) return;
+
+  let p = parseInt(document.getElementById('editPresent').value, 10) || 0;
+  let t = parseInt(document.getElementById('editTotal').value, 10) || 0;
+  
+  if (p > t) t = p;
+
+  course.present = Math.max(0, p);
+  course.absent = Math.max(0, t - p);
+
+  addHistory(`Edited: ${course.name} (P:${course.present}, Total:${t})`);
+  saveToDatabase();
+  renderUI();
+  alert(`Attendance updated for ${course.name}`);
+  closeModal();
 }
 
 function changeDay(dayName) { currentSelectedDay = dayName; renderUI(); }

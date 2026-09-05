@@ -14,7 +14,6 @@ body { background-color: var(--bg-color); color: var(--text-main); transition: b
 .clock-time { font-size: 0.95rem; font-weight: 800; color: #fff; margin-bottom: 2px; }
 .clock-date { font-size: 0.65rem; font-weight: 600; color: #bbb; text-transform: uppercase; }
 
-/* Updated Sidebar with scrolling enabled */
 .sidebar { position: fixed; top: 0; left: -300px; width: 280px; height: 100vh; background-color: var(--card-bg); box-shadow: 2px 0 15px rgba(0,0,0,0.15); transition: left 0.3s; z-index: 1000; padding-top: 80px; overflow-y: auto; padding-bottom: 40px; }
 .sidebar.open { left: 0; }
 .sidebar ul { list-style: none; display: flex; flex-direction: column; }
@@ -88,14 +87,31 @@ body.dark-mode .cal-day:hover:not(.empty):not(.holiday):not(.important) span { b
 .holiday-btn { background: var(--border-color); color: var(--text-main); border: none; padding: 6px 14px; border-radius: 20px; font-size: 0.7rem; font-weight: 800; cursor: pointer; }
 .holiday-btn.active { background: #e74c3c; color: white; }
 
-.day-selector { display: flex; gap: 8px; overflow-x: auto; margin-bottom: 15px; padding-bottom: 5px; scrollbar-width: none; }
+/* --- HORIZONTAL SCROLLING OPTIMIZATIONS --- */
+.day-selector { 
+  display: flex; gap: 8px; overflow-x: auto; margin-bottom: 15px; padding-bottom: 5px; scrollbar-width: none; 
+  -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; will-change: scroll-position; 
+}
 .day-selector::-webkit-scrollbar { display: none; }
-.day-selector button { background: var(--card-bg); border: 1px solid var(--border-color); padding: 8px 16px; border-radius: 20px; font-weight: 700; color: var(--text-sub); cursor: pointer; white-space: nowrap; }
+.day-selector button { 
+  background: var(--card-bg); border: 1px solid var(--border-color); padding: 8px 16px; border-radius: 20px; font-weight: 700; color: var(--text-sub); cursor: pointer; white-space: nowrap; 
+  transform: translateZ(0); /* Hardware Acceleration */
+}
 .day-selector button.active-day { background: #3498db; color: white; border-color: #3498db; }
 
-.timetable-bar { display: flex; gap: 15px; overflow-x: auto; padding-bottom: 15px; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; scroll-behavior: smooth; scrollbar-width: none; }
+.timetable-bar { 
+  display: flex; gap: 15px; overflow-x: auto; padding-bottom: 15px; 
+  -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; 
+  scroll-snap-type: x mandatory; scrollbar-width: none; scroll-padding-left: 2px;
+  will-change: scroll-position; /* Offloads scroll calculations to GPU */
+}
 .timetable-bar::-webkit-scrollbar { display: none; }
-.timeline-card { min-width: 180px; background: var(--card-bg); padding: 15px; border-radius: 12px; border: 1px solid var(--border-color); border-left: 4px solid #3498db; flex-shrink: 0; scroll-snap-align: start; }
+.timeline-card { 
+  min-width: 180px; background: var(--card-bg); padding: 15px; border-radius: 12px; border: 1px solid var(--border-color); border-left: 4px solid #3498db; flex-shrink: 0; 
+  scroll-snap-align: start; 
+  transform: translateZ(0); /* Prevents screen tearing and paint-lag during fast swipes */
+  will-change: transform; 
+}
 .timeline-card.active { border-left-color: #2ecc71; }
 .timeline-card.past { border-left-color: var(--border-color); opacity: 0.6; }
 .timeline-time { font-size: 0.8rem; font-weight: 700; margin-bottom: 6px; }

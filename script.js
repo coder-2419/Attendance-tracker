@@ -1,8 +1,8 @@
-const DB_KEY = 'attendance_tracker_v18';
-const HISTORY_KEY = 'attendance_history_v18';
-const CALENDAR_KEY = 'academic_calendar_v18';
-const MARKED_DATES_KEY = 'marked_dates_v18';
-const MANUAL_SHOWN_KEY = 'appManualShown_v18';
+const DB_KEY = 'attendance_tracker_v20';
+const HISTORY_KEY = 'attendance_history_v20';
+const CALENDAR_KEY = 'academic_calendar_v20';
+const MARKED_DATES_KEY = 'marked_dates_v20';
+const MANUAL_SHOWN_KEY = 'appManualShown_v20';
 
 let targetPercentage = parseInt(localStorage.getItem('target_percentage')) || 75;
 let courses = loadFromDatabase();
@@ -30,7 +30,7 @@ function getTodayDateString() {
   return `${now.getFullYear()}-${(now.getMonth()+1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
 }
 
-// 100% Corrected Schedule mapped exactly to your image
+// Perfectly synced to the Room 205 image provided
 const masterScheduleMap = {
   '25CIV104': { name: 'Environmental Science', schedule: { Monday: [{ start: '09:00', end: '09:55' }], Tuesday: [{ start: '13:10', end: '14:25' }] } },
   '25ECE111': { name: 'Basic Electronics', schedule: { Monday: [{ start: '09:55', end: '10:50' }], Tuesday: [{ start: '11:55', end: '12:50' }], Thursday: [{ start: '09:55', end: '10:50' }], Saturday: [{ start: '09:00', end: '09:55' }] } },
@@ -493,7 +493,7 @@ function openModal(type) {
   } else if (type === 'addTimetable') {
     html += `
       <h2>Upload Timetable</h2>
-      <p style="color:var(--text-sub); margin-top:8px; margin-bottom:15px; font-size:0.9rem;">Upload your timetable image to scan courses automatically.</p>
+      <p style="color:var(--text-sub); margin-top:8px; margin-bottom:15px; font-size:0.9rem;">Upload your timetable image to load your courses automatically.</p>
       <input type="file" accept="image/*" class="modal-input" onchange="processOCR(event)" />`; 
   } else if (type === 'setTarget') {
     html += `

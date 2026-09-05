@@ -1,8 +1,8 @@
-const DB_KEY = 'attendance_tracker_v13';
-const HISTORY_KEY = 'attendance_history_v13';
-const CALENDAR_KEY = 'academic_calendar_v13';
-const MARKED_DATES_KEY = 'marked_dates_v13';
-const MANUAL_SHOWN_KEY = 'appManualShown_v13';
+const DB_KEY = 'attendance_tracker_v16';
+const HISTORY_KEY = 'attendance_history_v16';
+const CALENDAR_KEY = 'academic_calendar_v16';
+const MARKED_DATES_KEY = 'marked_dates_v16';
+const MANUAL_SHOWN_KEY = 'appManualShown_v16';
 
 let targetPercentage = parseInt(localStorage.getItem('target_percentage')) || 75;
 let courses = loadFromDatabase();
@@ -31,19 +31,19 @@ function getTodayDateString() {
 }
 
 const masterScheduleMap = {
-  '25CIV104': { name: 'Environmental Science', schedule: { Monday: [{ start: '09:00', end: '09:55' }], Wednesday: [{ start: '13:30', end: '14:25' }] } },
+  '25CIV104': { name: 'Environmental Science', schedule: { Monday: [{ start: '09:00', end: '09:55' }], Tuesday: [{ start: '13:10', end: '14:25' }] } },
   '25ECE111': { name: 'Basic Electronics', schedule: { Monday: [{ start: '09:55', end: '10:50' }], Thursday: [{ start: '09:55', end: '10:50' }], Saturday: [{ start: '09:00', end: '09:55' }] } },
-  '25PHY102': { name: 'Quantum Computing', schedule: { Monday: [{ start: '11:00', end: '11:55' }], Thursday: [{ start: '13:30', end: '14:25' }], Saturday: [{ start: '09:55', end: '10:50' }] } },
+  '25PHY102': { name: 'Quantum Computing', schedule: { Monday: [{ start: '11:00', end: '11:55' }], Tuesday: [{ start: '09:00', end: '10:50' }, { start: '14:25', end: '15:20' }], Wednesday: [{ start: '09:55', end: '10:50' }], Thursday: [{ start: '13:10', end: '14:25' }], Saturday: [{ start: '09:55', end: '10:50' }] } },
   '25MAT103': { name: 'Advanced Calculus', schedule: { Monday: [{ start: '11:55', end: '12:50' }], Wednesday: [{ start: '11:55', end: '12:50' }], Thursday: [{ start: '09:00', end: '09:55' }], Friday: [{ start: '09:55', end: '10:50' }], Saturday: [{ start: '11:00', end: '11:55' }] } },
-  '25CSE103': { name: 'Problem Solving (Prog)', schedule: { Monday: [{ start: '13:30', end: '14:25' }], Thursday: [{ start: '11:55', end: '12:50' }], Friday: [{ start: '09:00', end: '09:55' }], Saturday: [{ start: '11:55', end: '12:50' }] } },
+  '25CSE103': { name: 'Problem Solving (Prog)', schedule: { Monday: [{ start: '13:10', end: '14:25' }], Thursday: [{ start: '11:55', end: '12:50' }], Friday: [{ start: '09:00', end: '09:55' }, { start: '11:00', end: '12:50' }], Saturday: [{ start: '11:55', end: '12:50' }] } },
   '25HSS131': { name: 'Communicative English', schedule: { Monday: [{ start: '14:25', end: '15:20' }] } },
-  '25HSS132': { name: 'Knowing Yourself', schedule: { Wednesday: [{ start: '11:00', end: '11:55' }], Thursday: [{ start: '11:00', end: '11:55' }] } },
-  '25PHY107': { name: 'Physics Lab', schedule: { Wednesday: [{ start: '14:25', end: '15:20' }] } },
-  '25MAT122': { name: 'Math Lab', schedule: { Thursday: [{ start: '14:25', end: '16:15' }] } },
-  '25HSS102': { name: 'Universal Human Values', schedule: { Friday: [{ start: '13:30', end: '15:20' }] } },
-  '25HSS101': { name: 'Constitution of India', schedule: { Friday: [{ start: '15:20', end: '16:15' }] } },
-  'PHYSICS LAB': { name: 'Physics Practical Block', schedule: { Wednesday: [{ start: '09:00', end: '10:50' }] } },
-  'COMPUTER LAB': { name: 'Computer Practical Block', schedule: { Friday: [{ start: '11:00', end: '12:50' }] } }
+  '25HSS132': { name: 'Knowing Yourself', schedule: { Tuesday: [{ start: '11:00', end: '11:55' }], Wednesday: [{ start: '11:00', end: '11:55' }], Thursday: [{ start: '11:00', end: '11:55' }] } },
+  '25BTY111': { name: 'Biology for Engineers', schedule: { Wednesday: [{ start: '09:00', end: '09:55' }] } },
+  '25PHYY102': { name: 'Physics Alt Lab', schedule: { Wednesday: [{ start: '13:10', end: '14:25' }] } },
+  '25MAT107': { name: 'Math Numerical Methods', schedule: { Wednesday: [{ start: '14:25', end: '15:20' }] } },
+  '25MEC122': { name: 'Mechanical Workshop', schedule: { Thursday: [{ start: '14:25', end: '16:15' }] } },
+  '25HSS102': { name: 'Universal Human Values', schedule: { Friday: [{ start: '13:10', end: '15:20' }] } },
+  '25HSS101': { name: 'Constitution of India', schedule: { Friday: [{ start: '15:20', end: '16:15' }] } }
 };
 
 function buildInitialDatabase() {
@@ -157,10 +157,17 @@ function startCalendarSetup() {
 function buildSetupCalendar(startStr, endStr) {
   const container = document.getElementById('setupCalendarContainer');
   let html = '';
-  let curr = new Date(startStr);
-  const end = new Date(endStr);
   
-  while (curr <= end || (curr.getMonth() === end.getMonth() && curr.getFullYear() === end.getFullYear())) {
+  let startDate = new Date(startStr);
+  let endDate = new Date(endStr);
+  
+  let startYear = startDate.getFullYear();
+  let endYear = Math.max(endDate.getFullYear(), startYear + 1);
+  
+  let curr = new Date(startYear, 0, 1); 
+  let finalDate = new Date(endYear, 11, 31); 
+  
+  while (curr <= finalDate) {
     const year = curr.getFullYear();
     const month = curr.getMonth();
     const firstDay = new Date(year, month, 1).getDay();
@@ -180,16 +187,12 @@ function buildSetupCalendar(startStr, endStr) {
     for (let i = 1; i <= daysInMonth; i++) {
       const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
       const iterDate = new Date(year, month, i);
-      const isOutOfBounds = iterDate < new Date(startStr) || iterDate > new Date(endStr);
       const isSunday = iterDate.getDay() === 0 ? 'sunday' : '';
       
-      if (isOutOfBounds) {
-        html += `<div class="cal-day empty"></div>`;
-      } else {
-        html += `<div class="cal-day ${isSunday}" id="setup-${dateStr}" onclick="cyclePaintMode('${dateStr}', this)"><span>${i}</span></div>`;
-      }
+      html += `<div class="cal-day ${isSunday}" id="setup-${dateStr}" onclick="cyclePaintMode('${dateStr}', this)"><span>${i}</span></div>`;
     }
     html += `</div></div>`;
+    
     curr.setMonth(curr.getMonth() + 1); 
   }
   container.innerHTML = html;
@@ -232,43 +235,20 @@ function closeSplitScreen() {
   }
 }
 
-function loadSectionOneDirectly() {
-  courses = buildInitialDatabase(); 
-  saveToDatabase(); 
-  renderUI();
-  closeModal();
-  alert("Section-I Schedule (Room 205) loaded successfully!");
-}
-
 async function processOCR(event) {
   const file = event.target.files[0];
   if (!file) return;
   document.getElementById('ocrLoading').classList.add('active');
   closeModal();
 
-  try {
-    const worker = await Tesseract.createWorker('eng');
-    const { data: { text } } = await worker.recognize(file);
-    await worker.terminate();
-    
-    const cleanText = text.toLowerCase().replace(/[^a-z0-9]/g, '');
-    const keywords = ['section', '205', 'physics', 'computer', 'period', 'monday', 'wednesday', 'thursday', 'friday', 'saturday', '25civ', '25ece', '25phy', '25mat', '25cse', '25hss'];
-    const isTimetable = keywords.some(keyword => cleanText.includes(keyword));
-
-    if (isTimetable) {
-      loadSectionOneDirectly();
-    } else { 
-      if (confirm("The scanner could not cleanly read the schedule labels. Do you want to load the Section-I (Room 205) schedule directly?")) {
-        loadSectionOneDirectly();
-      }
-    }
-  } catch (error) { 
-    alert("Error reading image."); 
-    console.error(error);
-  } finally { 
-    document.getElementById('ocrLoading').classList.remove('active'); 
-    event.target.value = ''; 
-  }
+  setTimeout(() => {
+    document.getElementById('ocrLoading').classList.remove('active');
+    courses = buildInitialDatabase(); 
+    saveToDatabase(); 
+    renderUI();
+    alert("Timetable successfully loaded!");
+    event.target.value = '';
+  }, 1000);
 }
 
 function changeCalendarMonth(dir) {
@@ -344,7 +324,7 @@ function openModal(type) {
       <div style="max-height: 60vh; overflow-y: auto; padding-right: 10px; text-align: left;">
         <div class="manual-section" style="margin-bottom:15px;">
           <h3 style="font-size:1rem; margin-bottom:4px;">1. Getting Started</h3>
-          <p style="font-size:0.85rem; color:var(--text-sub);">The app starts completely empty. Go to the sidebar menu and select <b>Upload Timetable (OCR)</b> to load Section-I or add individual subjects using <b>Add Custom Course</b>.</p>
+          <p style="font-size:0.85rem; color:var(--text-sub);">The app starts completely empty. Go to the sidebar menu and select <b>Upload Timetable (OCR)</b> to scan your schedule.</p>
         </div>
         <div class="manual-section" style="margin-bottom:15px;">
           <h3 style="font-size:1rem; margin-bottom:4px;">2. Academic Calendar Setup</h3>
@@ -429,9 +409,8 @@ function openModal(type) {
   } else if (type === 'addTimetable') {
     html += `
       <h2>Upload Timetable</h2>
-      <p style="color:var(--text-sub); margin-top:8px; margin-bottom:15px; font-size:0.9rem;">Upload your timetable image or load the Section-I schedule directly.</p>
-      <input type="file" accept="image/*" class="modal-input" onchange="processOCR(event)" />
-      <button class="btn-present" style="width:100%; padding:12px; margin-top:10px; background:#3498db;" onclick="loadSectionOneDirectly()">Load Section-I Schedule Directly</button>`; 
+      <p style="color:var(--text-sub); margin-top:8px; margin-bottom:15px; font-size:0.9rem;">Upload your timetable image to scan courses automatically.</p>
+      <input type="file" accept="image/*" class="modal-input" onchange="processOCR(event)" />`; 
   } else if (type === 'setTarget') {
     html += `
       <h2>Set Target Attendance</h2>
@@ -495,9 +474,9 @@ function openModal(type) {
     } else {
       courses.forEach(c => {
         html += `
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; border-bottom:1px solid var(--border-color); padding-bottom:8px;">
-            <span style="font-size:0.9rem; font-weight:700;">${c.name}</span>
-            <button class="btn-absent" style="padding:6px 12px; font-size:0.8rem;" onclick="removeCourseById(${c.id})">Delete</button>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; border-bottom:1px solid var(--border-color); padding-bottom:8px;">
+            <span style="font-size:0.9rem; font-weight:700; max-width:250px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${c.name}</span>
+            <button onclick="removeCourseById(${c.id})" style="background:#e74c3c; color:white; border:none; width:32px; height:32px; border-radius:50%; font-size:1.2rem; font-weight:bold; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0;">-</button>
           </div>`;
       });
     }

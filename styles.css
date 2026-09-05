@@ -14,12 +14,12 @@ body { background-color: var(--bg-color); color: var(--text-main); transition: b
 .clock-time { font-size: 0.95rem; font-weight: 800; color: #fff; margin-bottom: 2px; }
 .clock-date { font-size: 0.65rem; font-weight: 600; color: #bbb; text-transform: uppercase; }
 
-.sidebar { position: fixed; top: 0; left: -300px; width: 280px; height: 100vh; background-color: var(--card-bg); box-shadow: 2px 0 15px rgba(0,0,0,0.15); transition: left 0.3s; z-index: 1000; padding-top: 80px; }
+/* Updated Sidebar with scrolling enabled */
+.sidebar { position: fixed; top: 0; left: -300px; width: 280px; height: 100vh; background-color: var(--card-bg); box-shadow: 2px 0 15px rgba(0,0,0,0.15); transition: left 0.3s; z-index: 1000; padding-top: 80px; overflow-y: auto; padding-bottom: 40px; }
 .sidebar.open { left: 0; }
 .sidebar ul { list-style: none; display: flex; flex-direction: column; }
 .sidebar li { padding: 18px 25px; border-bottom: 1px solid var(--border-color); cursor: pointer; font-size: 1.1rem; font-weight: 500; color: var(--text-main); }
 
-/* Neumorphic Theme Toggle */
 .theme-toggle-wrapper { padding: 20px 25px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: center; background: var(--card-bg); }
 .neumorphic-toggle { width: 170px; height: 50px; background: #f4f4f9; border-radius: 25px; box-shadow: inset 4px 4px 6px rgba(0,0,0,0.05), inset -4px -4px 6px rgba(255,255,255,0.8); position: relative; cursor: pointer; display: flex; align-items: center; }
 body.dark-mode .neumorphic-toggle { background: #2a2c35; box-shadow: inset 4px 4px 6px rgba(0,0,0,0.3), inset -4px -4px 6px rgba(255,255,255,0.05); }
@@ -44,7 +44,7 @@ body.dark-mode .dark-text { opacity: 1; }
 .spinner { width: 50px; height: 50px; border: 5px solid #f3f3f3; border-top: 5px solid #111; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 20px; }
 @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
-.modal-content { background: var(--card-bg); padding: 30px; border-radius: 16px; width: 100%; max-width: 420px; position: relative; color: var(--text-main); }
+.modal-content { background: var(--card-bg); padding: 30px; border-radius: 16px; width: 100%; max-width: 420px; position: relative; color: var(--text-main); max-height: 85vh; overflow-y: auto; }
 .close-btn { position: absolute; top: 15px; right: 20px; background: none; border: none; font-size: 2rem; color: var(--text-sub); cursor: pointer; }
 .modal-input { width: 100%; padding: 14px; margin-bottom: 20px; border: 2px solid var(--border-color); border-radius: 10px; font-size: 1rem; background: var(--bg-color); color: var(--text-main); }
 
@@ -55,7 +55,6 @@ body.dark-mode .dark-text { opacity: 1; }
 .history-list { max-height: 300px; overflow-y: auto; text-align: left; margin-top: 15px; }
 .history-item { padding: 12px 5px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem;}
 
-/* Full Month Calendar View */
 .month-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding: 0 10px; }
 .month-header h2 { font-size: 1.4rem; font-weight: 800; color: var(--text-main); margin: 0; text-transform: uppercase; }
 .month-nav { background: none; border: none; font-size: 1.2rem; cursor: pointer; color: var(--text-sub); font-weight: bold; padding: 5px 10px; transition: color 0.2s; }
@@ -77,7 +76,6 @@ body.dark-mode .dark-text { opacity: 1; }
 .cal-day:hover:not(.empty):not(.holiday):not(.important) span { background: rgba(0,0,0,0.08); }
 body.dark-mode .cal-day:hover:not(.empty):not(.holiday):not(.important) span { background: rgba(255,255,255,0.1); }
 
-/* Interactive Calendar States */
 .cal-day.present { background: #2ecc71 !important; color: white !important; }
 .cal-day.present span { background: transparent !important; }
 .cal-day.future { opacity: 0.3; cursor: not-allowed !important; }
@@ -118,7 +116,6 @@ body.dark-mode .cal-day:hover:not(.empty):not(.holiday):not(.important) span { b
 .btn-present { background-color: #2ecc71; }
 .btn-absent { background-color: #e74c3c; }
 
-/* Split Screen Setup Mode */
 .split-screen-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: var(--bg-color); z-index: 2000; display: none; flex-direction: column; }
 .split-screen-overlay.active { display: flex; }
 .split-top { flex: 1; position: relative; background: #222; overflow: hidden; display: flex; justify-content: center; align-items: center; border-bottom: 3px solid var(--border-color); }

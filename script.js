@@ -1,8 +1,8 @@
-const DB_KEY = 'attendance_tracker_v16';
-const HISTORY_KEY = 'attendance_history_v16';
-const CALENDAR_KEY = 'academic_calendar_v16';
-const MARKED_DATES_KEY = 'marked_dates_v16';
-const MANUAL_SHOWN_KEY = 'appManualShown_v16';
+const DB_KEY = 'attendance_tracker_v17';
+const HISTORY_KEY = 'attendance_history_v17';
+const CALENDAR_KEY = 'academic_calendar_v17';
+const MARKED_DATES_KEY = 'marked_dates_v17';
+const MANUAL_SHOWN_KEY = 'appManualShown_v17';
 
 let targetPercentage = parseInt(localStorage.getItem('target_percentage')) || 75;
 let courses = loadFromDatabase();
@@ -124,6 +124,50 @@ function updateHolidayButton() {
     btn.classList.remove('active'); 
     btn.innerText = 'Mark Today Holiday'; 
   }
+}
+
+// ---- DYNAMIC CALENDAR ATTENDANCE CALCULATOR ----
+// Automatically totals absent and present days starting from Term Start to Today
+function getCalculatedAttendance() {
+  let calc = {};
+  courses.forEach(c => calc[c.id] = { p: 0, a: 0 });
+
+  if (academicCalendar && academicCalendar.startDate) {
+    let currDate = new Date(academicCalendar.startDate);
+    currDate.setHours(0, 0, 0, 0);
+    
+    let endDate = new Date(getTodayDateString());
+    endDate.setHours(0, 0, 0, 0);
+    
+    if (academicCalendar.endDate) {
+      let termEnd = new Date(academicCalendar.endDate);
+      termEnd.setHours(0, 0, 0, 0);
+      if (termEnd < endDate) endDate = termEnd;
+    }
+
+    while(currDate <= endDate) {
+      const dateStr = `${currDate.getFullYear()}-${String(currDate.getMonth() + 1).padStart(2, '0')}-${String(currDate.getDate()).padStart(2, '0')}`;
+      const dayName = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][currDate.getDay()];
+
+      const isHoliday = academicCalendar.holidays && academicCalendar.holidays.includes(dateStr);
+      const isMarked = markedDates.includes(dateStr);
+
+      if (!isHoliday) {
+        courses.forEach(course => {
+          if (course.schedule && course.schedule[dayName]) {
+            const classesThatDay = course.schedule[dayName].length;
+            if (isMarked) {
+              calc[course.id].p += classesThatDay; // Present
+            } else {
+              calc[course.id].a += classesThatDay; // Automatically Absent!
+            }
+          }
+        });
+      }
+      currDate.setDate(currDate.getDate() + 1);
+    }
+  }
+  return calc;
 }
 
 let setupBlobUrl = null;
@@ -256,48 +300,32 @@ function changeCalendarMonth(dir) {
   openModal('calendarMode');
 }
 
+// Simplified function: Only modifies the array, rendering engine handles the math automatically
 function toggleFullDayPresent(dateString) {
+  if (!academicCalendar || !academicCalendar.startDate) {
+    alert("Please sync your Academic Calendar first to set the term start date."); return;
+  }
+  if (dateString < academicCalendar.startDate) {
+    alert("You cannot mark attendance for days before the term started."); return;
+  }
+  
   const todayStr = getTodayDateString();
-  
   if (dateString > todayStr) {
-    alert("You cannot mark attendance for future dates.");
-    return;
+    alert("You cannot mark attendance for future dates."); return;
   }
 
-  const dateObj = new Date(dateString);
-  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const dayName = days[dateObj.getDay()];
-  let classesUpdated = 0;
-  
   const isAlreadyMarked = markedDates.includes(dateString);
-
-  courses.forEach(course => {
-    if (course.schedule && course.schedule[dayName]) {
-      course.schedule[dayName].forEach(() => { 
-        if (isAlreadyMarked) {
-          course.present = Math.max(0, course.present - 1); 
-        } else {
-          course.present += 1; 
-        }
-        classesUpdated += 1; 
-      });
-    }
-  });
-
-  if (classesUpdated > 0) {
-    if (isAlreadyMarked) {
-      markedDates = markedDates.filter(d => d !== dateString);
-      addHistory(`Reversed Full Day: ${dateString}`);
-    } else {
-      markedDates.push(dateString);
-      addHistory(`Full Day Present: ${dateString}`);
-    }
-    saveToDatabase(); 
-    openModal('calendarMode'); 
-    renderUI(); 
-  } else { 
-    alert("No classes scheduled for this day."); 
+  if (isAlreadyMarked) {
+    markedDates = markedDates.filter(d => d !== dateString);
+    addHistory(`Unmarked Day: ${dateString}`);
+  } else {
+    markedDates.push(dateString);
+    addHistory(`Marked Day Present: ${dateString}`);
   }
+  
+  saveToDatabase(); 
+  openModal('calendarMode'); 
+  renderUI(); 
 }
 
 function toggleMenu() { 
@@ -324,19 +352,19 @@ function openModal(type) {
       <div style="max-height: 60vh; overflow-y: auto; padding-right: 10px; text-align: left;">
         <div class="manual-section" style="margin-bottom:15px;">
           <h3 style="font-size:1rem; margin-bottom:4px;">1. Getting Started</h3>
-          <p style="font-size:0.85rem; color:var(--text-sub);">The app starts completely empty. Go to the sidebar menu and select <b>Upload Timetable (OCR)</b> to scan your schedule.</p>
+          <p style="font-size:0.85rem; color:var(--text-sub);">The app starts empty. Use <b>Upload Timetable (OCR)</b> to scan your schedule.</p>
         </div>
         <div class="manual-section" style="margin-bottom:15px;">
-          <h3 style="font-size:1rem; margin-bottom:4px;">2. Academic Calendar Setup</h3>
-          <p style="font-size:0.85rem; color:var(--text-sub);">Upload your academic calendar PDF or photo to enter side-by-side mode. Tap dates on the bottom grid: <b>1 tap = Red (Holiday)</b>, <b>2 taps = Blue (Important)</b>.</p>
+          <h3 style="font-size:1rem; margin-bottom:4px;">2. Set Term & Calendar</h3>
+          <p style="font-size:0.85rem; color:var(--text-sub);"><b>CRITICAL:</b> Upload your calendar to set the <b>Term Start Date</b>. The app will automatically mark you absent for every scheduled class between the start date and today unless marked green.</p>
         </div>
         <div class="manual-section" style="margin-bottom:15px;">
-          <h3 style="font-size:1rem; margin-bottom:4px;">3. Batch Mark Attendance</h3>
-          <p style="font-size:0.85rem; color:var(--text-sub);">Tap the clock in the top right to open the monthly view. Tap any past/present date to turn it <b>Green (Present)</b> and automatically increment all classes scheduled for that day. Tap again to undo.</p>
+          <h3 style="font-size:1rem; margin-bottom:4px;">3. Daily Tracking</h3>
+          <p style="font-size:0.85rem; color:var(--text-sub);">Tap the clock icon. Tap any past/present date to turn it <b>Green (Present)</b>. Future dates and pre-term dates are locked.</p>
         </div>
         <div class="manual-section" style="margin-bottom:15px;">
-          <h3 style="font-size:1rem; margin-bottom:4px;">4. Bunk Meter & Tracking</h3>
-          <p style="font-size:0.85rem; color:var(--text-sub);">Set your target percentage in the menu (e.g., 75% or 85%). Each card displays your status: safe bunks remaining or the exact number of classes you must attend.</p>
+          <h3 style="font-size:1rem; margin-bottom:4px;">4. Bunk Meter</h3>
+          <p style="font-size:0.85rem; color:var(--text-sub);">Set your target percentage in the menu. Each card displays safe bunks remaining or the exact number of classes you must attend.</p>
         </div>
       </div>`;
   } else if (type === 'historyLog') {
@@ -394,9 +422,10 @@ function openModal(type) {
 
         const isSunday = new Date(year, month, i).getDay() === 0 ? 'sunday' : '';
         const isFuture = dateStr > todayStr ? 'future' : '';
+        const isBeforeStart = dateStr < academicCalendar.startDate ? 'future' : ''; // Visually lock out pre-term dates
         const isMarked = markedDates.includes(dateStr) ? 'present' : '';
         
-        html += `<div class="cal-day ${statusClass} ${isSunday} ${isFuture} ${isMarked}" onclick="toggleFullDayPresent('${dateStr}')"><span>${i}</span></div>`;
+        html += `<div class="cal-day ${statusClass} ${isSunday} ${isFuture} ${isBeforeStart} ${isMarked}" onclick="toggleFullDayPresent('${dateStr}')"><span>${i}</span></div>`;
       }
       
       html += `</div>
@@ -492,10 +521,14 @@ function loadCourseToEdit() {
   const course = courses.find(c => c.id === parseInt(select.value, 10));
   if (!course) return;
   
-  const total = course.present + course.absent;
-  const percent = total === 0 ? 0 : Math.round((course.present / total) * 100);
+  const baseStats = getCalculatedAttendance();
+  const totalPresent = baseStats[course.id].p + course.present;
+  const totalAbsent = baseStats[course.id].a + course.absent;
   
-  document.getElementById('editPresent').value = course.present;
+  const total = totalPresent + totalAbsent;
+  const percent = total === 0 ? 0 : Math.round((totalPresent / total) * 100);
+  
+  document.getElementById('editPresent').value = totalPresent;
   document.getElementById('editTotal').value = total;
   document.getElementById('editPercent').value = percent;
 }
@@ -531,10 +564,13 @@ function saveSingleCourseAttendance() {
   
   if (p > t) t = p;
 
-  course.present = Math.max(0, p);
-  course.absent = Math.max(0, t - p);
+  const baseStats = getCalculatedAttendance();
+  
+  // Calculate the manual offset required to reach user's desired total
+  course.present = p - baseStats[course.id].p;
+  course.absent = (t - p) - baseStats[course.id].a;
 
-  addHistory(`Edited: ${course.name} (P:${course.present}, Total:${t})`);
+  addHistory(`Edited: ${course.name} (Now P:${p}, Total:${t})`);
   saveToDatabase();
   renderUI();
   alert(`Attendance updated for ${course.name}`);
@@ -650,9 +686,15 @@ function renderUI() {
   }
 
   const holidayMode = isTodayHoliday();
+  const baseStats = getCalculatedAttendance();
+
   courses.forEach(course => {
-    const total = course.present + course.absent;
-    const percentage = total === 0 ? 0 : Math.round((course.present / total) * 100);
+    // Dynamic Merge: Base Calendar Calculation + User's Manual Overrides
+    const totalPresent = baseStats[course.id].p + course.present;
+    const totalAbsent = baseStats[course.id].a + course.absent;
+    const total = totalPresent + totalAbsent;
+    
+    const percentage = total === 0 ? 0 : Math.round((totalPresent / total) * 100);
     const dashOffset = (2 * Math.PI * 38) - ((percentage / 100) * (2 * Math.PI * 38));
     let actionHTML = holidayMode 
       ? `<div class="action-bar" id="action-${course.id}"><span style="font-weight: 800; color: #e74c3c;">HOLIDAY</span></div>` 
@@ -671,7 +713,7 @@ function renderUI() {
           <div class="course-info">
             <h2>${course.name}</h2>
             <p>Total Classes: ${total}</p>
-            ${getBunkStatus(course.present, course.absent)}
+            ${getBunkStatus(totalPresent, totalAbsent)}
           </div>
         </div>
         ${actionHTML}
@@ -679,11 +721,12 @@ function renderUI() {
   });
 }
 
+// These are now treated as manual offset overrides on top of the calculated calendar baseline
 function markAttendance(id, status) {
   const course = courses.find(c => c.id === id);
   if (status === 'present') course.present += 1;
   if (status === 'absent') course.absent += 1;
-  addHistory(`${status.toUpperCase()}: ${course.name}`);
+  addHistory(`Manual ${status.toUpperCase()}: ${course.name}`);
   toggleActionBar(id); 
   saveToDatabase(); 
   renderUI();    

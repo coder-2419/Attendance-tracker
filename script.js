@@ -1,8 +1,8 @@
-const DB_KEY = 'attendance_tracker_v17';
-const HISTORY_KEY = 'attendance_history_v17';
-const CALENDAR_KEY = 'academic_calendar_v17';
-const MARKED_DATES_KEY = 'marked_dates_v17';
-const MANUAL_SHOWN_KEY = 'appManualShown_v17';
+const DB_KEY = 'attendance_tracker_v18';
+const HISTORY_KEY = 'attendance_history_v18';
+const CALENDAR_KEY = 'academic_calendar_v18';
+const MARKED_DATES_KEY = 'marked_dates_v18';
+const MANUAL_SHOWN_KEY = 'appManualShown_v18';
 
 let targetPercentage = parseInt(localStorage.getItem('target_percentage')) || 75;
 let courses = loadFromDatabase();
@@ -30,20 +30,23 @@ function getTodayDateString() {
   return `${now.getFullYear()}-${(now.getMonth()+1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
 }
 
+// 100% Corrected Schedule mapped exactly to your image
 const masterScheduleMap = {
   '25CIV104': { name: 'Environmental Science', schedule: { Monday: [{ start: '09:00', end: '09:55' }], Tuesday: [{ start: '13:10', end: '14:25' }] } },
-  '25ECE111': { name: 'Basic Electronics', schedule: { Monday: [{ start: '09:55', end: '10:50' }], Thursday: [{ start: '09:55', end: '10:50' }], Saturday: [{ start: '09:00', end: '09:55' }] } },
-  '25PHY102': { name: 'Quantum Computing', schedule: { Monday: [{ start: '11:00', end: '11:55' }], Tuesday: [{ start: '09:00', end: '10:50' }, { start: '14:25', end: '15:20' }], Wednesday: [{ start: '09:55', end: '10:50' }], Thursday: [{ start: '13:10', end: '14:25' }], Saturday: [{ start: '09:55', end: '10:50' }] } },
+  '25ECE111': { name: 'Basic Electronics', schedule: { Monday: [{ start: '09:55', end: '10:50' }], Tuesday: [{ start: '11:55', end: '12:50' }], Thursday: [{ start: '09:55', end: '10:50' }], Saturday: [{ start: '09:00', end: '09:55' }] } },
+  '25PHY102': { name: 'Physics / Quantum Computing', schedule: { Monday: [{ start: '11:00', end: '11:55' }], Tuesday: [{ start: '09:00', end: '10:50' }, { start: '14:25', end: '15:20' }], Wednesday: [{ start: '09:55', end: '10:50' }], Saturday: [{ start: '09:55', end: '10:50' }] } },
   '25MAT103': { name: 'Advanced Calculus', schedule: { Monday: [{ start: '11:55', end: '12:50' }], Wednesday: [{ start: '11:55', end: '12:50' }], Thursday: [{ start: '09:00', end: '09:55' }], Friday: [{ start: '09:55', end: '10:50' }], Saturday: [{ start: '11:00', end: '11:55' }] } },
   '25CSE103': { name: 'Problem Solving (Prog)', schedule: { Monday: [{ start: '13:10', end: '14:25' }], Thursday: [{ start: '11:55', end: '12:50' }], Friday: [{ start: '09:00', end: '09:55' }, { start: '11:00', end: '12:50' }], Saturday: [{ start: '11:55', end: '12:50' }] } },
   '25HSS131': { name: 'Communicative English', schedule: { Monday: [{ start: '14:25', end: '15:20' }] } },
   '25HSS132': { name: 'Knowing Yourself', schedule: { Tuesday: [{ start: '11:00', end: '11:55' }], Wednesday: [{ start: '11:00', end: '11:55' }], Thursday: [{ start: '11:00', end: '11:55' }] } },
   '25BTY111': { name: 'Biology for Engineers', schedule: { Wednesday: [{ start: '09:00', end: '09:55' }] } },
   '25PHYY102': { name: 'Physics Alt Lab', schedule: { Wednesday: [{ start: '13:10', end: '14:25' }] } },
-  '25MAT107': { name: 'Math Numerical Methods', schedule: { Wednesday: [{ start: '14:25', end: '15:20' }] } },
+  '25MAT107': { name: 'Math Numerical Methods', schedule: { Wednesday: [{ start: '14:25', end: '16:15' }] } },
   '25MEC122': { name: 'Mechanical Workshop', schedule: { Thursday: [{ start: '14:25', end: '16:15' }] } },
   '25HSS102': { name: 'Universal Human Values', schedule: { Friday: [{ start: '13:10', end: '15:20' }] } },
-  '25HSS101': { name: 'Constitution of India', schedule: { Friday: [{ start: '15:20', end: '16:15' }] } }
+  '25HSS101': { name: 'Constitution of India', schedule: { Friday: [{ start: '15:20', end: '16:15' }] } },
+  'LIBRARY': { name: 'Library', schedule: { Tuesday: [{ start: '15:20', end: '16:15' }] } },
+  'MENTORING': { name: 'Mentoring / CT Interaction', schedule: { Saturday: [{ start: '13:10', end: '16:15' }] } }
 };
 
 function buildInitialDatabase() {
@@ -192,7 +195,6 @@ function startCalendarSetup() {
   const previewWrapper = document.getElementById('previewWrapper');
   const isImage = file.type.match(/image/i) || file.name.match(/\.(jpg|jpeg|png|gif|webp|heic)$/i);
   
-  // Clear any existing touch events to prevent memory leaks
   previewWrapper.ontouchstart = null;
   previewWrapper.ontouchmove = null;
   previewWrapper.ontouchend = null;
@@ -200,7 +202,6 @@ function startCalendarSetup() {
   if (isImage) {
     previewWrapper.innerHTML = `<img id="setupImagePreview" src="${setupBlobUrl}" style="position:absolute; top:0; left:0; width:100%; height:100%; object-fit:contain; display:block; transform-origin:center;" alt="Calendar Preview" />`;
     
-    // Custom Native Pinch-to-Zoom and Drag Logic
     const img = document.getElementById('setupImagePreview');
     let scale = 1, posX = 0, posY = 0;
     let startX, startY, initialDist;
@@ -215,10 +216,10 @@ function startCalendarSetup() {
     };
 
     previewWrapper.ontouchmove = (e) => {
-      e.preventDefault(); // Stop mobile screen from scrolling
+      e.preventDefault(); 
       if (e.touches.length === 2) {
         const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-        scale = Math.min(Math.max(1, scale * (dist / initialDist)), 6); // Allow zoom between 1x and 6x
+        scale = Math.min(Math.max(1, scale * (dist / initialDist)), 6); 
         initialDist = dist;
       } else if (e.touches.length === 1 && scale > 1) {
         posX = e.touches[0].clientX - startX;
@@ -228,7 +229,6 @@ function startCalendarSetup() {
     };
 
     previewWrapper.ontouchend = () => {
-      // Smart Snap-back if zoomed out fully
       if (scale <= 1) {
         scale = 1; posX = 0; posY = 0;
         img.style.transition = 'transform 0.2s ease';

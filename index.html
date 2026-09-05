@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Attendance Tracker</title>
   <link rel="stylesheet" href="styles.css?v=23">
   <link rel="manifest" href="manifest.json">
@@ -30,6 +30,16 @@
     </div>
 
     <ul>
+      <!-- New 3D Refresh Button -->
+      <li class="refresh-menu-item" onclick="forceRefreshApp()">
+        <div class="btn-3d-refresh">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+            <polyline points="3 3 3 8 8 8"></polyline>
+          </svg>
+        </div>
+        <span style="font-weight: 800; color: #0d6efd;">Force Refresh App</span>
+      </li>
       <li onclick="openModal('userManual')">How to Use the App</li>
       <li onclick="openModal('historyLog')">View History Log</li>
       <li onclick="openModal('setupCalendar')">Sync Academic Calendar</li>
@@ -75,6 +85,7 @@
     </div>
     
     <div id="liveClassContainer"></div>
+    
     <div id="courseList" class="course-list-container"></div>
   </main>
 

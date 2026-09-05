@@ -1,8 +1,8 @@
-const DB_KEY = 'attendance_tracker_v22';
-const HISTORY_KEY = 'attendance_history_v22';
-const CALENDAR_KEY = 'academic_calendar_v22';
-const MARKED_DATES_KEY = 'marked_dates_v22';
-const MANUAL_SHOWN_KEY = 'appManualShown_v22';
+const DB_KEY = 'attendance_tracker_v23';
+const HISTORY_KEY = 'attendance_history_v23';
+const CALENDAR_KEY = 'academic_calendar_v23';
+const MARKED_DATES_KEY = 'marked_dates_v23';
+const MANUAL_SHOWN_KEY = 'appManualShown_v23';
 
 let targetPercentage = parseInt(localStorage.getItem('target_percentage')) || 75;
 let historyLog = JSON.parse(localStorage.getItem(HISTORY_KEY)) || [];
@@ -16,6 +16,12 @@ if(localStorage.getItem('darkMode') === 'true') document.body.classList.add('dar
 function toggleDarkMode() {
   document.body.classList.toggle('dark-mode');
   localStorage.setItem('darkMode', document.body.classList.contains('dark-mode'));
+}
+
+// Bypasses sticky PWA caches by injecting a unique timestamp request into the URL
+function forceRefreshApp() {
+  const currentUrl = window.location.href.split('?')[0];
+  window.location.href = currentUrl + '?v=' + new Date().getTime();
 }
 
 function getTodayString() {
@@ -130,7 +136,6 @@ function updateHolidayButton() {
   }
 }
 
-// Smart Base Attendance: Up to the minute accurate
 function getCalculatedAttendance() {
   let calc = {};
   courses.forEach(c => calc[c.id] = { p: 0, a: 0 });
@@ -166,7 +171,6 @@ function getCalculatedAttendance() {
               if (isMarked) {
                 calc[course.id].p += 1; 
               } else {
-                // Only count as auto-absent if it is a past day OR the class has started today
                 if (!isTodayLoop || nowStr >= slot.start) {
                   calc[course.id].a += 1; 
                 }
@@ -748,7 +752,6 @@ function renderUI() {
     }
   }
 
-  // --- LIVE CLASS ACTION INJECTION ---
   let liveClassHTML = '';
   if (isToday && !isTodayHoliday()) {
     const todayStr = getTodayDateString();
@@ -782,7 +785,6 @@ function renderUI() {
   const liveContainer = document.getElementById('liveClassContainer');
   if (liveContainer) liveContainer.innerHTML = liveClassHTML;
 
-  // --- COURSE LIST RENDERING ---
   const listContainer = document.getElementById('courseList');
   listContainer.innerHTML = '';
   if (courses.length === 0) { 

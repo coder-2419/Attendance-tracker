@@ -1,7 +1,13 @@
 :root { --bg-color: #f4f4f9; --card-bg: #ffffff; --text-main: #222222; --text-sub: #777777; --border-color: #eeeeee; --header-shadow: rgba(0,0,0,0.08); }
 body.dark-mode { --bg-color: #121212; --card-bg: #1e1e1e; --text-main: #ffffff; --text-sub: #aaaaaa; --border-color: #333333; --header-shadow: rgba(0,0,0,0.5); }
 * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
-body { background-color: var(--bg-color); color: var(--text-main); transition: background-color 0.3s; overflow-x: hidden; }
+
+/* Kills native pull-to-refresh on mobile browsers */
+html, body { 
+  background-color: var(--bg-color); color: var(--text-main); transition: background-color 0.3s; 
+  overflow-x: hidden; 
+  overscroll-behavior-y: none; 
+}
 
 .header { display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; background-color: var(--card-bg); box-shadow: 0 2px 10px var(--header-shadow); position: sticky; top: 0; z-index: 10; transition: background-color 0.3s; }
 .header-left, .header-right { flex: 1; display: flex; align-items: center; }
@@ -18,6 +24,11 @@ body { background-color: var(--bg-color); color: var(--text-main); transition: b
 .sidebar.open { left: 0; }
 .sidebar ul { list-style: none; display: flex; flex-direction: column; }
 .sidebar li { padding: 18px 25px; border-bottom: 1px solid var(--border-color); cursor: pointer; font-size: 1.1rem; font-weight: 500; color: var(--text-main); }
+
+/* --- 3D Refresh Button Styles --- */
+.refresh-menu-item { display: flex; align-items: center; gap: 15px; background: rgba(13, 110, 253, 0.05); }
+.btn-3d-refresh { width: 38px; height: 38px; border-radius: 50%; display: flex; justify-content: center; align-items: center; background: #0d6efd; background: linear-gradient(145deg, #2b84ff, #0a58ca); box-shadow: inset 2px 2px 4px rgba(255,255,255,0.4), 2px 4px 8px rgba(0,0,0,0.2); }
+.btn-3d-refresh svg { width: 20px; height: 20px; }
 
 .theme-toggle-wrapper { padding: 20px 25px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: center; background: var(--card-bg); }
 .neumorphic-toggle { width: 170px; height: 50px; background: #f4f4f9; border-radius: 25px; box-shadow: inset 4px 4px 6px rgba(0,0,0,0.05), inset -4px -4px 6px rgba(255,255,255,0.8); position: relative; cursor: pointer; display: flex; align-items: center; }
@@ -88,46 +99,14 @@ body.dark-mode .cal-day:hover:not(.empty):not(.holiday):not(.important) span { b
 .day-selector button { background: var(--card-bg); border: 1px solid var(--border-color); padding: 8px 16px; border-radius: 20px; font-weight: 700; color: var(--text-sub); cursor: pointer; white-space: nowrap; transform: translateZ(0); }
 .day-selector button.active-day { background: #3498db; color: white; border-color: #3498db; }
 
-/* --- TIMELINE CAROUSEL & SCROLLING UPGRADES --- */
-.timetable-bar { 
-  display: flex; gap: 15px; overflow-x: auto; position: relative;
-  padding: 10px calc(50% - 100px) 25px calc(50% - 100px); /* Mathematically forces the first/last card to stop in the center of the screen */
-  -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; 
-  scroll-snap-type: x mandatory; scrollbar-width: none; 
-  will-change: scroll-position; 
-}
+.timetable-bar { display: flex; gap: 15px; overflow-x: auto; padding-bottom: 15px; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; scrollbar-width: none; scroll-padding-left: 2px; will-change: scroll-position; }
 .timetable-bar::-webkit-scrollbar { display: none; }
-
-.timeline-card { 
-  min-width: 180px; background: var(--card-bg); padding: 15px; border-radius: 12px; 
-  border: 1px solid var(--border-color); border-left: 4px solid #3498db; flex-shrink: 0; 
-  scroll-snap-align: center; /* Snaps the scrolling directly to the center of the card */
-  transform: translateZ(0) scale(0.92); /* Shrinks non-active cards slightly */
-  opacity: 0.7; /* Fades upcoming cards naturally */
-  transition: all 0.5s cubic-bezier(0.25, 0.8, 0.25, 1); 
-  will-change: transform, opacity; 
-}
-
-/* The Live Period pops out into the foreground */
-.timeline-card.active { 
-  border-left-color: #2ecc71; 
-  opacity: 1; 
-  transform: translateZ(0) scale(1.05); 
-  box-shadow: 0 10px 25px rgba(46, 204, 113, 0.25); 
-  z-index: 2; 
-}
-
-/* Past periods shrink deeper into the background */
-.timeline-card.past { 
-  border-left-color: var(--border-color); 
-  opacity: 0.3; 
-  transform: translateZ(0) scale(0.85); 
-}
-
+.timeline-card { min-width: 180px; background: var(--card-bg); padding: 15px; border-radius: 12px; border: 1px solid var(--border-color); border-left: 4px solid #3498db; flex-shrink: 0; scroll-snap-align: start; transform: translateZ(0); will-change: transform; }
+.timeline-card.active { border-left-color: #2ecc71; }
+.timeline-card.past { border-left-color: var(--border-color); opacity: 0.6; }
 .timeline-time { font-size: 0.8rem; font-weight: 700; margin-bottom: 6px; }
 .timeline-course { font-size: 0.95rem; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-/* --- LIVE CLASS PROMPT --- */
 .live-prompt-card { display: flex; justify-content: space-between; align-items: center; background: var(--card-bg); border: 2px solid #3498db; border-radius: 16px; padding: 18px 20px; margin-bottom: 25px; box-shadow: 0 4px 15px rgba(52, 152, 219, 0.2); animation: pulse-border 2s infinite; }
 @keyframes pulse-border { 0% { box-shadow: 0 0 0 0 rgba(52, 152, 219, 0.4); } 70% { box-shadow: 0 0 0 10px rgba(52, 152, 219, 0); } 100% { box-shadow: 0 0 0 0 rgba(52, 152, 219, 0); } }
 .live-info { display: flex; align-items: center; gap: 12px; overflow: hidden; }

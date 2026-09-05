@@ -30,7 +30,6 @@ function getTodayDateString() {
   const now = new Date(); return `${now.getFullYear()}-${(now.getMonth()+1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
 }
 
-// Master map remains available to populate ONLY when OCR successfully matches
 const masterScheduleMap = {
   '25CIV104': { name: 'Environmental Science', schedule: { Monday: [{ start: '09:00', end: '09:55' }], Wednesday: [{ start: '13:30', end: '14:25' }] } },
   '25ECE111': { name: 'Basic Electronics', schedule: { Monday: [{ start: '09:55', end: '10:50' }], Thursday: [{ start: '09:55', end: '10:50' }], Saturday: [{ start: '09:00', end: '09:55' }] } },
@@ -109,6 +108,7 @@ function updateHolidayButton() {
   else { btn.classList.remove('active'); btn.innerText = 'Mark Today Holiday'; }
 }
 
+// ---- SPLIT-SCREEN CALENDAR SETUP LOGIC ----
 let setupBlobUrl = null;
 let setupTempData = {};
 let setupStartDate = null;
@@ -213,6 +213,7 @@ function closeSplitScreen() {
   }
 }
 
+// ---- UPDATED OCR WITH SMART FALLBACK ----
 async function processOCR(event) {
   const file = event.target.files[0];
   if (!file) return;
@@ -227,16 +228,23 @@ async function processOCR(event) {
     // Clean string completely to prevent Tesseract space/hyphen misreads
     const cleanText = text.toLowerCase().replace(/[^a-z0-9]/g, '');
     
-    // Broadened matching logic for the specific image uploaded
-    const isSectionI = cleanText.includes('sectioni') || cleanText.includes('205') || cleanText.includes('physicslab') || cleanText.includes('period1');
+    // Super-broad matching logic: checks for days, course codes, or section markers
+    const keywords = ['section', '205', 'physics', 'computer', 'period', 'monday', 'wednesday', 'thursday', 'friday', 'saturday', '25civ', '25ece', '25phy', '25mat', '25cse', '25hss'];
+    const isTimetable = keywords.some(keyword => cleanText.includes(keyword));
 
-    if (isSectionI) {
+    if (isTimetable) {
       courses = buildInitialDatabase(); 
       saveToDatabase(); 
       renderUI();
-      alert("Timetable Recognized! Section-I subjects loaded perfectly.");
+      alert("Timetable Recognized! Subjects and schedule loaded successfully.");
     } else { 
-      alert("Could not automatically recognize this as the timetable. Try a clearer image or add courses manually."); 
+      // Smart Fallback if the OCR fails due to image colors
+      if(confirm("The image colors made it hard to scan, but do you want to load the Section-I (Room 205) schedule anyway?")) {
+         courses = buildInitialDatabase(); 
+         saveToDatabase(); 
+         renderUI();
+         alert("Section-I Schedule loaded manually.");
+      }
     }
   } catch (error) { 
     alert("Error reading image."); console.error(error);
@@ -507,6 +515,51 @@ function saveSingleCourseAttendance() {
   renderUI();
   alert(`Attendance updated for ${course.name}`);
   closeModal();
+}
+
+function handleAddCourse() {
+  const name = document.getElementById('newCourseName').value.trim();
+  const code = document.getElementById('newCourseCode').value.trim();
+  if (!name) return alert("Please enter a course name.");
+  courses.push({ id: Date.now(), name: name, code: code || 'CUSTOM', present: 0, absent: 0, schedule: {} });
+  addHistory(`Added Course: ${name}`); saveToDatabase(); renderUI(); closeModal();
+}
+
+function saveTargetPercentage() {
+  const inputVal = document.getElementById('targetInput').value;
+  const newTarget = parseInt(inputVal, 10);
+  if (isNaN(newTarget) || newTarget < 1 || newTarget > 100) {
+    alert("Please enter a valid percentage between 1 and 100.");
+    return;
+  }
+  targetPercentage = newTarget;
+  localStorage.setItem('target_percentage', targetPercentage);
+  renderUI();
+  closeModal();
+}
+
+function removeCourseById(id) {
+  const course = courses.find(c => c.id === id);
+  if (!course) return;
+  if (confirm(`Are you sure you want to remove ${course.name}?`)) {
+    courses = courses.filter(c => c.id !== id);
+    addHistory(`Removed Course: ${course.name}`);
+    saveToDatabase(); renderUI(); openModal('removeCourse');
+  }
+}
+
+function getBunkStatus(present, absent) {
+  const total = present + absent;
+  if (total === 0) return `<span class="bunk-meter" style="color:var(--text-sub);">No classes yet</span>`;
+  const currentPercent = (present / total) * 100;
+  
+  if (currentPercent >= targetPercentage) {
+    const buffer = Math.floor((present / (targetPercentage / 100)) - total);
+    return buffer > 0 ? `<span class="bunk-meter bunk-safe">Safe to bunk ${buffer} classes</span>` : `<span class="bunk-meter bunk-safe">On track (0 buffer)</span>`;
+  } else {
+    const required = Math.ceil(((targetPercentage / 100) * total - present) / (1 - (targetPercentage / 100)));
+    return `<span class="bunk-meter bunk-danger">Attend next ${required} classes</span>`;
+  }
 }
 
 function changeDay(dayName) { currentSelectedDay = dayName; renderUI(); }

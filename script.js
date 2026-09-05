@@ -1,11 +1,10 @@
-const DB_KEY = 'attendance_tracker_v20';
-const HISTORY_KEY = 'attendance_history_v20';
-const CALENDAR_KEY = 'academic_calendar_v20';
-const MARKED_DATES_KEY = 'marked_dates_v20';
-const MANUAL_SHOWN_KEY = 'appManualShown_v20';
+const DB_KEY = 'attendance_tracker_v21';
+const HISTORY_KEY = 'attendance_history_v21';
+const CALENDAR_KEY = 'academic_calendar_v21';
+const MARKED_DATES_KEY = 'marked_dates_v21';
+const MANUAL_SHOWN_KEY = 'appManualShown_v21';
 
 let targetPercentage = parseInt(localStorage.getItem('target_percentage')) || 75;
-let courses = loadFromDatabase();
 let historyLog = JSON.parse(localStorage.getItem(HISTORY_KEY)) || [];
 let academicCalendar = JSON.parse(localStorage.getItem(CALENDAR_KEY)) || null;
 let markedDates = JSON.parse(localStorage.getItem(MARKED_DATES_KEY)) || [];
@@ -30,23 +29,21 @@ function getTodayDateString() {
   return `${now.getFullYear()}-${(now.getMonth()+1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
 }
 
-// Perfectly synced to the Room 205 image provided
+// 100% accurate map based on your manual input
 const masterScheduleMap = {
-  '25CIV104': { name: 'Environmental Science', schedule: { Monday: [{ start: '09:00', end: '09:55' }], Tuesday: [{ start: '13:10', end: '14:25' }] } },
+  '25CIV104': { name: 'Environmental Science and Sustainability', schedule: { Monday: [{ start: '09:00', end: '09:55' }], Tuesday: [{ start: '13:30', end: '14:25' }] } },
   '25ECE111': { name: 'Basic Electronics', schedule: { Monday: [{ start: '09:55', end: '10:50' }], Tuesday: [{ start: '11:55', end: '12:50' }], Thursday: [{ start: '09:55', end: '10:50' }], Saturday: [{ start: '09:00', end: '09:55' }] } },
-  '25PHY102': { name: 'Physics / Quantum Computing', schedule: { Monday: [{ start: '11:00', end: '11:55' }], Tuesday: [{ start: '09:00', end: '10:50' }, { start: '14:25', end: '15:20' }], Wednesday: [{ start: '09:55', end: '10:50' }], Saturday: [{ start: '09:55', end: '10:50' }] } },
+  '25PHY102': { name: 'Quantum Computing and Modern Physics', schedule: { Monday: [{ start: '11:00', end: '11:55' }], Tuesday: [{ start: '14:25', end: '15:20' }], Wednesday: [{ start: '09:55', end: '10:50' }, { start: '13:30', end: '14:25' }], Saturday: [{ start: '09:55', end: '10:50' }] } },
   '25MAT103': { name: 'Advanced Calculus', schedule: { Monday: [{ start: '11:55', end: '12:50' }], Wednesday: [{ start: '11:55', end: '12:50' }], Thursday: [{ start: '09:00', end: '09:55' }], Friday: [{ start: '09:55', end: '10:50' }], Saturday: [{ start: '11:00', end: '11:55' }] } },
-  '25CSE103': { name: 'Problem Solving (Prog)', schedule: { Monday: [{ start: '13:10', end: '14:25' }], Thursday: [{ start: '11:55', end: '12:50' }], Friday: [{ start: '09:00', end: '09:55' }, { start: '11:00', end: '12:50' }], Saturday: [{ start: '11:55', end: '12:50' }] } },
-  '25HSS131': { name: 'Communicative English', schedule: { Monday: [{ start: '14:25', end: '15:20' }] } },
-  '25HSS132': { name: 'Knowing Yourself', schedule: { Tuesday: [{ start: '11:00', end: '11:55' }], Wednesday: [{ start: '11:00', end: '11:55' }], Thursday: [{ start: '11:00', end: '11:55' }] } },
+  '25CSE103': { name: 'Problem Solving Through Programming', schedule: { Monday: [{ start: '13:30', end: '14:25' }], Thursday: [{ start: '11:55', end: '12:50' }], Friday: [{ start: '09:00', end: '09:55' }], Saturday: [{ start: '11:55', end: '12:50' }] } },
+  '25HSS131': { name: 'Communicative English', schedule: { Monday: [{ start: '14:25', end: '15:20' }], Tuesday: [{ start: '11:00', end: '11:55' }], Thursday: [{ start: '11:00', end: '11:55' }] } },
+  'PHYSICS_LAB': { name: 'Physics Lab', schedule: { Tuesday: [{ start: '09:00', end: '10:50' }] } },
   '25BTY111': { name: 'Biology for Engineers', schedule: { Wednesday: [{ start: '09:00', end: '09:55' }] } },
-  '25PHYY102': { name: 'Physics Alt Lab', schedule: { Wednesday: [{ start: '13:10', end: '14:25' }] } },
-  '25MAT107': { name: 'Math Numerical Methods', schedule: { Wednesday: [{ start: '14:25', end: '16:15' }] } },
-  '25MEC122': { name: 'Mechanical Workshop', schedule: { Thursday: [{ start: '14:25', end: '16:15' }] } },
-  '25HSS102': { name: 'Universal Human Values', schedule: { Friday: [{ start: '13:10', end: '15:20' }] } },
-  '25HSS101': { name: 'Constitution of India', schedule: { Friday: [{ start: '15:20', end: '16:15' }] } },
-  'LIBRARY': { name: 'Library', schedule: { Tuesday: [{ start: '15:20', end: '16:15' }] } },
-  'MENTORING': { name: 'Mentoring / CT Interaction', schedule: { Saturday: [{ start: '13:10', end: '16:15' }] } }
+  '25HSS132': { name: 'Knowing Yourself', schedule: { Wednesday: [{ start: '11:00', end: '11:55' }] } },
+  '25MAT107': { name: 'MATLAB', schedule: { Wednesday: [{ start: '14:25', end: '16:15' }] } },
+  '25MEC122': { name: 'Engineering Visualization', schedule: { Thursday: [{ start: '14:25', end: '16:15' }] } },
+  'CSE_LAB': { name: 'CSE Lab', schedule: { Friday: [{ start: '11:00', end: '12:50' }] } },
+  '25HSS102': { name: 'UHV and Indian Constitution', schedule: { Friday: [{ start: '13:30', end: '16:15' }] } }
 };
 
 function buildInitialDatabase() {
@@ -64,10 +61,19 @@ function buildInitialDatabase() {
   return initialCourses;
 }
 
+// Automatically load the default timetable if the database is empty
 function loadFromDatabase() {
   const storedData = localStorage.getItem(DB_KEY);
-  return storedData ? JSON.parse(storedData) : []; 
+  if (storedData) {
+    return JSON.parse(storedData);
+  } else {
+    const defaultData = buildInitialDatabase();
+    localStorage.setItem(DB_KEY, JSON.stringify(defaultData));
+    return defaultData;
+  }
 }
+
+let courses = loadFromDatabase();
 
 function saveToDatabase() {
   localStorage.setItem(DB_KEY, JSON.stringify(courses));
@@ -335,20 +341,14 @@ function closeSplitScreen() {
   }
 }
 
-async function processOCR(event) {
-  const file = event.target.files[0];
-  if (!file) return;
-  document.getElementById('ocrLoading').classList.add('active');
-  closeModal();
-
-  setTimeout(() => {
-    document.getElementById('ocrLoading').classList.remove('active');
-    courses = buildInitialDatabase(); 
-    saveToDatabase(); 
+function resetToDefaultTimetable() {
+  if(confirm("Are you sure you want to reset to the default timetable? This will replace your current courses.")) {
+    courses = buildInitialDatabase();
+    saveToDatabase();
     renderUI();
-    alert("Timetable successfully loaded!");
-    event.target.value = '';
-  }, 1000);
+    closeModal();
+    alert("Timetable reset successfully.");
+  }
 }
 
 function changeCalendarMonth(dir) {
@@ -407,7 +407,7 @@ function openModal(type) {
       <div style="max-height: 60vh; overflow-y: auto; padding-right: 10px; text-align: left;">
         <div class="manual-section" style="margin-bottom:15px;">
           <h3 style="font-size:1rem; margin-bottom:4px;">1. Getting Started</h3>
-          <p style="font-size:0.85rem; color:var(--text-sub);">The app starts empty. Use <b>Upload Timetable (OCR)</b> to scan your schedule.</p>
+          <p style="font-size:0.85rem; color:var(--text-sub);">Your schedule is pre-loaded! If you ever need to restore it, click "Reset Default Timetable" in the menu.</p>
         </div>
         <div class="manual-section" style="margin-bottom:15px;">
           <h3 style="font-size:1rem; margin-bottom:4px;">2. Set Term & Calendar</h3>
@@ -477,7 +477,7 @@ function openModal(type) {
 
         const isSunday = new Date(year, month, i).getDay() === 0 ? 'sunday' : '';
         const isFuture = dateStr > todayStr ? 'future' : '';
-        const isBeforeStart = dateStr < academicCalendar.startDate ? 'future' : ''; // Visually lock out pre-term dates
+        const isBeforeStart = dateStr < academicCalendar.startDate ? 'future' : ''; 
         const isMarked = markedDates.includes(dateStr) ? 'present' : '';
         
         html += `<div class="cal-day ${statusClass} ${isSunday} ${isFuture} ${isBeforeStart} ${isMarked}" onclick="toggleFullDayPresent('${dateStr}')"><span>${i}</span></div>`;
@@ -490,11 +490,6 @@ function openModal(type) {
           <span style="color:#2ecc71">■ Present</span>
         </div>`;
     }
-  } else if (type === 'addTimetable') {
-    html += `
-      <h2>Upload Timetable</h2>
-      <p style="color:var(--text-sub); margin-top:8px; margin-bottom:15px; font-size:0.9rem;">Upload your timetable image to load your courses automatically.</p>
-      <input type="file" accept="image/*" class="modal-input" onchange="processOCR(event)" />`; 
   } else if (type === 'setTarget') {
     html += `
       <h2>Set Target Attendance</h2>

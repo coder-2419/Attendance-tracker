@@ -4,11 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Attendance Tracker</title>
-  <!-- Cache busters force the phone to download the new updates -->
-  <link rel="stylesheet" href="styles.css?v=20">
+  <link rel="stylesheet" href="styles.css?v=21">
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#ffffff">
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 </head>
 <body>
 
@@ -35,15 +33,14 @@
       <li onclick="openModal('userManual')">How to Use the App</li>
       <li onclick="openModal('historyLog')">View History Log</li>
       <li onclick="openModal('setupCalendar')">Sync Academic Calendar</li>
-      <li onclick="openModal('addTimetable')">Upload Timetable (OCR)</li>
       <li onclick="openModal('setTarget')">Set Target Attendance</li>
       <li onclick="openModal('editAttendance')">Edit Attendance</li>
       <li onclick="openModal('addCourse')">Add Custom Course</li>
       <li onclick="openModal('removeCourse')">Remove Course</li>
+      <li onclick="resetToDefaultTimetable()" style="color:#e74c3c;">Reset Default Timetable</li>
     </ul>
   </nav>
 
-  <div id="ocrLoading" class="ocr-loading-overlay"><div class="spinner"></div><p>Scanning Timetable Image...</p></div>
   <div class="modal-overlay" id="modalOverlay" onclick="closeModal(event)"><div class="modal-content" id="modalContent" onclick="event.stopPropagation()"></div></div>
 
   <div class="split-screen-overlay" id="splitScreenOverlay">
@@ -79,6 +76,6 @@
     <div id="courseList" class="course-list-container"></div>
   </main>
 
-  <script src="script.js?v=20"></script>
+  <script src="script.js?v=21"></script>
 </body>
 </html>

@@ -126,7 +126,6 @@ function updateHolidayButton() {
   }
 }
 
-// ---- DYNAMIC CALENDAR ATTENDANCE CALCULATOR ----
 // Automatically totals absent and present days starting from Term Start to Today
 function getCalculatedAttendance() {
   let calc = {};
@@ -157,9 +156,9 @@ function getCalculatedAttendance() {
           if (course.schedule && course.schedule[dayName]) {
             const classesThatDay = course.schedule[dayName].length;
             if (isMarked) {
-              calc[course.id].p += classesThatDay; // Present
+              calc[course.id].p += classesThatDay; 
             } else {
-              calc[course.id].a += classesThatDay; // Automatically Absent!
+              calc[course.id].a += classesThatDay; 
             }
           }
         });
@@ -189,7 +188,13 @@ function startCalendarSetup() {
 
   const file = fileInput.files[0];
   setupBlobUrl = URL.createObjectURL(file);
-  document.getElementById('filePreview').src = setupBlobUrl;
+  
+  const previewWrapper = document.getElementById('previewWrapper');
+  if (file.type.includes('image')) {
+    previewWrapper.innerHTML = `<img src="${setupBlobUrl}" style="max-width:100%; max-height:100%; object-fit:contain;" alt="Calendar Preview" />`;
+  } else {
+    previewWrapper.innerHTML = `<iframe src="${setupBlobUrl}" style="width:100%; height:100%; border:none; background:white;"></iframe>`;
+  }
   
   setupTempData = {}; 
   buildSetupCalendar(setupStartDate, setupEndDate);
@@ -272,10 +277,11 @@ function saveSetupCalendar() {
 
 function closeSplitScreen() {
   document.getElementById('splitScreenOverlay').classList.remove('active');
+  const previewWrapper = document.getElementById('previewWrapper');
+  if (previewWrapper) previewWrapper.innerHTML = '';
   if (setupBlobUrl) {
     URL.revokeObjectURL(setupBlobUrl);
     setupBlobUrl = null;
-    document.getElementById('filePreview').src = '';
   }
 }
 
@@ -300,7 +306,6 @@ function changeCalendarMonth(dir) {
   openModal('calendarMode');
 }
 
-// Simplified function: Only modifies the array, rendering engine handles the math automatically
 function toggleFullDayPresent(dateString) {
   if (!academicCalendar || !academicCalendar.startDate) {
     alert("Please sync your Academic Calendar first to set the term start date."); return;
@@ -566,7 +571,6 @@ function saveSingleCourseAttendance() {
 
   const baseStats = getCalculatedAttendance();
   
-  // Calculate the manual offset required to reach user's desired total
   course.present = p - baseStats[course.id].p;
   course.absent = (t - p) - baseStats[course.id].a;
 
@@ -689,7 +693,6 @@ function renderUI() {
   const baseStats = getCalculatedAttendance();
 
   courses.forEach(course => {
-    // Dynamic Merge: Base Calendar Calculation + User's Manual Overrides
     const totalPresent = baseStats[course.id].p + course.present;
     const totalAbsent = baseStats[course.id].a + course.absent;
     const total = totalPresent + totalAbsent;
@@ -721,7 +724,6 @@ function renderUI() {
   });
 }
 
-// These are now treated as manual offset overrides on top of the calculated calendar baseline
 function markAttendance(id, status) {
   const course = courses.find(c => c.id === id);
   if (status === 'present') course.present += 1;

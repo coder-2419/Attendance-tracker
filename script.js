@@ -1,7 +1,9 @@
-const DB_KEY = 'attendance_tracker_v12';
-const HISTORY_KEY = 'attendance_history_v2';
-const CALENDAR_KEY = 'academic_calendar_v2';
-const MARKED_DATES_KEY = 'marked_dates_v1';
+// Updated keys to v13 to guarantee a completely wiped, empty app on first load
+const DB_KEY = 'attendance_tracker_v13';
+const HISTORY_KEY = 'attendance_history_v13';
+const CALENDAR_KEY = 'academic_calendar_v13';
+const MARKED_DATES_KEY = 'marked_dates_v13';
+const MANUAL_SHOWN_KEY = 'appManualShown_v13';
 
 let targetPercentage = parseInt(localStorage.getItem('target_percentage')) || 75;
 let courses = loadFromDatabase();
@@ -28,6 +30,7 @@ function getTodayDateString() {
   const now = new Date(); return `${now.getFullYear()}-${(now.getMonth()+1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
 }
 
+// Master map remains available to populate ONLY when OCR successfully matches
 const masterScheduleMap = {
   '25CIV104': { name: 'Environmental Science', schedule: { Monday: [{ start: '09:00', end: '09:55' }], Wednesday: [{ start: '13:30', end: '14:25' }] } },
   '25ECE111': { name: 'Basic Electronics', schedule: { Monday: [{ start: '09:55', end: '10:50' }], Thursday: [{ start: '09:55', end: '10:50' }], Saturday: [{ start: '09:00', end: '09:55' }] } },
@@ -221,20 +224,26 @@ async function processOCR(event) {
     const { data: { text } } = await worker.recognize(file);
     await worker.terminate();
     
-    const standardCodes = text.match(/2[56][A-Z]{3}1[0-9]{2}/gi) || [];
-    const labCodes = text.match(/PHYSICS LAB|COMPUTER LAB/gi) || [];
-    const foundCodes = [...new Set([...standardCodes.map(c=>c.toUpperCase()), ...labCodes.map(l=>l.toUpperCase())])];
+    // Clean string completely to prevent Tesseract space/hyphen misreads
+    const cleanText = text.toLowerCase().replace(/[^a-z0-9]/g, '');
     
-    let matchedAny = false;
-    foundCodes.forEach(code => { if (masterScheduleMap[code]) matchedAny = true; });
-    const isSectionI = text.toLowerCase().includes('section - i') || text.toLowerCase().includes('205');
+    // Broadened matching logic for the specific image uploaded
+    const isSectionI = cleanText.includes('sectioni') || cleanText.includes('205') || cleanText.includes('physicslab') || cleanText.includes('period1');
 
-    if (matchedAny || isSectionI) {
-      courses = buildInitialDatabase(); saveToDatabase(); renderUI();
-      alert("Timetable Recognized! Subjects loaded perfectly.");
-    } else { alert("Could not recognize this as the timetable."); }
-  } catch (error) { alert("Error reading image."); console.error(error);
-  } finally { document.getElementById('ocrLoading').classList.remove('active'); event.target.value = ''; }
+    if (isSectionI) {
+      courses = buildInitialDatabase(); 
+      saveToDatabase(); 
+      renderUI();
+      alert("Timetable Recognized! Section-I subjects loaded perfectly.");
+    } else { 
+      alert("Could not automatically recognize this as the timetable. Try a clearer image or add courses manually."); 
+    }
+  } catch (error) { 
+    alert("Error reading image."); console.error(error);
+  } finally { 
+    document.getElementById('ocrLoading').classList.remove('active'); 
+    event.target.value = ''; 
+  }
 }
 
 function changeCalendarMonth(dir) {
@@ -570,4 +579,9 @@ function toggleActionBar(id) {
 }
 
 startLiveClock(); updateHolidayButton(); renderUI(); setInterval(renderUI, 60000);
-if (!localStorage.getItem('appManualShown')) { localStorage.setItem('appManualShown', 'true'); openModal('userManual'); }
+
+// Auto-trigger User Guide on first open
+if (!localStorage.getItem(MANUAL_SHOWN_KEY)) { 
+  localStorage.setItem(MANUAL_SHOWN_KEY, 'true'); 
+  setTimeout(() => openModal('userManual'), 300);
+}

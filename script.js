@@ -190,10 +190,55 @@ function startCalendarSetup() {
   setupBlobUrl = URL.createObjectURL(file);
   
   const previewWrapper = document.getElementById('previewWrapper');
-  if (file.type.includes('image')) {
-    previewWrapper.innerHTML = `<img src="${setupBlobUrl}" style="max-width:100%; max-height:100%; object-fit:contain;" alt="Calendar Preview" />`;
+  const isImage = file.type.match(/image/i) || file.name.match(/\.(jpg|jpeg|png|gif|webp|heic)$/i);
+  
+  // Clear any existing touch events to prevent memory leaks
+  previewWrapper.ontouchstart = null;
+  previewWrapper.ontouchmove = null;
+  previewWrapper.ontouchend = null;
+
+  if (isImage) {
+    previewWrapper.innerHTML = `<img id="setupImagePreview" src="${setupBlobUrl}" style="position:absolute; top:0; left:0; width:100%; height:100%; object-fit:contain; display:block; transform-origin:center;" alt="Calendar Preview" />`;
+    
+    // Custom Native Pinch-to-Zoom and Drag Logic
+    const img = document.getElementById('setupImagePreview');
+    let scale = 1, posX = 0, posY = 0;
+    let startX, startY, initialDist;
+
+    previewWrapper.ontouchstart = (e) => {
+      if (e.touches.length === 2) {
+        initialDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+      } else if (e.touches.length === 1) {
+        startX = e.touches[0].clientX - posX;
+        startY = e.touches[0].clientY - posY;
+      }
+    };
+
+    previewWrapper.ontouchmove = (e) => {
+      e.preventDefault(); // Stop mobile screen from scrolling
+      if (e.touches.length === 2) {
+        const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+        scale = Math.min(Math.max(1, scale * (dist / initialDist)), 6); // Allow zoom between 1x and 6x
+        initialDist = dist;
+      } else if (e.touches.length === 1 && scale > 1) {
+        posX = e.touches[0].clientX - startX;
+        posY = e.touches[0].clientY - startY;
+      }
+      img.style.transform = `translate(${posX}px, ${posY}px) scale(${scale})`;
+    };
+
+    previewWrapper.ontouchend = () => {
+      // Smart Snap-back if zoomed out fully
+      if (scale <= 1) {
+        scale = 1; posX = 0; posY = 0;
+        img.style.transition = 'transform 0.2s ease';
+        img.style.transform = `translate(0px, 0px) scale(1)`;
+        setTimeout(() => img.style.transition = 'none', 200);
+      }
+    };
+
   } else {
-    previewWrapper.innerHTML = `<iframe src="${setupBlobUrl}" style="width:100%; height:100%; border:none; background:white;"></iframe>`;
+    previewWrapper.innerHTML = `<iframe src="${setupBlobUrl}" style="position:absolute; top:0; left:0; width:100%; height:100%; border:none; background:white;"></iframe>`;
   }
   
   setupTempData = {}; 
@@ -278,7 +323,12 @@ function saveSetupCalendar() {
 function closeSplitScreen() {
   document.getElementById('splitScreenOverlay').classList.remove('active');
   const previewWrapper = document.getElementById('previewWrapper');
-  if (previewWrapper) previewWrapper.innerHTML = '';
+  if (previewWrapper) {
+      previewWrapper.innerHTML = '';
+      previewWrapper.ontouchstart = null;
+      previewWrapper.ontouchmove = null;
+      previewWrapper.ontouchend = null;
+  }
   if (setupBlobUrl) {
     URL.revokeObjectURL(setupBlobUrl);
     setupBlobUrl = null;

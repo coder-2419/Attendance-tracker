@@ -1,8 +1,8 @@
-const DB_KEY = 'attendance_tracker_v21';
-const HISTORY_KEY = 'attendance_history_v21';
-const CALENDAR_KEY = 'academic_calendar_v21';
-const MARKED_DATES_KEY = 'marked_dates_v21';
-const MANUAL_SHOWN_KEY = 'appManualShown_v21';
+const DB_KEY = 'attendance_tracker_v22';
+const HISTORY_KEY = 'attendance_history_v22';
+const CALENDAR_KEY = 'academic_calendar_v22';
+const MARKED_DATES_KEY = 'marked_dates_v22';
+const MANUAL_SHOWN_KEY = 'appManualShown_v22';
 
 let targetPercentage = parseInt(localStorage.getItem('target_percentage')) || 75;
 let historyLog = JSON.parse(localStorage.getItem(HISTORY_KEY)) || [];
@@ -29,7 +29,6 @@ function getTodayDateString() {
   return `${now.getFullYear()}-${(now.getMonth()+1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
 }
 
-// 100% accurate map based on your manual input
 const masterScheduleMap = {
   '25CIV104': { name: 'Environmental Science and Sustainability', schedule: { Monday: [{ start: '09:00', end: '09:55' }], Tuesday: [{ start: '13:30', end: '14:25' }] } },
   '25ECE111': { name: 'Basic Electronics', schedule: { Monday: [{ start: '09:55', end: '10:50' }], Tuesday: [{ start: '11:55', end: '12:50' }], Thursday: [{ start: '09:55', end: '10:50' }], Saturday: [{ start: '09:00', end: '09:55' }] } },
@@ -61,16 +60,12 @@ function buildInitialDatabase() {
   return initialCourses;
 }
 
-// Automatically load the default timetable if the database is empty
 function loadFromDatabase() {
   const storedData = localStorage.getItem(DB_KEY);
-  if (storedData) {
-    return JSON.parse(storedData);
-  } else {
-    const defaultData = buildInitialDatabase();
-    localStorage.setItem(DB_KEY, JSON.stringify(defaultData));
-    return defaultData;
-  }
+  if (storedData) return JSON.parse(storedData);
+  const defaultData = buildInitialDatabase();
+  localStorage.setItem(DB_KEY, JSON.stringify(defaultData));
+  return defaultData;
 }
 
 let courses = loadFromDatabase();
@@ -135,7 +130,7 @@ function updateHolidayButton() {
   }
 }
 
-// Automatically totals absent and present days starting from Term Start to Today
+// Smart Base Attendance: Up to the minute accurate
 function getCalculatedAttendance() {
   let calc = {};
   courses.forEach(c => calc[c.id] = { p: 0, a: 0 });
@@ -153,22 +148,30 @@ function getCalculatedAttendance() {
       if (termEnd < endDate) endDate = termEnd;
     }
 
+    const now = new Date();
+    const nowStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+
     while(currDate <= endDate) {
       const dateStr = `${currDate.getFullYear()}-${String(currDate.getMonth() + 1).padStart(2, '0')}-${String(currDate.getDate()).padStart(2, '0')}`;
       const dayName = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][currDate.getDay()];
 
       const isHoliday = academicCalendar.holidays && academicCalendar.holidays.includes(dateStr);
       const isMarked = markedDates.includes(dateStr);
+      const isTodayLoop = (currDate.getTime() === endDate.getTime());
 
       if (!isHoliday) {
         courses.forEach(course => {
           if (course.schedule && course.schedule[dayName]) {
-            const classesThatDay = course.schedule[dayName].length;
-            if (isMarked) {
-              calc[course.id].p += classesThatDay; 
-            } else {
-              calc[course.id].a += classesThatDay; 
-            }
+            course.schedule[dayName].forEach(slot => {
+              if (isMarked) {
+                calc[course.id].p += 1; 
+              } else {
+                // Only count as auto-absent if it is a past day OR the class has started today
+                if (!isTodayLoop || nowStr >= slot.start) {
+                  calc[course.id].a += 1; 
+                }
+              }
+            });
           }
         });
       }
@@ -414,8 +417,8 @@ function openModal(type) {
           <p style="font-size:0.85rem; color:var(--text-sub);"><b>CRITICAL:</b> Upload your calendar to set the <b>Term Start Date</b>. The app will automatically mark you absent for every scheduled class between the start date and today unless marked green.</p>
         </div>
         <div class="manual-section" style="margin-bottom:15px;">
-          <h3 style="font-size:1rem; margin-bottom:4px;">3. Daily Tracking</h3>
-          <p style="font-size:0.85rem; color:var(--text-sub);">Tap the clock icon. Tap any past/present date to turn it <b>Green (Present)</b>. Future dates and pre-term dates are locked.</p>
+          <h3 style="font-size:1rem; margin-bottom:4px;">3. Live Daily Tracking</h3>
+          <p style="font-size:0.85rem; color:var(--text-sub);">When a class is happening, a glowing <b>LIVE NOW</b> card will appear. Tap Present or Absent to log it instantly!</p>
         </div>
         <div class="manual-section" style="margin-bottom:15px;">
           <h3 style="font-size:1rem; margin-bottom:4px;">4. Bunk Meter</h3>
@@ -683,6 +686,24 @@ function changeDay(dayName) {
   renderUI(); 
 }
 
+function handleLiveAttendance(courseId, status, slotKey) {
+  let handledClasses = JSON.parse(localStorage.getItem('handled_live_classes')) || [];
+  handledClasses.push(slotKey);
+  localStorage.setItem('handled_live_classes', JSON.stringify(handledClasses));
+
+  const course = courses.find(c => c.id === courseId);
+  if (status === 'present') {
+      course.present += 1;
+      if (academicCalendar && academicCalendar.startDate) course.absent -= 1; // offset auto-absent
+  } else if (status === 'absent') {
+      if (!academicCalendar || !academicCalendar.startDate) course.absent += 1;
+  }
+  
+  addHistory(`Live ${status.toUpperCase()}: ${course.name}`);
+  saveToDatabase();
+  renderUI();
+}
+
 function renderUI() {
   document.querySelectorAll('.day-selector button').forEach(btn => {
     btn.classList.remove('active-day');
@@ -691,6 +712,8 @@ function renderUI() {
 
   const timeContainer = document.getElementById('timetableContainer');
   const isToday = getTodayString() === currentSelectedDay;
+  const now = new Date(); 
+  const currentTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
 
   if (isToday && isTodayHoliday()) {
     timeContainer.innerHTML = `<div style="text-align:center; padding: 25px 20px; background: #fdf5f5; border-radius: 12px; border: 2px dashed #e74c3c; width:100%;"><p style="color:#e74c3c; font-size:1.15rem; font-weight:800;">🏖️ TODAY IS A HOLIDAY</p></div>`;
@@ -708,8 +731,6 @@ function renderUI() {
       timeContainer.innerHTML = `<p style="color:var(--text-sub);">No classes scheduled.</p>`;
     } else {
       todaysClasses.sort((a, b) => a.start.localeCompare(b.start));
-      const now = new Date(); 
-      const currentTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
       let html = '';
       todaysClasses.forEach(cls => {
         let status = '';
@@ -727,10 +748,45 @@ function renderUI() {
     }
   }
 
+  // --- LIVE CLASS ACTION INJECTION ---
+  let liveClassHTML = '';
+  if (isToday && !isTodayHoliday()) {
+    const todayStr = getTodayDateString();
+    courses.forEach(c => {
+      if (c.schedule && c.schedule[currentSelectedDay]) {
+        c.schedule[currentSelectedDay].forEach(slot => {
+          if (currentTime >= slot.start && currentTime <= slot.end) {
+            const slotKey = `${todayStr}_${c.id}_${slot.start}`;
+            let handledClasses = JSON.parse(localStorage.getItem('handled_live_classes')) || [];
+            if (!handledClasses.includes(slotKey)) {
+              liveClassHTML += `
+                <div class="live-prompt-card">
+                  <div class="live-info">
+                    <div class="live-dot"></div>
+                    <div class="live-course">
+                      <h4>NOW: ${c.name}</h4>
+                      <p>${format12Hour(slot.start)} - ${format12Hour(slot.end)}</p>
+                    </div>
+                  </div>
+                  <div class="live-actions">
+                    <button class="btn-present" onclick="handleLiveAttendance(${c.id}, 'present', '${slotKey}')">PRESENT</button>
+                    <button class="btn-absent" onclick="handleLiveAttendance(${c.id}, 'absent', '${slotKey}')">ABSENT</button>
+                  </div>
+                </div>`;
+            }
+          }
+        });
+      }
+    });
+  }
+  const liveContainer = document.getElementById('liveClassContainer');
+  if (liveContainer) liveContainer.innerHTML = liveClassHTML;
+
+  // --- COURSE LIST RENDERING ---
   const listContainer = document.getElementById('courseList');
   listContainer.innerHTML = '';
   if (courses.length === 0) { 
-    listContainer.innerHTML = `<p style="color:var(--text-sub); text-align:center; grid-column: 1/-1; padding: 40px 0;">No Courses Found. Add courses from the sidebar or scan a timetable.</p>`; 
+    listContainer.innerHTML = `<p style="color:var(--text-sub); text-align:center; grid-column: 1/-1; padding: 40px 0;">No Courses Found. Add courses from the sidebar.</p>`; 
     return; 
   }
 
@@ -771,8 +827,13 @@ function renderUI() {
 
 function markAttendance(id, status) {
   const course = courses.find(c => c.id === id);
-  if (status === 'present') course.present += 1;
-  if (status === 'absent') course.absent += 1;
+  if (status === 'present') {
+      course.present += 1;
+      if (academicCalendar && academicCalendar.startDate) course.absent -= 1;
+  }
+  if (status === 'absent') {
+      if (!academicCalendar || !academicCalendar.startDate) course.absent += 1;
+  }
   addHistory(`Manual ${status.toUpperCase()}: ${course.name}`);
   toggleActionBar(id); 
   saveToDatabase(); 

@@ -34,14 +34,10 @@ body.dark-mode .moon-icon { opacity: 1; transform: rotate(0); }
 body.dark-mode .light-text { opacity: 0; }
 body.dark-mode .dark-text { opacity: 1; }
 
-.overlay, .modal-overlay, .ocr-loading-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; display: none; }
+.overlay, .modal-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; display: none; }
 .overlay { background: rgba(0,0,0,0.4); z-index: 999; }
 .modal-overlay { background: rgba(0,0,0,0.6); z-index: 1001; justify-content: center; align-items: center; padding: 20px; }
-.ocr-loading-overlay { background: rgba(255, 255, 255, 0.95); z-index: 9999; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
-.overlay.active, .modal-overlay.active, .ocr-loading-overlay.active { display: flex; }
-
-.spinner { width: 50px; height: 50px; border: 5px solid #f3f3f3; border-top: 5px solid #111; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 20px; }
-@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+.overlay.active, .modal-overlay.active { display: flex; }
 
 .modal-content { background: var(--card-bg); padding: 30px; border-radius: 16px; width: 100%; max-width: 420px; position: relative; color: var(--text-main); max-height: 85vh; overflow-y: auto; }
 .close-btn { position: absolute; top: 15px; right: 20px; background: none; border: none; font-size: 2rem; color: var(--text-sub); cursor: pointer; }
@@ -87,35 +83,60 @@ body.dark-mode .cal-day:hover:not(.empty):not(.holiday):not(.important) span { b
 .holiday-btn { background: var(--border-color); color: var(--text-main); border: none; padding: 6px 14px; border-radius: 20px; font-size: 0.7rem; font-weight: 800; cursor: pointer; }
 .holiday-btn.active { background: #e74c3c; color: white; }
 
-/* --- HORIZONTAL SCROLLING OPTIMIZATIONS --- */
-.day-selector { 
-  display: flex; gap: 8px; overflow-x: auto; margin-bottom: 15px; padding-bottom: 5px; scrollbar-width: none; 
-  -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; will-change: scroll-position; 
-}
+.day-selector { display: flex; gap: 8px; overflow-x: auto; margin-bottom: 15px; padding-bottom: 5px; scrollbar-width: none; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; will-change: scroll-position; }
 .day-selector::-webkit-scrollbar { display: none; }
-.day-selector button { 
-  background: var(--card-bg); border: 1px solid var(--border-color); padding: 8px 16px; border-radius: 20px; font-weight: 700; color: var(--text-sub); cursor: pointer; white-space: nowrap; 
-  transform: translateZ(0); /* Hardware Acceleration */
-}
+.day-selector button { background: var(--card-bg); border: 1px solid var(--border-color); padding: 8px 16px; border-radius: 20px; font-weight: 700; color: var(--text-sub); cursor: pointer; white-space: nowrap; transform: translateZ(0); }
 .day-selector button.active-day { background: #3498db; color: white; border-color: #3498db; }
 
+/* --- TIMELINE CAROUSEL & SCROLLING UPGRADES --- */
 .timetable-bar { 
-  display: flex; gap: 15px; overflow-x: auto; padding-bottom: 15px; 
+  display: flex; gap: 15px; overflow-x: auto; position: relative;
+  padding: 10px calc(50% - 100px) 25px calc(50% - 100px); /* Mathematically forces the first/last card to stop in the center of the screen */
   -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; 
-  scroll-snap-type: x mandatory; scrollbar-width: none; scroll-padding-left: 2px;
-  will-change: scroll-position; /* Offloads scroll calculations to GPU */
+  scroll-snap-type: x mandatory; scrollbar-width: none; 
+  will-change: scroll-position; 
 }
 .timetable-bar::-webkit-scrollbar { display: none; }
+
 .timeline-card { 
-  min-width: 180px; background: var(--card-bg); padding: 15px; border-radius: 12px; border: 1px solid var(--border-color); border-left: 4px solid #3498db; flex-shrink: 0; 
-  scroll-snap-align: start; 
-  transform: translateZ(0); /* Prevents screen tearing and paint-lag during fast swipes */
-  will-change: transform; 
+  min-width: 180px; background: var(--card-bg); padding: 15px; border-radius: 12px; 
+  border: 1px solid var(--border-color); border-left: 4px solid #3498db; flex-shrink: 0; 
+  scroll-snap-align: center; /* Snaps the scrolling directly to the center of the card */
+  transform: translateZ(0) scale(0.92); /* Shrinks non-active cards slightly */
+  opacity: 0.7; /* Fades upcoming cards naturally */
+  transition: all 0.5s cubic-bezier(0.25, 0.8, 0.25, 1); 
+  will-change: transform, opacity; 
 }
-.timeline-card.active { border-left-color: #2ecc71; }
-.timeline-card.past { border-left-color: var(--border-color); opacity: 0.6; }
+
+/* The Live Period pops out into the foreground */
+.timeline-card.active { 
+  border-left-color: #2ecc71; 
+  opacity: 1; 
+  transform: translateZ(0) scale(1.05); 
+  box-shadow: 0 10px 25px rgba(46, 204, 113, 0.25); 
+  z-index: 2; 
+}
+
+/* Past periods shrink deeper into the background */
+.timeline-card.past { 
+  border-left-color: var(--border-color); 
+  opacity: 0.3; 
+  transform: translateZ(0) scale(0.85); 
+}
+
 .timeline-time { font-size: 0.8rem; font-weight: 700; margin-bottom: 6px; }
 .timeline-course { font-size: 0.95rem; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* --- LIVE CLASS PROMPT --- */
+.live-prompt-card { display: flex; justify-content: space-between; align-items: center; background: var(--card-bg); border: 2px solid #3498db; border-radius: 16px; padding: 18px 20px; margin-bottom: 25px; box-shadow: 0 4px 15px rgba(52, 152, 219, 0.2); animation: pulse-border 2s infinite; }
+@keyframes pulse-border { 0% { box-shadow: 0 0 0 0 rgba(52, 152, 219, 0.4); } 70% { box-shadow: 0 0 0 10px rgba(52, 152, 219, 0); } 100% { box-shadow: 0 0 0 0 rgba(52, 152, 219, 0); } }
+.live-info { display: flex; align-items: center; gap: 12px; overflow: hidden; }
+.live-dot { width: 12px; height: 12px; background: #e74c3c; border-radius: 50%; flex-shrink: 0; animation: blink 1s infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.live-course h4 { font-size: 0.9rem; font-weight: 800; color: var(--text-main); margin-bottom: 3px; max-width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-transform: uppercase; }
+.live-course p { font-size: 0.8rem; font-weight: 700; color: #3498db; }
+.live-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.live-actions button { padding: 10px 14px; font-size: 0.85rem; border-radius: 10px; font-weight: 800; border: none; cursor: pointer; color: white; }
 
 .course-list-container { width: 100%; display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 20px; }
 .course-card-wrapper { display: flex; align-items: center; position: relative; width: 100%; overflow: hidden; border-radius: 16px; }

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Attendance Tracker</title>
-  <link rel="stylesheet" href="styles.css?v=25">
+  <link rel="stylesheet" href="styles.css?v=27">
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#ffffff">
 </head>
@@ -64,6 +64,7 @@
         <button id="holidayBtn" class="holiday-btn" onclick="toggleHoliday()">Mark Today Holiday</button>
       </div>
       <div class="day-selector" id="daySelector">
+        <button onclick="changeDay('Sunday')">Sun</button>
         <button onclick="changeDay('Monday')">Mon</button>
         <button onclick="changeDay('Tuesday')">Tue</button>
         <button onclick="changeDay('Wednesday')">Wed</button>
@@ -79,6 +80,6 @@
     <div id="courseList" class="course-list-container"></div>
   </main>
 
-  <script src="script.js?v=25"></script>
+  <script src="script.js?v=27"></script>
 </body>
 </html>

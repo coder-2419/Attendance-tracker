@@ -1,13 +1,19 @@
-const DB_KEY = 'attendance_tracker_v25';
-const HISTORY_KEY = 'attendance_history_v25';
-const CALENDAR_KEY = 'academic_calendar_v25';
-const MARKED_DATES_KEY = 'marked_dates_v25';
-const MANUAL_SHOWN_KEY = 'appManualShown_v25';
+const DB_KEY = 'attendance_tracker_v27';
+const HISTORY_KEY = 'attendance_history_v27';
+const CALENDAR_KEY = 'academic_calendar_v27';
+const MARKED_DATES_KEY = 'marked_dates_v27';
+const MANUAL_SHOWN_KEY = 'appManualShown_v27';
 
 let targetPercentage = parseInt(localStorage.getItem('target_percentage')) || 75;
 let historyLog = JSON.parse(localStorage.getItem(HISTORY_KEY)) || [];
 let academicCalendar = JSON.parse(localStorage.getItem(CALENDAR_KEY)) || null;
 let markedDates = JSON.parse(localStorage.getItem(MARKED_DATES_KEY)) || [];
+
+function getTodayString() {
+  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  return days[new Date().getDay()];
+}
+
 let currentSelectedDay = getTodayString();
 let currentCalDate = new Date(); 
 
@@ -16,12 +22,6 @@ if(localStorage.getItem('darkMode') === 'true') document.body.classList.add('dar
 function toggleDarkMode() {
   document.body.classList.toggle('dark-mode');
   localStorage.setItem('darkMode', document.body.classList.contains('dark-mode'));
-}
-
-function getTodayString() {
-  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const today = days[new Date().getDay()];
-  return today === 'Sunday' ? 'Monday' : today; 
 }
 
 function getTodayDateString() {
@@ -111,6 +111,7 @@ function isTodayHoliday() {
 }
 
 function toggleHoliday() {
+  if (getTodayString() === 'Sunday') return; 
   const todayStr = getTodayDateString();
   if (isTodayHoliday()) localStorage.removeItem('holiday_' + todayStr);
   else localStorage.setItem('holiday_' + todayStr, 'true');
@@ -121,12 +122,19 @@ function toggleHoliday() {
 function updateHolidayButton() {
   const btn = document.getElementById('holidayBtn');
   if (!btn) return;
-  if (isTodayHoliday()) { 
+  
+  if (getTodayString() === 'Sunday') {
+    btn.classList.add('active');
+    btn.innerText = 'SUNDAY - HOLIDAY';
+    btn.style.pointerEvents = 'none'; 
+  } else if (isTodayHoliday()) { 
     btn.classList.add('active'); 
     btn.innerText = 'HOLIDAY ACTIVE'; 
+    btn.style.pointerEvents = 'auto';
   } else { 
     btn.classList.remove('active'); 
     btn.innerText = 'Mark Today Holiday'; 
+    btn.style.pointerEvents = 'auto';
   }
 }
 
@@ -710,11 +718,15 @@ function renderUI() {
 
   const timeContainer = document.getElementById('timetableContainer');
   const isToday = getTodayString() === currentSelectedDay;
+  const isSunday = currentSelectedDay === 'Sunday';
+  const isDeclaredHoliday = isToday && isTodayHoliday();
+  
   const now = new Date(); 
   const currentTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
 
-  if (isToday && isTodayHoliday()) {
-    timeContainer.innerHTML = `<div style="text-align:center; padding: 25px 20px; background: #fdf5f5; border-radius: 12px; border: 2px dashed #e74c3c; width:100%;"><p style="color:#e74c3c; font-size:1.15rem; font-weight:800;">🏖️ TODAY IS A HOLIDAY</p></div>`;
+  if (isSunday || isDeclaredHoliday) {
+    const holidayMsg = isSunday ? 'SUNDAY IS A HOLIDAY' : 'TODAY IS A HOLIDAY';
+    timeContainer.innerHTML = `<div style="text-align:center; padding: 25px 20px; background: #fdf5f5; border-radius: 12px; border: 2px dashed #e74c3c; width:100%;"><p style="color:#e74c3c; font-size:1.15rem; font-weight:800;">🏖️ ${holidayMsg}</p></div>`;
   } else {
     let todaysClasses = [];
     courses.forEach(c => { 
@@ -739,7 +751,6 @@ function renderUI() {
         let indicator = '';
         const cardId = `timeline-card-${idx}`;
 
-        // Timeline sorting logic
         if (isToday) { 
           if (currentTime >= cls.start && currentTime <= cls.end) {
             status = 'active'; 
@@ -765,7 +776,6 @@ function renderUI() {
       html += '<div class="timetable-spacer"></div>';
       timeContainer.innerHTML = html;
 
-      // Smooth pan to current active/upcoming class
       if (focusId && isToday) {
         setTimeout(() => {
           const el = document.getElementById(focusId);
@@ -775,9 +785,9 @@ function renderUI() {
     }
   }
 
-  // Inject Live Prompts if required
+  // --- INJECT REDESIGNED LIVE WIDGET ---
   let liveClassHTML = '';
-  if (isToday && !isTodayHoliday()) {
+  if (isToday && !isTodayHoliday() && getTodayString() !== 'Sunday') {
     const todayStr = getTodayDateString();
     courses.forEach(c => {
       if (c.schedule && c.schedule[currentSelectedDay]) {
@@ -788,16 +798,16 @@ function renderUI() {
             if (!handledClasses.includes(slotKey)) {
               liveClassHTML += `
                 <div class="live-prompt-card">
-                  <div class="live-info">
-                    <div class="live-dot"></div>
-                    <div class="live-course">
-                      <h4>NOW: ${c.name}</h4>
-                      <p>${format12Hour(slot.start)} - ${format12Hour(slot.end)}</p>
-                    </div>
+                  <div class="live-info-header">
+                    <div class="live-status"><div class="live-dot"></div><span>LIVE NOW</span></div>
+                    <div class="live-time">${format12Hour(slot.start)} - ${format12Hour(slot.end)}</div>
                   </div>
-                  <div class="live-actions">
-                    <button class="btn-present" onclick="handleLiveAttendance(${c.id}, 'present', '${slotKey}')">PRESENT</button>
-                    <button class="btn-absent" onclick="handleLiveAttendance(${c.id}, 'absent', '${slotKey}')">ABSENT</button>
+                  <div class="live-course-details">
+                    <h4>${c.name}</h4>
+                  </div>
+                  <div class="live-actions-row">
+                    <button class="btn-present-large" onclick="handleLiveAttendance(${c.id}, 'present', '${slotKey}')">✓ PRESENT</button>
+                    <button class="btn-absent-large" onclick="handleLiveAttendance(${c.id}, 'absent', '${slotKey}')">✖ ABSENT</button>
                   </div>
                 </div>`;
             }
@@ -816,7 +826,7 @@ function renderUI() {
     return; 
   }
 
-  const holidayMode = isTodayHoliday();
+  const holidayMode = isTodayHoliday() || getTodayString() === 'Sunday';
   const baseStats = getCalculatedAttendance();
 
   courses.forEach(course => {
@@ -877,7 +887,7 @@ function toggleActionBar(id) {
 startLiveClock(); 
 updateHolidayButton(); 
 renderUI(); 
-setInterval(renderUI, 60000); // 60 second loop engine triggers panning on schedule updates
+setInterval(renderUI, 60000);
 
 if (!localStorage.getItem(MANUAL_SHOWN_KEY)) { 
   localStorage.setItem(MANUAL_SHOWN_KEY, 'true'); 

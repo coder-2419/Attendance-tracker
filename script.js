@@ -1,8 +1,8 @@
-const DB_KEY = 'attendance_tracker_v29';
-const HISTORY_KEY = 'attendance_history_v29';
-const CALENDAR_KEY = 'academic_calendar_v29';
-const MARKED_DATES_KEY = 'marked_dates_v29';
-const MANUAL_SHOWN_KEY = 'appManualShown_v29';
+const DB_KEY = 'attendance_tracker_v30';
+const HISTORY_KEY = 'attendance_history_v30';
+const CALENDAR_KEY = 'academic_calendar_v30';
+const MARKED_DATES_KEY = 'marked_dates_v30';
+const MANUAL_SHOWN_KEY = 'appManualShown_v30';
 
 let targetPercentage = parseInt(localStorage.getItem('target_percentage')) || 75;
 let historyLog = JSON.parse(localStorage.getItem(HISTORY_KEY)) || [];
@@ -231,7 +231,6 @@ function startCalendarSetup() {
     };
 
     previewWrapper.ontouchmove = (e) => {
-      // Allows internal dragging without bubbling up
       e.stopPropagation();
       e.preventDefault(); 
       if (e.touches.length === 2) {

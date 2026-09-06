@@ -1,7 +1,14 @@
 :root { --bg-color: #f4f4f9; --card-bg: #ffffff; --text-main: #222222; --text-sub: #777777; --border-color: #eeeeee; --header-shadow: rgba(0,0,0,0.08); }
 body.dark-mode { --bg-color: #121212; --card-bg: #1e1e1e; --text-main: #ffffff; --text-sub: #aaaaaa; --border-color: #333333; --header-shadow: rgba(0,0,0,0.5); }
 * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
-html, body { background-color: var(--bg-color); color: var(--text-main); transition: background-color 0.3s; overflow-x: hidden; overscroll-behavior-y: none; }
+
+/* Fixed Pull-To-Refresh without breaking standard scrolling */
+html { background-color: var(--bg-color); }
+body { 
+  background-color: var(--bg-color); color: var(--text-main); transition: background-color 0.3s; 
+  overflow-x: hidden; 
+  overscroll-behavior-y: contain; /* Contains the scroll bounce (disables pull-to-refresh) but allows scrolling */
+}
 
 .header { display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; background-color: var(--card-bg); box-shadow: 0 2px 10px var(--header-shadow); position: sticky; top: 0; z-index: 10; transition: background-color 0.3s; }
 .header-left, .header-right { flex: 1; display: flex; align-items: center; }
@@ -14,7 +21,6 @@ html, body { background-color: var(--bg-color); color: var(--text-main); transit
 .clock-time { font-size: 0.95rem; font-weight: 800; color: #fff; margin-bottom: 2px; }
 .clock-date { font-size: 0.65rem; font-weight: 600; color: #bbb; text-transform: uppercase; }
 
-/* Fixed Sidebar bound to bottom instead of 100vh */
 .sidebar { position: fixed; top: 0; bottom: 0; left: -300px; width: 280px; background-color: var(--card-bg); box-shadow: 2px 0 15px rgba(0,0,0,0.15); transition: left 0.3s; z-index: 1000; padding-top: 80px; overflow-y: auto; padding-bottom: 40px; }
 .sidebar.open { left: 0; }
 .sidebar ul { list-style: none; display: flex; flex-direction: column; }
@@ -35,7 +41,6 @@ body.dark-mode .moon-icon { opacity: 1; transform: rotate(0); }
 body.dark-mode .light-text { opacity: 0; }
 body.dark-mode .dark-text { opacity: 1; }
 
-/* Overlays bound to all edges instead of 100vh */
 .overlay, .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; display: none; }
 .overlay { background: rgba(0,0,0,0.4); z-index: 999; }
 .modal-overlay { background: rgba(0,0,0,0.6); z-index: 1001; justify-content: center; align-items: center; padding: 20px; }
@@ -143,30 +148,28 @@ body.dark-mode .cal-day:hover:not(.empty):not(.holiday):not(.important) span { b
    (Solves the rubber-banding mobile bug)
    ========================================= */
 .split-screen-overlay { 
-  position: fixed; top: 0; left: 0; right: 0; bottom: 0; /* Bounds overlay perfectly to screen */
+  position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; /* dvh perfectly respects mobile address bars */
   background: var(--bg-color); z-index: 2000; display: none; flex-direction: column; 
 }
 .split-screen-overlay.active { display: flex; }
 
 .split-top { 
-  flex: 1; min-height: 0; /* min-height 0 stops flexbox infinite expansion */
+  height: 50%; flex: none; /* Hard lock to exactly half the screen */
   position: relative; background: #222; overflow: hidden; 
   display: flex; justify-content: center; align-items: center; border-bottom: 3px solid var(--border-color); 
 }
 .split-top iframe { width: 100%; height: 100%; border: none; background: white; }
 
 .split-bottom { 
-  flex: 1; min-height: 0; /* min-height 0 stops flexbox infinite expansion */
-  background: var(--bg-color); display: flex; flex-direction: column; overflow: hidden; 
+  height: 50%; flex: none; /* Hard lock to exactly half the screen */
+  background: var(--bg-color); display: flex; flex-direction: column; 
 }
 
 .setup-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; background: var(--card-bg); border-bottom: 1px solid var(--border-color); box-shadow: 0 4px 10px rgba(0,0,0,0.05); z-index: 5; }
 
 .setup-container { 
-  flex: 1; min-height: 0; /* Enables internal scrolling */
-  overflow-y: auto; padding-bottom: 80px; 
+  flex: 1; overflow-y: auto; padding-bottom: 80px; 
   -webkit-overflow-scrolling: touch; 
-  overscroll-behavior-y: contain; /* Stops grid scroll from triggering pull-to-refresh */
 }
 
 .setup-month { margin-top: 20px; padding: 0 15px; }

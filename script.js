@@ -1,8 +1,8 @@
-const DB_KEY = 'attendance_tracker_v27';
-const HISTORY_KEY = 'attendance_history_v27';
-const CALENDAR_KEY = 'academic_calendar_v27';
-const MARKED_DATES_KEY = 'marked_dates_v27';
-const MANUAL_SHOWN_KEY = 'appManualShown_v27';
+const DB_KEY = 'attendance_tracker_v28';
+const HISTORY_KEY = 'attendance_history_v28';
+const CALENDAR_KEY = 'academic_calendar_v28';
+const MARKED_DATES_KEY = 'marked_dates_v28';
+const MANUAL_SHOWN_KEY = 'appManualShown_v28';
 
 let targetPercentage = parseInt(localStorage.getItem('target_percentage')) || 75;
 let historyLog = JSON.parse(localStorage.getItem(HISTORY_KEY)) || [];
@@ -750,6 +750,7 @@ function renderUI() {
         let status = '';
         let indicator = '';
         const cardId = `timeline-card-${idx}`;
+        const cascadeDelay = idx * 0.08; // Domino stagger animation
 
         if (isToday) { 
           if (currentTime >= cls.start && currentTime <= cls.end) {
@@ -767,7 +768,7 @@ function renderUI() {
         }
 
         html += `
-          <div class="timeline-card ${status}" id="${cardId}">
+          <div class="timeline-card ${status}" id="${cardId}" style="animation-delay: ${cascadeDelay}s">
             <div class="timeline-time">${indicator}${format12Hour(cls.start)} - ${format12Hour(cls.end)}</div>
             <div class="timeline-course">${cls.name}</div>
           </div>`;
@@ -780,12 +781,11 @@ function renderUI() {
         setTimeout(() => {
           const el = document.getElementById(focusId);
           if (el) el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-        }, 150);
+        }, 300); // 300ms allows the beautiful cascade animation to play out first before panning
       }
     }
   }
 
-  // --- INJECT REDESIGNED LIVE WIDGET ---
   let liveClassHTML = '';
   if (isToday && !isTodayHoliday() && getTodayString() !== 'Sunday') {
     const todayStr = getTodayDateString();

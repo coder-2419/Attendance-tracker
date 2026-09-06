@@ -86,21 +86,43 @@ body.dark-mode .cal-day:hover:not(.empty):not(.holiday):not(.important) span { b
 .day-selector button { background: var(--card-bg); border: 1px solid var(--border-color); padding: 8px 16px; border-radius: 20px; font-weight: 700; color: var(--text-sub); cursor: pointer; white-space: nowrap; transform: translateZ(0); }
 .day-selector button.active-day { background: #3498db; color: white; border-color: #3498db; }
 
-.timetable-bar { display: flex; gap: 15px; overflow-x: auto; padding-bottom: 15px; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; scrollbar-width: none; will-change: scroll-position; }
-.timetable-bar::-webkit-scrollbar { display: none; }
 
+/* --- RELAXED SCROLL PHYSICS --- */
+.timetable-bar { 
+  display: flex; gap: 15px; overflow-x: auto; padding-bottom: 25px; padding-top: 15px; 
+  -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; 
+  scroll-snap-type: x proximity; /* Proximity allows free, uninterrupted swiping */
+  scrollbar-width: none; will-change: scroll-position; 
+}
+.timetable-bar::-webkit-scrollbar { display: none; }
 .timetable-spacer { min-width: calc(50vw - 110px); flex-shrink: 0; }
 
-.timeline-card { min-width: 180px; background: var(--card-bg); padding: 15px; border-radius: 12px; border: 1px solid var(--border-color); flex-shrink: 0; scroll-snap-align: center; transform: translateZ(0) scale(1); will-change: transform, opacity; transition: transform 0.4s ease, opacity 0.4s ease, border-left-color 0.4s ease; }
+/* --- CASCADING ENTRY ANIMATION & BOUNCY FOCUS --- */
+@keyframes slideInCard {
+  from { opacity: 0; transform: translateX(40px) scale(0.9); }
+  to { opacity: 1; transform: translateX(0) scale(1); }
+}
+
+.timeline-card { 
+  min-width: 180px; background: var(--card-bg); padding: 15px; border-radius: 12px; 
+  border: 1px solid var(--border-color); flex-shrink: 0; scroll-snap-align: center; 
+  transform: translateZ(0) scale(1); will-change: transform, opacity; 
+  
+  /* Bouncy physics curve for when a card changes states */
+  transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.4s ease, border-left-color 0.4s ease, box-shadow 0.4s ease; 
+  
+  /* Cascade entrance animation */
+  animation: slideInCard 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
 .timeline-card.upcoming { border-left: 4px solid #f1c40f; opacity: 1; transform: scale(0.98); }
-.timeline-card.active { border-left: 4px solid #2ecc71; transform: scale(1.08); box-shadow: 0 4px 15px rgba(46, 204, 113, 0.2); z-index: 2; }
-.timeline-card.past { border-left: 4px solid var(--border-color); opacity: 0.35; transform: scale(0.9); }
+.timeline-card.active { border-left: 4px solid #2ecc71; transform: scale(1.08); box-shadow: 0 8px 20px rgba(46, 204, 113, 0.25); z-index: 2; }
+.timeline-card.past { border-left: 4px solid var(--border-color); opacity: 0.4; transform: scale(0.92); }
+
 .timeline-time { font-size: 0.8rem; font-weight: 700; margin-bottom: 6px; display: flex; align-items: center; }
 .timeline-course { font-size: 0.95rem; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
 .live-dot-small { width: 8px; height: 8px; background: #2ecc71; border-radius: 50%; display: inline-block; margin-right: 6px; animation: blink 1s infinite; flex-shrink: 0; }
 
-/* --- UPDATED SLEEK LIVE PROMPT UI --- */
 .live-prompt-card { 
   display: flex; flex-direction: column; background: var(--card-bg); 
   border: 1px solid var(--border-color); border-radius: 20px; padding: 22px; 

@@ -1,8 +1,8 @@
-const DB_KEY = 'attendance_tracker_v24';
-const HISTORY_KEY = 'attendance_history_v24';
-const CALENDAR_KEY = 'academic_calendar_v24';
-const MARKED_DATES_KEY = 'marked_dates_v24';
-const MANUAL_SHOWN_KEY = 'appManualShown_v24';
+const DB_KEY = 'attendance_tracker_v25';
+const HISTORY_KEY = 'attendance_history_v25';
+const CALENDAR_KEY = 'academic_calendar_v25';
+const MARKED_DATES_KEY = 'marked_dates_v25';
+const MANUAL_SHOWN_KEY = 'appManualShown_v25';
 
 let targetPercentage = parseInt(localStorage.getItem('target_percentage')) || 75;
 let historyLog = JSON.parse(localStorage.getItem(HISTORY_KEY)) || [];
@@ -720,7 +720,7 @@ function renderUI() {
     courses.forEach(c => { 
       if (c.schedule && c.schedule[currentSelectedDay]) {
         c.schedule[currentSelectedDay].forEach(slot => { 
-          todaysClasses.push({ name: c.name, start: slot.start, end: slot.end }); 
+          todaysClasses.push({ name: c.name, start: slot.start, end: slot.end, id: c.id }); 
         });
       }
     });
@@ -729,23 +729,53 @@ function renderUI() {
       timeContainer.innerHTML = `<p style="color:var(--text-sub);">No classes scheduled.</p>`;
     } else {
       todaysClasses.sort((a, b) => a.start.localeCompare(b.start));
-      let html = '';
-      todaysClasses.forEach(cls => {
+      
+      let html = '<div class="timetable-spacer"></div>';
+      let focusId = null;
+      let foundFocus = false;
+
+      todaysClasses.forEach((cls, idx) => {
         let status = '';
+        let indicator = '';
+        const cardId = `timeline-card-${idx}`;
+
+        // Timeline sorting logic
         if (isToday) { 
-          if (currentTime >= cls.start && currentTime <= cls.end) status = 'active'; 
-          else if (currentTime > cls.end) status = 'past'; 
+          if (currentTime >= cls.start && currentTime <= cls.end) {
+            status = 'active'; 
+            indicator = '<span class="live-dot-small"></span>';
+            if (!foundFocus) { focusId = cardId; foundFocus = true; }
+          } 
+          else if (currentTime > cls.end) {
+            status = 'past'; 
+          }
+          else {
+            status = 'upcoming';
+            if (!foundFocus) { focusId = cardId; foundFocus = true; }
+          }
         }
+
         html += `
-          <div class="timeline-card ${status}">
-            <div class="timeline-time">${format12Hour(cls.start)} - ${format12Hour(cls.end)}</div>
+          <div class="timeline-card ${status}" id="${cardId}">
+            <div class="timeline-time">${indicator}${format12Hour(cls.start)} - ${format12Hour(cls.end)}</div>
             <div class="timeline-course">${cls.name}</div>
           </div>`;
       });
+      
+      html += '<div class="timetable-spacer"></div>';
       timeContainer.innerHTML = html;
+
+      // Smooth pan to current active/upcoming class
+      if (focusId && isToday) {
+        setTimeout(() => {
+          const el = document.getElementById(focusId);
+          if (el) el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+        }, 150);
+      }
     }
   }
 
+  // Inject Live Prompts if required
   let liveClassHTML = '';
   if (isToday && !isTodayHoliday()) {
     const todayStr = getTodayDateString();
@@ -847,7 +877,7 @@ function toggleActionBar(id) {
 startLiveClock(); 
 updateHolidayButton(); 
 renderUI(); 
-setInterval(renderUI, 60000);
+setInterval(renderUI, 60000); // 60 second loop engine triggers panning on schedule updates
 
 if (!localStorage.getItem(MANUAL_SHOWN_KEY)) { 
   localStorage.setItem(MANUAL_SHOWN_KEY, 'true'); 

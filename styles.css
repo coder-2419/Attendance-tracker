@@ -14,7 +14,8 @@ html, body { background-color: var(--bg-color); color: var(--text-main); transit
 .clock-time { font-size: 0.95rem; font-weight: 800; color: #fff; margin-bottom: 2px; }
 .clock-date { font-size: 0.65rem; font-weight: 600; color: #bbb; text-transform: uppercase; }
 
-.sidebar { position: fixed; top: 0; left: -300px; width: 280px; height: 100vh; background-color: var(--card-bg); box-shadow: 2px 0 15px rgba(0,0,0,0.15); transition: left 0.3s; z-index: 1000; padding-top: 80px; overflow-y: auto; padding-bottom: 40px; }
+/* Fixed Sidebar bound to bottom instead of 100vh */
+.sidebar { position: fixed; top: 0; bottom: 0; left: -300px; width: 280px; background-color: var(--card-bg); box-shadow: 2px 0 15px rgba(0,0,0,0.15); transition: left 0.3s; z-index: 1000; padding-top: 80px; overflow-y: auto; padding-bottom: 40px; }
 .sidebar.open { left: 0; }
 .sidebar ul { list-style: none; display: flex; flex-direction: column; }
 .sidebar li { padding: 18px 25px; border-bottom: 1px solid var(--border-color); cursor: pointer; font-size: 1.1rem; font-weight: 500; color: var(--text-main); }
@@ -34,7 +35,8 @@ body.dark-mode .moon-icon { opacity: 1; transform: rotate(0); }
 body.dark-mode .light-text { opacity: 0; }
 body.dark-mode .dark-text { opacity: 1; }
 
-.overlay, .modal-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; display: none; }
+/* Overlays bound to all edges instead of 100vh */
+.overlay, .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; display: none; }
 .overlay { background: rgba(0,0,0,0.4); z-index: 999; }
 .modal-overlay { background: rgba(0,0,0,0.6); z-index: 1001; justify-content: center; align-items: center; padding: 20px; }
 .overlay.active, .modal-overlay.active { display: flex; }
@@ -86,53 +88,27 @@ body.dark-mode .cal-day:hover:not(.empty):not(.holiday):not(.important) span { b
 .day-selector button { background: var(--card-bg); border: 1px solid var(--border-color); padding: 8px 16px; border-radius: 20px; font-weight: 700; color: var(--text-sub); cursor: pointer; white-space: nowrap; transform: translateZ(0); }
 .day-selector button.active-day { background: #3498db; color: white; border-color: #3498db; }
 
-
-/* --- RELAXED SCROLL PHYSICS --- */
-.timetable-bar { 
-  display: flex; gap: 15px; overflow-x: auto; padding-bottom: 25px; padding-top: 15px; 
-  -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; 
-  scroll-snap-type: x proximity; /* Proximity allows free, uninterrupted swiping */
-  scrollbar-width: none; will-change: scroll-position; 
-}
+.timetable-bar { display: flex; gap: 15px; overflow-x: auto; padding-bottom: 25px; padding-top: 15px; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; scroll-snap-type: x proximity; scrollbar-width: none; will-change: scroll-position; }
 .timetable-bar::-webkit-scrollbar { display: none; }
+
 .timetable-spacer { min-width: calc(50vw - 110px); flex-shrink: 0; }
 
-/* --- CASCADING ENTRY ANIMATION & BOUNCY FOCUS --- */
 @keyframes slideInCard {
   from { opacity: 0; transform: translateX(40px) scale(0.9); }
   to { opacity: 1; transform: translateX(0) scale(1); }
 }
 
-.timeline-card { 
-  min-width: 180px; background: var(--card-bg); padding: 15px; border-radius: 12px; 
-  border: 1px solid var(--border-color); flex-shrink: 0; scroll-snap-align: center; 
-  transform: translateZ(0) scale(1); will-change: transform, opacity; 
-  
-  /* Bouncy physics curve for when a card changes states */
-  transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.4s ease, border-left-color 0.4s ease, box-shadow 0.4s ease; 
-  
-  /* Cascade entrance animation */
-  animation: slideInCard 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both;
-}
-
+.timeline-card { min-width: 180px; background: var(--card-bg); padding: 15px; border-radius: 12px; border: 1px solid var(--border-color); flex-shrink: 0; scroll-snap-align: center; transform: translateZ(0) scale(1); will-change: transform, opacity; transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.4s ease, border-left-color 0.4s ease, box-shadow 0.4s ease; animation: slideInCard 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
 .timeline-card.upcoming { border-left: 4px solid #f1c40f; opacity: 1; transform: scale(0.98); }
 .timeline-card.active { border-left: 4px solid #2ecc71; transform: scale(1.08); box-shadow: 0 8px 20px rgba(46, 204, 113, 0.25); z-index: 2; }
 .timeline-card.past { border-left: 4px solid var(--border-color); opacity: 0.4; transform: scale(0.92); }
-
 .timeline-time { font-size: 0.8rem; font-weight: 700; margin-bottom: 6px; display: flex; align-items: center; }
 .timeline-course { font-size: 0.95rem; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
 .live-dot-small { width: 8px; height: 8px; background: #2ecc71; border-radius: 50%; display: inline-block; margin-right: 6px; animation: blink 1s infinite; flex-shrink: 0; }
 
-.live-prompt-card { 
-  display: flex; flex-direction: column; background: var(--card-bg); 
-  border: 1px solid var(--border-color); border-radius: 20px; padding: 22px; 
-  margin-bottom: 30px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); 
-  position: relative; overflow: hidden;
-}
-.live-prompt-card::before {
-  content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 5px; 
-  background: linear-gradient(90deg, #2ecc71, #3498db);
-}
+.live-prompt-card { display: flex; flex-direction: column; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 20px; padding: 22px; margin-bottom: 30px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); position: relative; overflow: hidden; }
+.live-prompt-card::before { content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 5px; background: linear-gradient(90deg, #2ecc71, #3498db); }
 .live-info-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
 .live-status { display: flex; align-items: center; gap: 8px; font-size: 0.8rem; font-weight: 800; color: #e74c3c; letter-spacing: 1px; }
 .live-dot { width: 10px; height: 10px; background: #e74c3c; border-radius: 50%; animation: blink 1.2s infinite; }
@@ -141,15 +117,10 @@ body.dark-mode .cal-day:hover:not(.empty):not(.holiday):not(.important) span { b
 .live-course-details { margin-bottom: 22px; }
 .live-course-details h4 { font-size: 1.15rem; font-weight: 800; color: var(--text-main); line-height: 1.3; }
 .live-actions-row { display: flex; gap: 15px; }
-.live-actions-row button { 
-  flex: 1; padding: 14px 0; font-size: 1rem; border-radius: 12px; font-weight: 800; border: none; 
-  cursor: pointer; color: white; display: flex; justify-content: center; align-items: center; gap: 8px; 
-  transition: transform 0.2s, box-shadow 0.2s; 
-}
+.live-actions-row button { flex: 1; padding: 14px 0; font-size: 1rem; border-radius: 12px; font-weight: 800; border: none; cursor: pointer; color: white; display: flex; justify-content: center; align-items: center; gap: 8px; transition: transform 0.2s, box-shadow 0.2s; }
 .live-actions-row button:active { transform: scale(0.96); }
 .btn-present-large { background: #2ecc71; box-shadow: 0 4px 10px rgba(46, 204, 113, 0.3); }
 .btn-absent-large { background: #e74c3c; box-shadow: 0 4px 10px rgba(231, 76, 60, 0.3); }
-
 
 .course-list-container { width: 100%; display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 20px; }
 .course-card-wrapper { display: flex; align-items: center; position: relative; width: 100%; overflow: hidden; border-radius: 16px; }
@@ -166,12 +137,37 @@ body.dark-mode .cal-day:hover:not(.empty):not(.holiday):not(.important) span { b
 .btn-present { background-color: #2ecc71; }
 .btn-absent { background-color: #e74c3c; }
 
-.split-screen-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: var(--bg-color); z-index: 2000; display: none; flex-direction: column; }
+
+/* =========================================
+   FLEXBOX SCROLL FIX FOR SPLIT SCREEN 
+   (Solves the rubber-banding mobile bug)
+   ========================================= */
+.split-screen-overlay { 
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0; /* Bounds overlay perfectly to screen */
+  background: var(--bg-color); z-index: 2000; display: none; flex-direction: column; 
+}
 .split-screen-overlay.active { display: flex; }
-.split-top { flex: 1; position: relative; background: #222; overflow: hidden; display: flex; justify-content: center; align-items: center; border-bottom: 3px solid var(--border-color); }
+
+.split-top { 
+  flex: 1; min-height: 0; /* min-height 0 stops flexbox infinite expansion */
+  position: relative; background: #222; overflow: hidden; 
+  display: flex; justify-content: center; align-items: center; border-bottom: 3px solid var(--border-color); 
+}
 .split-top iframe { width: 100%; height: 100%; border: none; background: white; }
-.split-bottom { flex: 1; background: var(--bg-color); display: flex; flex-direction: column; overflow: hidden; }
+
+.split-bottom { 
+  flex: 1; min-height: 0; /* min-height 0 stops flexbox infinite expansion */
+  background: var(--bg-color); display: flex; flex-direction: column; overflow: hidden; 
+}
+
 .setup-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; background: var(--card-bg); border-bottom: 1px solid var(--border-color); box-shadow: 0 4px 10px rgba(0,0,0,0.05); z-index: 5; }
-.setup-container { flex: 1; overflow-y: auto; padding-bottom: 40px; }
+
+.setup-container { 
+  flex: 1; min-height: 0; /* Enables internal scrolling */
+  overflow-y: auto; padding-bottom: 80px; 
+  -webkit-overflow-scrolling: touch; 
+  overscroll-behavior-y: contain; /* Stops grid scroll from triggering pull-to-refresh */
+}
+
 .setup-month { margin-top: 20px; padding: 0 15px; }
 .setup-month-title { font-size: 1.1rem; font-weight: 800; margin-bottom: 10px; text-transform: uppercase; color: var(--text-main); border-bottom: 2px solid var(--border-color); padding-bottom: 5px; }

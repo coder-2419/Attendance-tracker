@@ -1,8 +1,8 @@
-const DB_KEY = 'attendance_tracker_v28';
-const HISTORY_KEY = 'attendance_history_v28';
-const CALENDAR_KEY = 'academic_calendar_v28';
-const MARKED_DATES_KEY = 'marked_dates_v28';
-const MANUAL_SHOWN_KEY = 'appManualShown_v28';
+const DB_KEY = 'attendance_tracker_v29';
+const HISTORY_KEY = 'attendance_history_v29';
+const CALENDAR_KEY = 'academic_calendar_v29';
+const MARKED_DATES_KEY = 'marked_dates_v29';
+const MANUAL_SHOWN_KEY = 'appManualShown_v29';
 
 let targetPercentage = parseInt(localStorage.getItem('target_percentage')) || 75;
 let historyLog = JSON.parse(localStorage.getItem(HISTORY_KEY)) || [];
@@ -231,6 +231,8 @@ function startCalendarSetup() {
     };
 
     previewWrapper.ontouchmove = (e) => {
+      // Allows internal dragging without bubbling up
+      e.stopPropagation();
       e.preventDefault(); 
       if (e.touches.length === 2) {
         const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
@@ -750,7 +752,7 @@ function renderUI() {
         let status = '';
         let indicator = '';
         const cardId = `timeline-card-${idx}`;
-        const cascadeDelay = idx * 0.08; // Domino stagger animation
+        const cascadeDelay = idx * 0.08; 
 
         if (isToday) { 
           if (currentTime >= cls.start && currentTime <= cls.end) {
@@ -781,7 +783,7 @@ function renderUI() {
         setTimeout(() => {
           const el = document.getElementById(focusId);
           if (el) el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-        }, 300); // 300ms allows the beautiful cascade animation to play out first before panning
+        }, 300); 
       }
     }
   }
@@ -887,7 +889,7 @@ function toggleActionBar(id) {
 startLiveClock(); 
 updateHolidayButton(); 
 renderUI(); 
-setInterval(renderUI, 60000);
+setInterval(renderUI, 60000); 
 
 if (!localStorage.getItem(MANUAL_SHOWN_KEY)) { 
   localStorage.setItem(MANUAL_SHOWN_KEY, 'true'); 

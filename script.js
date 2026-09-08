@@ -1,8 +1,8 @@
-const DB_KEY = 'attendance_tracker_v30';
-const HISTORY_KEY = 'attendance_history_v30';
-const CALENDAR_KEY = 'academic_calendar_v30';
-const MARKED_DATES_KEY = 'marked_dates_v30';
-const MANUAL_SHOWN_KEY = 'appManualShown_v30';
+const DB_KEY = 'attendance_tracker_v32';
+const HISTORY_KEY = 'attendance_history_v32';
+const CALENDAR_KEY = 'academic_calendar_v32';
+const MARKED_DATES_KEY = 'marked_dates_v32';
+const MANUAL_SHOWN_KEY = 'appManualShown_v32';
 
 let targetPercentage = parseInt(localStorage.getItem('target_percentage')) || 75;
 let historyLog = JSON.parse(localStorage.getItem(HISTORY_KEY)) || [];
@@ -16,6 +16,17 @@ function getTodayString() {
 
 let currentSelectedDay = getTodayString();
 let currentCalDate = new Date(); 
+
+// --- TIMETABLE BUILDER ENGINE ---
+let activeBuilderDay = 'Monday';
+let customScheduleMap = { Monday:[], Tuesday:[], Wednesday:[], Thursday:[], Friday:[], Saturday:[] };
+let customSubjectNames = {};
+
+function initBuilder() {
+    activeBuilderDay = 'Monday';
+    customScheduleMap = { Monday:[], Tuesday:[], Wednesday:[], Thursday:[], Friday:[], Saturday:[] };
+    customSubjectNames = {};
+}
 
 if(localStorage.getItem('darkMode') === 'true') document.body.classList.add('dark-mode');
 
@@ -187,6 +198,7 @@ function getCalculatedAttendance() {
   return calc;
 }
 
+// --- SETUP CALENDAR FUNCTIONS ---
 let setupBlobUrl = null;
 let setupTempData = {};
 let setupStartDate = null;
@@ -267,13 +279,10 @@ function startCalendarSetup() {
 function buildSetupCalendar(startStr, endStr) {
   const container = document.getElementById('setupCalendarContainer');
   let html = '';
-  
   let startDate = new Date(startStr);
   let endDate = new Date(endStr);
-  
   let startYear = startDate.getFullYear();
   let endYear = Math.max(endDate.getFullYear(), startYear + 1);
-  
   let curr = new Date(startYear, 0, 1); 
   let finalDate = new Date(endYear, 11, 31); 
   
@@ -284,25 +293,15 @@ function buildSetupCalendar(startStr, endStr) {
     const daysInMonth = new Date(year, month + 1, 0).getDate();
     const monthNames = ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"];
     
-    html += `
-      <div class="setup-month">
-        <div class="setup-month-title">${monthNames[month]} ${year}</div>
-        <div class="cal-weekdays"><span>Su</span><span>M</span><span>Tu</span><span>W</span><span>Th</span><span>F</span><span>Sa</span></div>
-        <div class="cal-grid-month">`;
-    
-    for (let i = 0; i < firstDay; i++) { 
-      html += `<div class="cal-day empty"></div>`; 
-    }
-    
+    html += `<div class="setup-month"><div class="setup-month-title">${monthNames[month]} ${year}</div><div class="cal-weekdays"><span>Su</span><span>M</span><span>Tu</span><span>W</span><span>Th</span><span>F</span><span>Sa</span></div><div class="cal-grid-month">`;
+    for (let i = 0; i < firstDay; i++) { html += `<div class="cal-day empty"></div>`; }
     for (let i = 1; i <= daysInMonth; i++) {
       const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
       const iterDate = new Date(year, month, i);
       const isSunday = iterDate.getDay() === 0 ? 'sunday' : '';
-      
       html += `<div class="cal-day ${isSunday}" id="setup-${dateStr}" onclick="cyclePaintMode('${dateStr}', this)"><span>${i}</span></div>`;
     }
     html += `</div></div>`;
-    
     curr.setMonth(curr.getMonth() + 1); 
   }
   container.innerHTML = html;
@@ -386,6 +385,28 @@ function toggleFullDayPresent(dateString) {
   } else {
     markedDates.push(dateString);
     addHistory(`Marked Day Present: ${dateString}`);
+    
+    let dailyMarks = JSON.parse(localStorage.getItem('daily_marks_v32')) || {};
+    const [y, m, d] = dateString.split('-');
+    const localDate = new Date(y, m-1, d);
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const dayName = days[localDate.getDay()];
+
+    courses.forEach(c => {
+       if (c.schedule && c.schedule[dayName]) {
+          c.schedule[dayName].forEach(slot => {
+             const slotKey = `${dateString}_${c.id}_${slot.start}`;
+             if (dailyMarks[slotKey] === 'present') {
+                 c.present -= 1;
+                 if (academicCalendar && academicCalendar.startDate) c.absent += 1;
+             } else if (dailyMarks[slotKey] === 'absent') {
+                 if (!academicCalendar || !academicCalendar.startDate) c.absent -= 1;
+             }
+             delete dailyMarks[slotKey];
+          });
+       }
+    });
+    localStorage.setItem('daily_marks_v32', JSON.stringify(dailyMarks));
   }
   
   saveToDatabase(); 
@@ -403,6 +424,135 @@ function closeModal(e) {
   document.getElementById('modalOverlay').classList.remove('active'); 
 }
 
+// --- BUILDER DOM FUNCTIONS ---
+function switchBuilderDay(day) {
+    activeBuilderDay = day;
+    document.querySelectorAll('.builder-days button').forEach(b => b.classList.remove('active-day'));
+    const activeBtn = document.getElementById(`bDay-${day}`);
+    if(activeBtn) activeBtn.classList.add('active-day');
+    renderBuilderPeriods();
+}
+
+function addBuilderPeriod() {
+    customScheduleMap[activeBuilderDay].push({ start: '', end: '', code: '' });
+    renderBuilderPeriods();
+}
+
+function updateBuilderPeriod(index, field, value) {
+    customScheduleMap[activeBuilderDay][index][field] = value;
+    if(field === 'code') renderBuilderSubjects(); 
+}
+
+function removeBuilderPeriod(index) {
+    customScheduleMap[activeBuilderDay].splice(index, 1);
+    renderBuilderPeriods();
+    renderBuilderSubjects();
+}
+
+function renderBuilderPeriods() {
+    const container = document.getElementById('builderPeriods');
+    if(!container) return;
+    let html = '';
+    customScheduleMap[activeBuilderDay].forEach((period, idx) => {
+        html += `
+        <div style="display:flex; gap:6px; margin-bottom:10px; align-items:center;">
+            <input type="time" class="modal-input" style="flex:1; margin-bottom:0; padding:10px 4px; font-size:0.85rem;" value="${period.start}" onchange="updateBuilderPeriod(${idx}, 'start', this.value)">
+            <input type="time" class="modal-input" style="flex:1; margin-bottom:0; padding:10px 4px; font-size:0.85rem;" value="${period.end}" onchange="updateBuilderPeriod(${idx}, 'end', this.value)">
+            <input type="text" class="modal-input" style="flex:1.2; margin-bottom:0; padding:10px; font-size:0.85rem;" placeholder="Code (e.g. CSE101)" value="${period.code}" oninput="updateBuilderPeriod(${idx}, 'code', this.value.toUpperCase())">
+            <button onclick="removeBuilderPeriod(${idx})" style="flex:none; background:#e74c3c; color:white; border:none; width:32px; height:32px; border-radius:50%; font-weight:bold; cursor:pointer;">×</button>
+        </div>
+        `;
+    });
+    if(customScheduleMap[activeBuilderDay].length === 0) {
+        html = `<p style="color:var(--text-sub); font-size:0.9rem; text-align:center; margin-top:10px;">No periods added for ${activeBuilderDay}.</p>`;
+    }
+    container.innerHTML = html;
+}
+
+function renderBuilderSubjects() {
+    const container = document.getElementById('builderSubjects');
+    if(!container) return;
+
+    let uniqueCodes = new Set();
+    for(let day in customScheduleMap) {
+        customScheduleMap[day].forEach(p => {
+            if(p.code.trim()) uniqueCodes.add(p.code.trim().toUpperCase());
+        });
+    }
+
+    let html = '';
+    uniqueCodes.forEach(code => {
+        const existingName = customSubjectNames[code] || '';
+        html += `
+        <div style="display:flex; gap:10px; margin-bottom:10px; align-items:center;">
+            <span style="font-weight:800; min-width:85px; color:#3498db; font-size:0.9rem;">${code}</span>
+            <input type="text" class="modal-input" style="flex:1; margin-bottom:0; padding:10px; font-size:0.9rem;" placeholder="Full Subject Name" value="${existingName}" oninput="customSubjectNames['${code}'] = this.value">
+        </div>
+        `;
+    });
+    if(uniqueCodes.size === 0) {
+        html = `<p style="color:var(--text-sub); font-size:0.9rem; text-align:center;">Add a period above with a subject code first.</p>`;
+    }
+    container.innerHTML = html;
+}
+
+function saveBuiltTimetable() {
+    let newMasterMap = {};
+    let uniqueCodes = new Set();
+    
+    // Validation
+    for(let day in customScheduleMap) {
+        for (let i = 0; i < customScheduleMap[day].length; i++) {
+            const p = customScheduleMap[day][i];
+            if(!p.start || !p.end || !p.code.trim()) {
+                alert(`Please completely fill out all fields for the period on ${day}.`);
+                return;
+            }
+            uniqueCodes.add(p.code.trim().toUpperCase());
+        }
+    }
+
+    if (uniqueCodes.size === 0) return alert("Please add at least one period before saving.");
+
+    uniqueCodes.forEach(code => {
+        newMasterMap[code] = { name: customSubjectNames[code] || code, schedule: {} };
+    });
+
+    for(let day in customScheduleMap) {
+        customScheduleMap[day].forEach(p => {
+            const code = p.code.trim().toUpperCase();
+            if(!newMasterMap[code].schedule[day]) newMasterMap[code].schedule[day] = [];
+            newMasterMap[code].schedule[day].push({ start: p.start, end: p.end });
+        });
+    }
+
+    if(confirm("This will replace your current timetable completely. Do you want to proceed?")) {
+        const initialCourses = [];
+        Object.keys(newMasterMap).forEach((code, index) => {
+            initialCourses.push({ 
+                id: Date.now() + index, 
+                name: newMasterMap[code].name, 
+                code: code, 
+                present: 0, 
+                absent: 0, 
+                schedule: newMasterMap[code].schedule 
+            });
+        });
+
+        courses = initialCourses;
+        markedDates = [];
+        localStorage.removeItem('handled_live_classes');
+        localStorage.removeItem('daily_marks_v32'); 
+
+        addHistory(`Created custom timetable via Builder`);
+        saveToDatabase();
+        renderUI();
+        closeModal();
+        alert("New Timetable Created and Applied Successfully!");
+    }
+}
+
+// --- MODAL CONTROLLER ---
 function openModal(type) {
   document.getElementById('sidebar').classList.remove('open');
   document.getElementById('menuOverlay').classList.remove('active');
@@ -411,7 +561,33 @@ function openModal(type) {
   modalOverlay.classList.add('active');
   let html = `<button class="close-btn" onclick="closeModal()">×</button>`;
 
-  if (type === 'userManual') {
+  if (type === 'createTimetable') {
+    initBuilder();
+    html += `
+      <h2>Timetable Builder</h2>
+      <div class="day-selector builder-days" style="margin-top:15px; margin-bottom:15px; padding-bottom: 5px;">
+        <button id="bDay-Monday" onclick="switchBuilderDay('Monday')">Mon</button>
+        <button id="bDay-Tuesday" onclick="switchBuilderDay('Tuesday')">Tue</button>
+        <button id="bDay-Wednesday" onclick="switchBuilderDay('Wednesday')">Wed</button>
+        <button id="bDay-Thursday" onclick="switchBuilderDay('Thursday')">Thu</button>
+        <button id="bDay-Friday" onclick="switchBuilderDay('Friday')">Fri</button>
+        <button id="bDay-Saturday" onclick="switchBuilderDay('Saturday')">Sat</button>
+      </div>
+      
+      <div id="builderPeriods" style="margin-bottom:15px; min-height:60px;"></div>
+      <button class="btn-present" onclick="addBuilderPeriod()" style="width:100%; margin-bottom: 25px; background:var(--bg-color); color:#3498db; border:2px dashed #3498db;">+ Add Period</button>
+
+      <hr style="border:0; border-top:1px solid var(--border-color); margin-bottom:20px;" />
+
+      <h3>Define Subjects</h3>
+      <p style="font-size:0.8rem; color:var(--text-sub); margin-bottom:15px;">Unique codes from your schedule will appear below automatically.</p>
+      <div id="builderSubjects" style="margin-bottom:25px; min-height:40px;"></div>
+
+      <button class="btn-present" style="width:100%; background:#3498db; font-size:1.1rem; padding:15px;" onclick="saveBuiltTimetable()">Save & Apply Timetable</button>
+    `;
+    setTimeout(() => { switchBuilderDay('Monday'); renderBuilderSubjects(); }, 0);
+  }
+  else if (type === 'userManual') {
     html += `
       <h2>How to Use This App</h2>
       <div style="max-height: 60vh; overflow-y: auto; padding-right: 10px; text-align: left;">
@@ -693,23 +869,70 @@ function changeDay(dayName) {
   renderUI(); 
 }
 
+function checkAndAutoMarkDay() {
+  const todayStr = getTodayDateString();
+  const todayName = getTodayString();
+  if (markedDates.includes(todayStr)) return; 
+
+  let dailyMarks = JSON.parse(localStorage.getItem('daily_marks_v32')) || {};
+  let allPresent = true;
+  let totalClassesToday = 0;
+
+  courses.forEach(c => {
+    if (c.schedule && c.schedule[todayName]) {
+      c.schedule[todayName].forEach(slot => {
+        totalClassesToday++;
+        const slotKey = `${todayStr}_${c.id}_${slot.start}`;
+        if (dailyMarks[slotKey] !== 'present') {
+          allPresent = false;
+        }
+      });
+    }
+  });
+
+  if (totalClassesToday > 0 && allPresent) {
+    markedDates.push(todayStr); 
+    
+    courses.forEach(c => {
+      if (c.schedule && c.schedule[todayName]) {
+        c.schedule[todayName].forEach(slot => {
+          c.present -= 1; 
+          if (academicCalendar && academicCalendar.startDate) c.absent += 1;
+        });
+      }
+    });
+
+    addHistory(`All classes attended! Auto-marked calendar for ${todayStr}.`);
+    localStorage.setItem(MARKED_DATES_KEY, JSON.stringify(markedDates));
+  }
+}
+
 function handleLiveAttendance(courseId, status, slotKey) {
   let handledClasses = JSON.parse(localStorage.getItem('handled_live_classes')) || [];
-  handledClasses.push(slotKey);
-  localStorage.setItem('handled_live_classes', JSON.stringify(handledClasses));
+  if (!handledClasses.includes(slotKey)) {
+      handledClasses.push(slotKey);
+      localStorage.setItem('handled_live_classes', JSON.stringify(handledClasses));
+  }
+
+  let dailyMarks = JSON.parse(localStorage.getItem('daily_marks_v32')) || {};
+  dailyMarks[slotKey] = status;
+  localStorage.setItem('daily_marks_v32', JSON.stringify(dailyMarks));
 
   const course = courses.find(c => c.id === courseId);
   if (status === 'present') {
       course.present += 1;
-      if (academicCalendar && academicCalendar.startDate) course.absent -= 1; // offset auto-absent
+      if (academicCalendar && academicCalendar.startDate) course.absent -= 1; 
   } else if (status === 'absent') {
       if (!academicCalendar || !academicCalendar.startDate) course.absent += 1;
   }
   
   addHistory(`Live ${status.toUpperCase()}: ${course.name}`);
+  checkAndAutoMarkDay();
+  
   saveToDatabase();
   renderUI();
 }
+
 
 function renderUI() {
   document.querySelectorAll('.day-selector button').forEach(btn => {

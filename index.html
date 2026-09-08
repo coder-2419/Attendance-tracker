@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Attendance Tracker</title>
-  <link rel="stylesheet" href="styles.css?v=30">
+  <link rel="stylesheet" href="styles.css?v=32">
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#ffffff">
 </head>
@@ -31,6 +31,8 @@
 
     <ul>
       <li onclick="openModal('userManual')">How to Use the App</li>
+      <!-- NEW BUILDER BUTTON -->
+      <li onclick="openModal('createTimetable')" style="color:#3498db; font-weight: 800;">+ Create Custom Timetable</li>
       <li onclick="openModal('historyLog')">View History Log</li>
       <li onclick="openModal('setupCalendar')">Sync Academic Calendar</li>
       <li onclick="openModal('setTarget')">Set Target Attendance</li>
@@ -80,6 +82,6 @@
     <div id="courseList" class="course-list-container"></div>
   </main>
 
-  <script src="script.js?v=30"></script>
+  <script src="script.js?v=32"></script>
 </body>
 </html>

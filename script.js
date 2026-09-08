@@ -2,7 +2,6 @@
 
 /* ============================================================
    ATTENDANCE TRACKER
-   COMPLETE MOBILE-OPTIMIZED VERSION
 ============================================================ */
 
 /* ============================================================
@@ -240,7 +239,7 @@ const DEFAULT_SUBJECT_NAMES = {
 };
 
 const STORAGE_KEY =
-  "attendanceTrackerDB_v4";
+  "attendanceTrackerDB_v5";
 
 /* ============================================================
    HELPERS
@@ -264,22 +263,26 @@ function clamp(
 }
 
 function todayISO() {
-  const d = new Date();
+  const d =
+    new Date();
 
-  const year =
-    d.getFullYear();
+  return [
+    d.getFullYear(),
 
-  const month =
     String(
       d.getMonth() + 1
-    ).padStart(2, "0");
+    ).padStart(
+      2,
+      "0"
+    ),
 
-  const day =
     String(
       d.getDate()
-    ).padStart(2, "0");
-
-  return `${year}-${month}-${day}`;
+    ).padStart(
+      2,
+      "0"
+    )
+  ].join("-");
 }
 
 function toISODate(date) {
@@ -288,27 +291,34 @@ function toISODate(date) {
 
   return [
     d.getFullYear(),
+
     String(
       d.getMonth() + 1
-    ).padStart(2, "0"),
+    ).padStart(
+      2,
+      "0"
+    ),
+
     String(
       d.getDate()
-    ).padStart(2, "0")
+    ).padStart(
+      2,
+      "0"
+    )
   ].join("-");
 }
 
-function dateFromISO(iso) {
-  const [
-    year,
-    month,
-    day
-  ] =
-    iso.split("-").map(Number);
+function dateFromISO(
+  iso
+) {
+  const parts =
+    iso.split("-")
+      .map(Number);
 
   return new Date(
-    year,
-    month - 1,
-    day
+    parts[0],
+    parts[1] - 1,
+    parts[2]
   );
 }
 
@@ -325,10 +335,12 @@ function formatDate(
         options.weekday,
 
       day:
-        options.day || "numeric",
+        options.day ||
+        "numeric",
 
       month:
-        options.month || "short",
+        options.month ||
+        "short",
 
       year:
         options.year
@@ -387,6 +399,16 @@ function currentMinutes() {
   );
 }
 
+function isSunday(
+  iso
+) {
+  return (
+    dateFromISO(
+      iso
+    ).getDay() === 0
+  );
+}
+
 function getDateDayKey(
   iso
 ) {
@@ -395,7 +417,9 @@ function getDateDayKey(
       iso
     ).getDay();
 
-  if (day === 0) {
+  if (
+    day === 0
+  ) {
     return "Sun";
   }
 
@@ -408,32 +432,15 @@ function getTodayDayKey() {
   const day =
     new Date().getDay();
 
-  if (day === 0) {
+  if (
+    day === 0
+  ) {
     return "Mon";
   }
 
   return DAY_KEYS[
     day - 1
   ];
-}
-
-function isSunday(
-  iso
-) {
-  return (
-    dateFromISO(
-      iso
-    ).getDay() === 0
-  );
-}
-
-function subjectLabel(
-  code
-) {
-  return (
-    state.subjectNames?.[code] ||
-    code
-  );
 }
 
 function escapeHTML(
@@ -470,28 +477,11 @@ function escapeAttribute(
   );
 }
 
-function safeParse(
-  text,
-  fallback
-) {
-  try {
-    return JSON.parse(
-      text
-    );
-  } catch {
-    return fallback;
-  }
-}
-
 /* ============================================================
-   TERM START
+   DEFAULT TERM DATE
 ============================================================ */
 
 function defaultTermStart() {
-  /*
-   * Default to 1 July of the current year.
-   * User can change this.
-   */
   const d =
     new Date();
 
@@ -499,8 +489,7 @@ function defaultTermStart() {
   d.setDate(1);
 
   if (
-    d >
-    new Date()
+    d > new Date()
   ) {
     d.setFullYear(
       d.getFullYear() - 1
@@ -555,7 +544,7 @@ function createDefaultState() {
 function normalizeTimetable(
   input
 ) {
-  const timetable =
+  const output =
     clone(
       DEFAULT_TIMETABLE
     );
@@ -565,7 +554,7 @@ function normalizeTimetable(
     typeof input !==
       "object"
   ) {
-    return timetable;
+    return output;
   }
 
   DAY_KEYS.forEach(
@@ -575,11 +564,10 @@ function normalizeTimetable(
           input[day]
         )
       ) {
-        timetable[day] = [];
         return;
       }
 
-      timetable[day] =
+      output[day] =
         input[day]
           .filter(
             item =>
@@ -618,7 +606,7 @@ function normalizeTimetable(
     }
   );
 
-  return timetable;
+  return output;
 }
 
 function loadState() {
@@ -631,16 +619,25 @@ function loadState() {
     const fresh =
       createDefaultState();
 
-    persistState(fresh);
+    persistState(
+      fresh
+    );
 
     return fresh;
   }
 
-  const parsed =
-    safeParse(
-      stored,
-      null
-    );
+  let parsed;
+
+  try {
+    parsed =
+      JSON.parse(
+        stored
+      );
+  }
+  catch {
+    parsed =
+      null;
+  }
 
   if (
     !parsed ||
@@ -650,7 +647,9 @@ function loadState() {
     const fresh =
       createDefaultState();
 
-    persistState(fresh);
+    persistState(
+      fresh
+    );
 
     return fresh;
   }
@@ -725,7 +724,7 @@ let state =
   loadState();
 
 /* ============================================================
-   APP
+   APP STATE
 ============================================================ */
 
 const app = {
@@ -742,11 +741,20 @@ const app = {
     new Date().getFullYear(),
 
   calendarPreview: {
-    scale: 1,
-    minScale: 1,
-    maxScale: 4,
-    startDistance: 0,
-    startScale: 1
+    scale:
+      1,
+
+    minScale:
+      1,
+
+    maxScale:
+      4,
+
+    startDistance:
+      0,
+
+    startScale:
+      1
   }
 };
 
@@ -769,9 +777,6 @@ const $$ =
     );
 
 const els = {
-  body:
-    document.body,
-
   sidebar:
     $("#sidebar"),
 
@@ -858,66 +863,105 @@ const els = {
 };
 
 /* ============================================================
-   SIDEBAR
+   CLOCK
+   IMPORTANT:
+   This function does NOT render the entire app.
 ============================================================ */
 
-function openSidebar() {
-  document.body.classList.add(
-    "sidebar-open"
-  );
+function updateClock() {
+  const now =
+    new Date();
 
-  els.sidebarOverlay.setAttribute(
-    "aria-hidden",
-    "false"
-  );
+  const clock =
+    document.getElementById(
+      "liveClock"
+    );
 
-  requestAnimationFrame(
-    () => {
-      els.sidebarClose.focus({
-        preventScroll: true
-      });
-    }
-  );
-}
+  const date =
+    document.getElementById(
+      "liveDate"
+    );
 
-function closeSidebar() {
-  document.body.classList.remove(
-    "sidebar-open"
-  );
-
-  els.sidebarOverlay.setAttribute(
-    "aria-hidden",
-    "true"
-  );
+  const dayElement =
+    document.getElementById(
+      "headerDay"
+    );
 
   if (
-    window.innerWidth <=
-    1000
+    clock
   ) {
-    requestAnimationFrame(
-      () => {
-        els.hamburger.focus({
-          preventScroll: true
-        });
-      }
-    );
+    clock.textContent =
+      now.toLocaleTimeString(
+        undefined,
+        {
+          hour:
+            "2-digit",
+
+          minute:
+            "2-digit",
+
+          second:
+            "2-digit",
+
+          hour12:
+            false
+        }
+      );
+  }
+
+  if (
+    date
+  ) {
+    date.textContent =
+      now.toLocaleDateString(
+        undefined,
+        {
+          weekday:
+            "short",
+
+          day:
+            "2-digit",
+
+          month:
+            "short",
+
+          year:
+            "numeric"
+        }
+      );
+  }
+
+  if (
+    dayElement
+  ) {
+    const day =
+      now.getDay();
+
+    if (
+      day === 0
+    ) {
+      dayElement.textContent =
+        "Sunday • Holiday";
+    }
+    else {
+      dayElement.textContent =
+        DAY_NAMES[
+          DAY_KEYS[
+            day - 1
+          ]
+        ];
+    }
   }
 }
 
-els.hamburger.addEventListener(
-  "click",
-  openSidebar
-);
+function startClock() {
+  updateClock();
 
-els.sidebarClose.addEventListener(
-  "click",
-  closeSidebar
-);
-
-els.sidebarOverlay.addEventListener(
-  "click",
-  closeSidebar
-);
+  setInterval(
+    updateClock,
+    1000
+  );
+}
 
 /* ============================================================
    THEME
@@ -937,13 +981,15 @@ function applyTheme() {
       ? "☾"
       : "☀";
 
-  const meta =
+  const themeMeta =
     document.querySelector(
       'meta[name="theme-color"]'
     );
 
-  if (meta) {
-    meta.content =
+  if (
+    themeMeta
+  ) {
+    themeMeta.content =
       state.theme ===
       "dark"
         ? "#10141b"
@@ -966,54 +1012,71 @@ els.themeToggle.addEventListener(
 );
 
 /* ============================================================
-   CLOCK
+   SIDEBAR
 ============================================================ */
 
-function updateClock() {
-  const now =
-    new Date();
+function openSidebar() {
+  document.body.classList.add(
+    "sidebar-open"
+  );
 
-  els.liveClock.textContent =
-    now.toLocaleTimeString(
-      undefined,
-      {
-        hour12: false
-      }
-    );
+  els.sidebarOverlay.setAttribute(
+    "aria-hidden",
+    "false"
+  );
 
-  els.liveDate.textContent =
-    now.toLocaleDateString(
-      undefined,
-      {
-        weekday:
-          "short",
-
-        day:
-          "numeric",
-
-        month:
-          "short",
-
-        year:
-          "numeric"
-      }
-    );
-
-  const day =
-    now.getDay();
-
-  els.headerDay.textContent =
-    day === 0
-      ? "Sunday • Holiday"
-      : DAY_NAMES[
-          DAY_KEYS[
-            day - 1
-          ]
-        ];
+  requestAnimationFrame(
+    () => {
+      els.sidebarClose.focus({
+        preventScroll:
+          true
+      });
+    }
+  );
 }
 
+function closeSidebar() {
+  document.body.classList.remove(
+    "sidebar-open"
+  );
+
+  els.sidebarOverlay.setAttribute(
+    "aria-hidden",
+    "true"
+  );
+
+  if (
+    window.innerWidth <=
+    1000
+  ) {
+    requestAnimationFrame(
+      () => {
+        els.hamburger.focus({
+          preventScroll:
+            true
+        });
+      }
+    );
+  }
+}
+
+els.hamburger.addEventListener(
+  "click",
+  openSidebar
+);
+
+els.sidebarClose.addEventListener(
+  "click",
+  closeSidebar
+);
+
+els.sidebarOverlay.addEventListener(
+  "click",
+  closeSidebar
+);
+
 /* ============================================================
-   DAY DATE
+   DATE / DAY
 ============================================================ */
 
 function nextDateForDayKey(
@@ -1039,18 +1102,23 @@ function nextDateForDayKey(
       wantedDay
     ) + 1;
 
-  let delta =
+  let difference =
     wanted -
     current;
 
-  const d =
-    new Date(reference);
+  const result =
+    new Date(
+      reference
+    );
 
-  d.setDate(
-    d.getDate() + delta
+  result.setDate(
+    result.getDate() +
+      difference
   );
 
-  return toISODate(d);
+  return toISODate(
+    result
+  );
 }
 
 function selectedDateForApp() {
@@ -1063,32 +1131,6 @@ function selectedDateForApp() {
 /* ============================================================
    CALENDAR STATE
 ============================================================ */
-
-function isDateHoliday(
-  date
-) {
-  if (
-    isSunday(date)
-  ) {
-    return true;
-  }
-
-  return (
-    state.calendarStates[
-      date
-    ] === "holiday"
-  );
-}
-
-function isDatePresent(
-  date
-) {
-  return (
-    state.calendarStates[
-      date
-    ] === "present"
-  );
-}
 
 function getCalendarState(
   date
@@ -1107,6 +1149,28 @@ function getCalendarState(
   );
 }
 
+function isDateHoliday(
+  date
+) {
+  return (
+    getCalendarState(
+      date
+    ) ===
+    "holiday"
+  );
+}
+
+function isDatePresent(
+  date
+) {
+  return (
+    getCalendarState(
+      date
+    ) ===
+    "present"
+  );
+}
+
 /* ============================================================
    TIMETABLE
 ============================================================ */
@@ -1115,7 +1179,9 @@ function getDaySlots(
   day
 ) {
   return (
-    state.timetable[day] ||
+    state.timetable[
+      day
+    ] ||
     []
   );
 }
@@ -1132,6 +1198,17 @@ function slotKey(
   ].join("|");
 }
 
+function subjectLabel(
+  code
+) {
+  return (
+    state.subjectNames[
+      code
+    ] ||
+    code
+  );
+}
+
 /* ============================================================
    SLOT STATUS
 ============================================================ */
@@ -1141,7 +1218,9 @@ function getSlotStatus(
   slot
 ) {
   if (
-    isDateHoliday(date)
+    isDateHoliday(
+      date
+    )
   ) {
     return "holiday";
   }
@@ -1152,16 +1231,18 @@ function getSlotStatus(
       slot
     );
 
-  const explicit =
-    state.marks[key];
+  const saved =
+    state.marks[
+      key
+    ];
 
   if (
-    explicit ===
+    saved ===
       "present" ||
-    explicit ===
+    saved ===
       "absent"
   ) {
-    return explicit;
+    return saved;
   }
 
   if (
@@ -1192,13 +1273,15 @@ function getSlotStatus(
     );
 
   if (
-    now < start
+    now <
+    start
   ) {
     return "upcoming";
   }
 
   if (
-    now >= end
+    now >=
+    end
   ) {
     return "past";
   }
@@ -1217,7 +1300,7 @@ function renderSummary() {
   els.targetInline.textContent =
     `${state.target}%`;
 
-  const dateText =
+  els.termStartValue.textContent =
     formatDate(
       state.termStart,
       {
@@ -1232,11 +1315,20 @@ function renderSummary() {
       }
     );
 
-  els.termStartValue.textContent =
-    dateText;
-
   els.termStartLabel.textContent =
-    dateText;
+    formatDate(
+      state.termStart,
+      {
+        day:
+          "numeric",
+
+        month:
+          "short",
+
+        year:
+          "numeric"
+      }
+    );
 }
 
 /* ============================================================
@@ -1297,7 +1389,8 @@ function renderDaySelector() {
           "click",
           () => {
             app.selectedDay =
-              button.dataset.day;
+              button.dataset
+                .day;
 
             renderMain(
               true
@@ -1316,15 +1409,16 @@ function renderTimeline(
   date,
   shouldScroll
 ) {
-  const day =
-    getDateDayKey(
-      date
+  const slots =
+    getDaySlots(
+      getDateDayKey(
+        date
+      )
     );
 
-  const slots =
-    getDaySlots(day);
-
-  if (!slots.length) {
+  if (
+    !slots.length
+  ) {
     els.timeline.innerHTML = `
       <div
         class="empty-state"
@@ -1339,7 +1433,7 @@ function renderTimeline(
         </h3>
 
         <p>
-          No timetable entries exist for this day.
+          This day currently has no timetable entries.
         </p>
       </div>
     `;
@@ -1350,64 +1444,63 @@ function renderTimeline(
   els.timeline.innerHTML =
     slots
       .map(
-        (slot, index) => {
+        (
+          slot,
+          index
+        ) => {
           const status =
             getSlotStatus(
               date,
               slot
             );
 
-          let statusLabel =
+          let label =
             "Past";
 
           if (
             status ===
             "live"
           ) {
-            statusLabel =
+            label =
               "LIVE NOW";
           }
-
-          if (
+          else if (
             status ===
             "upcoming"
           ) {
-            statusLabel =
+            label =
               "Upcoming";
           }
-
-          if (
+          else if (
             status ===
             "present"
           ) {
-            statusLabel =
+            label =
               "✓ Present";
           }
-
-          if (
+          else if (
             status ===
             "absent"
           ) {
-            statusLabel =
+            label =
               "✖ Absent";
           }
 
           const visualClass =
             status ===
-              "present" ||
-            status ===
-              "absent"
-              ? status ===
-                "present"
-                ? "present"
-                : "past"
-              : status;
+            "present"
+              ? "present"
+              : status ===
+                "absent"
+                ? "past"
+                : status;
 
           return `
             <article
               class="class-card ${visualClass}"
               data-slot-index="${index}"
             >
+
               <div
                 class="status-bar"
               ></div>
@@ -1445,6 +1538,7 @@ function renderTimeline(
               <div
                 class="class-status"
               >
+
                 ${
                   status ===
                   "live"
@@ -1456,8 +1550,10 @@ function renderTimeline(
                     : ""
                 }
 
-                ${statusLabel}
+                ${label}
+
               </div>
+
             </article>
           `;
         }
@@ -1476,7 +1572,9 @@ function renderTimeline(
             ".class-card.live"
           );
 
-        if (live) {
+        if (
+          live
+        ) {
           setTimeout(
             () => {
               live.scrollIntoView(
@@ -1513,8 +1611,12 @@ function renderLivePrompt(
   if (
     date !==
       todayISO() ||
-    isDateHoliday(date) ||
-    isDatePresent(date)
+    isDateHoliday(
+      date
+    ) ||
+    isDatePresent(
+      date
+    )
   ) {
     return;
   }
@@ -1542,7 +1644,9 @@ function renderLivePrompt(
           )
     );
 
-  if (!liveSlot) {
+  if (
+    !liveSlot
+  ) {
     return;
   }
 
@@ -1553,7 +1657,9 @@ function renderLivePrompt(
     );
 
   if (
-    state.marks[key]
+    state.marks[
+      key
+    ]
   ) {
     return;
   }
@@ -1570,6 +1676,7 @@ function renderLivePrompt(
     <div
       class="live-prompt-top"
     >
+
       <span
         class="live-badge"
       >
@@ -1587,6 +1694,7 @@ function renderLivePrompt(
         –
         ${liveSlot.end}
       </span>
+
     </div>
 
     <div
@@ -1607,7 +1715,9 @@ function renderLivePrompt(
       )}
     </div>
 
-    <div class="live-buttons">
+    <div
+      class="live-buttons"
+    >
 
       <button
         type="button"
@@ -1660,12 +1770,9 @@ function renderLivePrompt(
 function renderSelectedDay(
   shouldScroll
 ) {
-  const today =
-    todayISO();
-
   const date =
     nextDateForDayKey(
-      today,
+      todayISO(),
       app.selectedDay
     );
 
@@ -1689,7 +1796,9 @@ function renderSelectedDay(
     holiday
   );
 
-  if (holiday) {
+  if (
+    holiday
+  ) {
     els.timeline.innerHTML =
       "";
 
@@ -1713,29 +1822,6 @@ function renderSelectedDay(
    ATTENDANCE ENGINE
 ============================================================ */
 
-/*
- * This dynamically calculates expected attendance from:
- *
- * term start -> today
- *
- * Rules:
- *
- * Sunday:
- *   ignored as immutable holiday.
- *
- * User holiday:
- *   all classes ignored.
- *
- * Full-day present:
- *   every scheduled class is present.
- *
- * Past unmarked class:
- *   absent.
- *
- * Current live/uncompleted class:
- *   not counted until user chooses.
- */
-
 function calculateBaseAttendance() {
   const result =
     {};
@@ -1752,12 +1838,16 @@ function calculateBaseAttendance() {
 
   for (
     let cursor =
-      new Date(start);
+      new Date(
+        start
+      );
 
-    cursor <= end;
+    cursor <=
+      end;
 
     cursor.setDate(
-      cursor.getDate() + 1
+      cursor.getDate() +
+        1
     )
   ) {
     const date =
@@ -1766,13 +1856,17 @@ function calculateBaseAttendance() {
       );
 
     if (
-      isSunday(date)
+      isSunday(
+        date
+      )
     ) {
       continue;
     }
 
     if (
-      isDateHoliday(date)
+      isDateHoliday(
+        date
+      )
     ) {
       continue;
     }
@@ -1783,17 +1877,24 @@ function calculateBaseAttendance() {
       );
 
     const slots =
-      getDaySlots(day);
+      getDaySlots(
+        day
+      );
 
-    if (!slots.length) {
+    if (
+      !slots.length
+    ) {
       continue;
     }
 
     const fullPresent =
-      isDatePresent(date);
+      isDatePresent(
+        date
+      );
 
     for (
-      const slot of slots
+      const slot of
+        slots
     ) {
       if (
         !result[
@@ -1944,14 +2045,11 @@ function getCourseStats(
         0,
 
       absent:
+        0,
+
+      total:
         0
     };
-
-  let total =
-    base.total +
-    Number(
-      adjustment.total || 0
-    );
 
   let present =
     base.present +
@@ -1967,65 +2065,72 @@ function getCourseStats(
         0
     );
 
-  /*
-   * First prevent negative values.
-   */
-  total =
-    Math.max(
-      0,
-      Math.round(total)
+  let total =
+    base.total +
+    Number(
+      adjustment.total ||
+        0
     );
 
   present =
     Math.max(
       0,
-      Math.round(present)
+      Math.round(
+        present
+      )
     );
 
   absent =
     Math.max(
       0,
-      Math.round(absent)
+      Math.round(
+        absent
+      )
+    );
+
+  total =
+    Math.max(
+      0,
+      Math.round(
+        total
+      )
     );
 
   /*
-   * Then make sure present + absent = total.
+   * Never allow impossible states.
    */
   if (
-    present > total
+    present >
+    total
   ) {
     present =
       total;
   }
 
   if (
-    absent > total
-  ) {
-    absent =
-      total -
-      present;
-
-    absent =
-      Math.max(
-        0,
-        absent
-      );
-  }
-
-  /*
-   * Finally guarantee no mathematical
-   * inconsistency.
-   */
-  if (
-    present + absent >
+    present +
+      absent >
     total
   ) {
     absent =
       Math.max(
         0,
         total -
-        present
+          present
       );
+  }
+
+  /*
+   * Ensure total always contains all displayed classes.
+   */
+  if (
+    present +
+      absent <
+    total
+  ) {
+    absent =
+      total -
+      present;
   }
 
   return {
@@ -2036,7 +2141,7 @@ function getCourseStats(
 }
 
 /* ============================================================
-   ALL COURSES
+   COURSE CODES
 ============================================================ */
 
 function getAllCourseCodes() {
@@ -2048,10 +2153,11 @@ function getAllCourseCodes() {
       getDaySlots(
         day
       ).forEach(
-        slot =>
+        slot => {
           codes.add(
             slot.code
-          )
+          );
+        }
       );
     }
   );
@@ -2060,26 +2166,35 @@ function getAllCourseCodes() {
     state.subjectNames ||
       {}
   ).forEach(
-    code =>
-      codes.add(code)
+    code => {
+      codes.add(
+        code
+      );
+    }
   );
 
   Object.keys(
     state.adjustments ||
       {}
   ).forEach(
-    code =>
-      codes.add(code)
+    code => {
+      codes.add(
+        code
+      );
+    }
   );
 
   return Array.from(
     codes
   ).sort(
     (a, b) =>
-      subjectLabel(a)
-        .localeCompare(
-          subjectLabel(b)
+      subjectLabel(
+        a
+      ).localeCompare(
+        subjectLabel(
+          b
         )
+      )
   );
 }
 
@@ -2091,12 +2206,9 @@ function calculateBunkMessage(
   present,
   total
 ) {
-  const target =
-    state.target /
-    100;
-
   if (
-    total === 0
+    total ===
+    0
   ) {
     return {
       type:
@@ -2107,23 +2219,21 @@ function calculateBunkMessage(
     };
   }
 
+  const target =
+    state.target /
+    100;
+
   const percentage =
     present /
     total;
 
-  /*
-   * Safe case:
-   *
-   * present / (total + x) >= target
-   *
-   * x <= present / target - total
-   */
   if (
     percentage >=
     target
   ) {
     if (
-      target >= 1
+      target >=
+      1
     ) {
       return {
         type:
@@ -2134,7 +2244,7 @@ function calculateBunkMessage(
       };
     }
 
-    const x =
+    const possible =
       Math.floor(
         (
           present /
@@ -2144,36 +2254,24 @@ function calculateBunkMessage(
         1e-10
       );
 
-    const safeBunk =
-      Math.max(
-        0,
-        x
-      );
-
     return {
       type:
         "safe",
 
       text:
-        safeBunk ===
+        possible ===
         1
           ? "Safe to bunk 1 class"
-          : `Safe to bunk ${safeBunk} classes`
+          : `Safe to bunk ${Math.max(
+              0,
+              possible
+            )} classes`
     };
   }
 
-  /*
-   * Danger case:
-   *
-   * (present + x) / (total + x) >= target
-   *
-   * x >=
-   * (target * total - present)
-   * /
-   * (1 - target)
-   */
   if (
-    target >= 1
+    target >=
+    1
   ) {
     return {
       type:
@@ -2184,21 +2282,16 @@ function calculateBunkMessage(
     };
   }
 
-  const needed =
+  const required =
     Math.ceil(
       (
         target *
           total -
         present
       ) /
-      (1 - target) -
+      (1 -
+        target) -
       1e-10
-    );
-
-  const required =
-    Math.max(
-      0,
-      needed
     );
 
   return {
@@ -2206,10 +2299,15 @@ function calculateBunkMessage(
       "danger",
 
     text:
-      required ===
-      1
+      Math.max(
+        0,
+        required
+      ) === 1
         ? "Attend next 1 class"
-        : `Attend next ${required} classes`
+        : `Attend next ${Math.max(
+            0,
+            required
+          )} classes`
   };
 }
 
@@ -2270,12 +2368,9 @@ function renderCourseCard(
     app.openCourse ===
     code;
 
-  const activeDate =
-    selectedDateForApp();
-
   const activeHoliday =
     isDateHoliday(
-      activeDate
+      selectedDateForApp()
     );
 
   return `
@@ -2306,6 +2401,7 @@ function renderCourseCard(
               class="progress-svg"
               viewBox="0 0 76 76"
             >
+
               <circle
                 class="progress-bg"
                 cx="38"
@@ -2324,18 +2420,18 @@ function renderCourseCard(
                   stroke-dashoffset:${offset};
                 "
               ></circle>
+
             </svg>
 
             <div
               class="progress-center"
             >
+
               <div>
 
                 <div
                   class="progress-number"
-                  style="
-                    color:${colour}
-                  "
+                  style="color:${colour}"
                 >
                   ${Math.round(
                     bounded
@@ -2349,6 +2445,7 @@ function renderCourseCard(
                 </div>
 
               </div>
+
             </div>
 
           </div>
@@ -2452,14 +2549,16 @@ function renderCourseCard(
 }
 
 /* ============================================================
-   COURSE DASHBOARD
+   DASHBOARD
 ============================================================ */
 
 function renderCourseDashboard() {
   const codes =
     getAllCourseCodes();
 
-  if (!codes.length) {
+  if (
+    !codes.length
+  ) {
     els.courseGrid.innerHTML =
       "";
 
@@ -2486,10 +2585,6 @@ function renderCourseDashboard() {
 
   wireCourseCards();
 }
-
-/* ============================================================
-   COURSE CARD INTERACTIONS
-============================================================ */
 
 function wireCourseCards() {
   $$(".course-main")
@@ -2559,7 +2654,7 @@ function wireCourseCards() {
 }
 
 /* ============================================================
-   MANUAL COURSE ADJUSTMENT
+   MANUAL ADJUSTMENT
 ============================================================ */
 
 function adjustCourse(
@@ -2628,7 +2723,7 @@ function adjustCourse(
 }
 
 /* ============================================================
-   MARK INDIVIDUAL CLASS
+   MARK SLOT
 ============================================================ */
 
 function markSlot(
@@ -2637,18 +2732,19 @@ function markSlot(
   choice
 ) {
   if (
-    isDateHoliday(date)
+    isDateHoliday(
+      date
+    )
   ) {
     return;
   }
 
-  const key =
+  state.marks[
     slotKey(
       date,
       slot
-    );
-
-  state.marks[key] =
+    )
+  ] =
     choice;
 
   addHistory({
@@ -2668,10 +2764,6 @@ function markSlot(
         : `Marked ${slot.start}–${slot.end} absent`
   });
 
-  /*
-   * If every slot for today has individually been marked
-   * present, automatically make the date Present.
-   */
   maybeAutoPresentDay(
     date
   );
@@ -2696,8 +2788,12 @@ function maybeAutoPresentDay(
   }
 
   if (
-    isSunday(date) ||
-    isDateHoliday(date)
+    isSunday(
+      date
+    ) ||
+    isDateHoliday(
+      date
+    )
   ) {
     return;
   }
@@ -2709,7 +2805,9 @@ function maybeAutoPresentDay(
       )
     );
 
-  if (!slots.length) {
+  if (
+    !slots.length
+  ) {
     return;
   }
 
@@ -2742,14 +2840,14 @@ function maybeAutoPresentDay(
     !anyAbsent
   ) {
     /*
-     * The day-level Present state is now the source of truth.
-     *
-     * Individual marks do not get separately counted by
-     * calculateBaseAttendance(), which prevents double-counting.
+     * Full-day Present becomes the source of truth.
+     * Individual slot records are not separately counted,
+     * avoiding double-counting.
      */
     state.calendarStates[
       date
-    ] = "present";
+    ] =
+      "present";
   }
 }
 
@@ -2760,8 +2858,6 @@ function maybeAutoPresentDay(
 function renderMain(
   shouldScroll = false
 ) {
-  applyTheme();
-
   renderSummary();
 
   renderDaySelector();
@@ -2781,9 +2877,7 @@ function openModal({
   title,
   subtitle = "",
   html,
-  className = "",
-  onOpen = null,
-  onClose = null
+  className = ""
 }) {
   els.modalTitle.textContent =
     title;
@@ -2810,25 +2904,13 @@ function openModal({
     "modal-open"
   );
 
-  app.modalCloseHandler =
-    onClose;
-
-  /*
-   * Install the scroll trap only once for the modal body.
-   */
-  els.modalBody.dataset.scrollTrapInstalled =
+  els.modalBody.dataset
+    .scrollTrapInstalled =
     "false";
 
   installOnePixelScrollTrap(
     els.modalBody
   );
-
-  if (
-    typeof onOpen ===
-    "function"
-  ) {
-    onOpen();
-  }
 }
 
 function closeModal() {
@@ -2950,10 +3032,11 @@ $$(".nav-item")
     }
   );
 
-els.termStartButton.addEventListener(
-  "click",
-  openTermDateModal
-);
+$("#termStartButton")
+  .addEventListener(
+    "click",
+    openTermDateModal
+  );
 
 /* ============================================================
    HOW TO USE
@@ -2972,14 +3055,8 @@ function openHowToUse() {
         class="help-content"
       >
 
-        <div
-          class="help-step"
-        >
-          <div
-            class="help-number"
-          >
-            1
-          </div>
+        <div class="help-step">
+          <div class="help-number">1</div>
 
           <div>
             <h3>
@@ -2993,14 +3070,8 @@ function openHowToUse() {
           </div>
         </div>
 
-        <div
-          class="help-step"
-        >
-          <div
-            class="help-number"
-          >
-            2
-          </div>
+        <div class="help-step">
+          <div class="help-number">2</div>
 
           <div>
             <h3>
@@ -3008,20 +3079,14 @@ function openHowToUse() {
             </h3>
 
             <p>
-              Use the timetable builder to replace the default
-              schedule.
+              Use the timetable builder to change the complete
+              Monday–Saturday schedule.
             </p>
           </div>
         </div>
 
-        <div
-          class="help-step"
-        >
-          <div
-            class="help-number"
-          >
-            3
-          </div>
+        <div class="help-step">
+          <div class="help-number">3</div>
 
           <div>
             <h3>
@@ -3029,20 +3094,14 @@ function openHowToUse() {
             </h3>
 
             <p>
-              When a class is in progress, the LIVE NOW prompt
-              lets you select PRESENT or ABSENT.
+              When a class is currently running, the LIVE NOW
+              prompt provides PRESENT and ABSENT buttons.
             </p>
           </div>
         </div>
 
-        <div
-          class="help-step"
-        >
-          <div
-            class="help-number"
-          >
-            4
-          </div>
+        <div class="help-step">
+          <div class="help-number">4</div>
 
           <div>
             <h3>
@@ -3050,20 +3109,14 @@ function openHowToUse() {
             </h3>
 
             <p>
-              A past class is automatically treated as absent
-              unless it was marked present.
+              Past scheduled classes are automatically counted
+              absent unless explicitly marked present.
             </p>
           </div>
         </div>
 
-        <div
-          class="help-step"
-        >
-          <div
-            class="help-number"
-          >
-            5
-          </div>
+        <div class="help-step">
+          <div class="help-number">5</div>
 
           <div>
             <h3>
@@ -3072,19 +3125,13 @@ function openHowToUse() {
 
             <p>
               Paint dates as Holiday, Important or Present.
-              Sundays are permanently holidays.
+              Sundays are always holidays.
             </p>
           </div>
         </div>
 
-        <div
-          class="help-step"
-        >
-          <div
-            class="help-number"
-          >
-            6
-          </div>
+        <div class="help-step">
+          <div class="help-number">6</div>
 
           <div>
             <h3>
@@ -3092,9 +3139,8 @@ function openHowToUse() {
             </h3>
 
             <p>
-              The app calculates how many classes you may bunk
-              or how many consecutive classes you must attend
-              to reach the target.
+              The meter calculates the number of classes you
+              can safely miss or the number you need to attend.
             </p>
           </div>
         </div>
@@ -3105,7 +3151,7 @@ function openHowToUse() {
 }
 
 /* ============================================================
-   TARGET MODAL
+   TARGET
 ============================================================ */
 
 function openTargetModal() {
@@ -3140,9 +3186,7 @@ function openTargetModal() {
 
       </div>
 
-      <div
-        class="form-actions"
-      >
+      <div class="form-actions">
 
         <button
           id="saveTarget"
@@ -3160,12 +3204,10 @@ function openTargetModal() {
     .addEventListener(
       "click",
       () => {
-        const input =
-          $("#targetInput");
-
         let value =
           Number(
-            input.value
+            $("#targetInput")
+              .value
           );
 
         if (
@@ -3177,17 +3219,15 @@ function openTargetModal() {
             75;
         }
 
-        value =
-          clamp(
-            value,
-            1,
-            100
-          );
-
         state.target =
           Math.round(
-            value * 10
-          ) / 10;
+            clamp(
+              value,
+              1,
+              100
+            ) * 10
+          ) /
+          10;
 
         persistState();
 
@@ -3199,7 +3239,7 @@ function openTargetModal() {
 }
 
 /* ============================================================
-   TERM START
+   TERM DATE
 ============================================================ */
 
 function openTermDateModal() {
@@ -3211,11 +3251,9 @@ function openTermDateModal() {
       "Attendance starts being calculated from this date.",
 
     html: `
-      <div
-        class="notice"
-      >
-        Past classes between the term start date and today
-        are calculated automatically from the timetable.
+      <div class="notice">
+        Past scheduled classes are calculated automatically
+        from this date.
       </div>
 
       <div
@@ -3238,9 +3276,7 @@ function openTermDateModal() {
 
       </div>
 
-      <div
-        class="form-actions"
-      >
+      <div class="form-actions">
 
         <button
           id="saveTermDate"
@@ -3302,19 +3338,16 @@ function openEditAttendance() {
       "Edit Attendance",
 
     subtitle:
-      "Edit exact displayed attendance numbers",
+      "Values are protected from negative or impossible states.",
 
     html: `
-      <div
-        class="notice"
-      >
-        Present can never exceed Total, and neither Present
-        nor Total can become negative.
+      <div class="notice">
+        Present can never exceed Total. Present, Absent and Total
+        can never become negative.
       </div>
 
-      <div
-        class="history-list"
-      >
+      <div class="history-list">
+
         ${
           codes.length
             ? codes
@@ -3381,13 +3414,12 @@ function openEditAttendance() {
                 )
                 .join("")
             : `
-              <div
-                class="notice"
-              >
+              <div class="notice">
                 No courses found.
               </div>
             `
         }
+
       </div>
     `
   });
@@ -3441,28 +3473,27 @@ function showCourseAttendanceEditor(
       code,
 
     html: `
-      <div
-        class="notice"
-      >
+      <div class="notice">
+
         Automatic baseline:
         <strong>
           ${base.present}/${base.total}
         </strong>
+
         <br>
 
-        Current displayed:
+        Current:
         <strong>
           ${current.present}/${current.total}
         </strong>
+
       </div>
 
       <div
         class="form-grid"
       >
 
-        <div
-          class="form-group"
-        >
+        <div class="form-group">
 
           <label
             class="form-label"
@@ -3482,9 +3513,7 @@ function showCourseAttendanceEditor(
 
         </div>
 
-        <div
-          class="form-group"
-        >
+        <div class="form-group">
 
           <label
             class="form-label"
@@ -3506,9 +3535,7 @@ function showCourseAttendanceEditor(
 
       </div>
 
-      <div
-        class="form-actions"
-      >
+      <div class="form-actions">
 
         <button
           id="saveManualAttendance"
@@ -3540,7 +3567,7 @@ function showCourseAttendanceEditor(
     .addEventListener(
       "click",
       () => {
-        let total =
+        const requestedTotal =
           Math.floor(
             Number(
               $("#manualTotal")
@@ -3548,7 +3575,7 @@ function showCourseAttendanceEditor(
             ) || 0
           );
 
-        let present =
+        const requestedPresent =
           Math.floor(
             Number(
               $("#manualPresent")
@@ -3556,27 +3583,19 @@ function showCourseAttendanceEditor(
             ) || 0
           );
 
-        total =
+        const total =
           Math.max(
             0,
-            total
+            requestedTotal
           );
 
-        present =
-          Math.max(
-            0,
-            present
-          );
-
-        /*
-         * Crucial protection:
-         *
-         * PRESENT can NEVER exceed TOTAL.
-         */
-        present =
+        const present =
           Math.min(
-            present,
-            total
+            total,
+            Math.max(
+              0,
+              requestedPresent
+            )
           );
 
         const absent =
@@ -3586,9 +3605,6 @@ function showCourseAttendanceEditor(
               present
           );
 
-        /*
-         * Store corrections relative to automatic values.
-         */
         state.adjustments[
           code
         ] = {
@@ -3629,7 +3645,7 @@ function showCourseAttendanceEditor(
 }
 
 /* ============================================================
-   ADD CUSTOM COURSE
+   ADD COURSE
 ============================================================ */
 
 function openAddCourse() {
@@ -3638,16 +3654,12 @@ function openAddCourse() {
       "Add Custom Course",
 
     subtitle:
-      "Add a subject code and display name",
+      "Add a new course name and subject code.",
 
     html: `
-      <div
-        class="form-grid"
-      >
+      <div class="form-grid">
 
-        <div
-          class="form-group"
-        >
+        <div class="form-group">
 
           <label
             class="form-label"
@@ -3665,9 +3677,7 @@ function openAddCourse() {
 
         </div>
 
-        <div
-          class="form-group"
-        >
+        <div class="form-group">
 
           <label
             class="form-label"
@@ -3687,9 +3697,7 @@ function openAddCourse() {
 
       </div>
 
-      <div
-        class="form-actions"
-      >
+      <div class="form-actions">
 
         <button
           id="saveCustomCourse"
@@ -3731,7 +3739,8 @@ function openAddCourse() {
 
         state.subjectNames[
           code
-        ] = name;
+        ] =
+          name;
 
         if (
           !state.adjustments[
@@ -3788,7 +3797,7 @@ function openRemoveCourse() {
       "Remove Course",
 
     subtitle:
-      "Remove a course from your timetable",
+      "Remove a course from the timetable.",
 
     html: `
       <div
@@ -3849,9 +3858,7 @@ function openRemoveCourse() {
                 )
                 .join("")
             : `
-              <div
-                class="notice"
-              >
+              <div class="notice">
                 No courses available.
               </div>
             `
@@ -3881,14 +3888,13 @@ function openRemoveCourse() {
 function removeCourse(
   code
 ) {
-  const confirmed =
-    confirm(
+  if (
+    !confirm(
       `Remove "${subjectLabel(
         code
       )}" from the timetable?`
-    );
-
-  if (!confirmed) {
+    )
+  ) {
     return;
   }
 
@@ -3940,16 +3946,15 @@ function removeCourse(
 }
 
 /* ============================================================
-   RESET
+   RESET TIMETABLE
 ============================================================ */
 
 function resetDefaultTimetable() {
-  const confirmed =
-    confirm(
+  if (
+    !confirm(
       "Reset the timetable to the exact default schedule?"
-    );
-
-  if (!confirmed) {
+    )
+  ) {
     return;
   }
 
@@ -3976,8 +3981,6 @@ function resetDefaultTimetable() {
 
   persistState();
 
-  closeModal();
-
   renderMain(false);
 }
 
@@ -3986,210 +3989,34 @@ function resetDefaultTimetable() {
 ============================================================ */
 
 function openTimetableBuilder() {
-  let currentDay =
+  const startingDay =
     DAY_KEYS.includes(
       app.selectedDay
     )
       ? app.selectedDay
       : "Mon";
 
-  openModal({
-    title:
-      "Create Custom Timetable",
-
-    subtitle:
-      "Saving replaces the timetable",
-
-    html:
-      renderBuilderHTML(
-        currentDay
-      )
-  });
-
-  wireBuilder(
-    currentDay
-  );
-}
-
-function renderBuilderHTML(
-  day
-) {
-  const slots =
-    getDaySlots(
-      day
-    );
-
-  return `
-    <div
-      class="notice"
-    >
-      Add or remove periods. Subject codes are mapped to
-      full subject names below.
-    </div>
-
-    <div
-      id="builderDayBar"
-      class="builder-day-bar"
-    >
-      ${DAY_KEYS.map(
-        key => `
-          <button
-            type="button"
-            class="builder-day-btn ${
-              key === day
-                ? "active"
-                : ""
-            }"
-            data-builder-day="${key}"
-          >
-            ${key}
-          </button>
-        `
-      ).join("")}
-    </div>
-
-    <div
-      id="periodList"
-      class="period-list"
-    >
-      ${slots
-        .map(
-          (
-            slot,
-            index
-          ) =>
-            renderPeriodRow(
-              slot,
-              index
-            )
-        )
-        .join("")}
-    </div>
-
-    <div
-      class="form-actions"
-    >
-
-      <button
-        id="addPeriodBtn"
-        class="btn btn-muted"
-        type="button"
-      >
-        + Add Period
-      </button>
-
-    </div>
-
-    <div
-      class="mapping-section"
-    >
-
-      <div
-        class="section-heading-row"
-      >
-
-        <div>
-
-          <h3
-            style="
-              margin:0;
-              font-size:.9rem;
-            "
-          >
-            Subject Name Mapping
-          </h3>
-
-          <p
-            class="muted-text"
-          >
-            Map every unique subject code to its full name.
-          </p>
-
-        </div>
-
-      </div>
-
-      <div
-        id="mappingList"
-        class="mapping-list"
-      ></div>
-
-    </div>
-
-    <div
-      class="form-actions"
-    >
-
-      <button
-        id="saveTimetable"
-        class="btn btn-primary"
-        type="button"
-      >
-        Save Timetable
-      </button>
-
-    </div>
-  `;
-}
-
-function renderPeriodRow(
-  slot,
-  index
-) {
-  return `
-    <div
-      class="period-row"
-      data-period-row="${index}"
-    >
-
-      <input
-        class="input period-start"
-        type="time"
-        value="${escapeAttribute(
-          slot.start
-        )}"
-        aria-label="Start time"
-      >
-
-      <input
-        class="input period-end"
-        type="time"
-        value="${escapeAttribute(
-          slot.end
-        )}"
-        aria-label="End time"
-      >
-
-      <input
-        class="input period-code"
-        type="text"
-        value="${escapeAttribute(
-          slot.code
-        )}"
-        placeholder="Subject code"
-        aria-label="Subject code"
-      >
-
-      <button
-        type="button"
-        class="remove-period-btn"
-        data-remove-period="${index}"
-        aria-label="Remove period"
-      >
-        ×
-      </button>
-
-    </div>
-  `;
-}
-
-function wireBuilder(
-  initialDay
-) {
   let currentDay =
-    initialDay;
+    startingDay;
 
-  function readCurrentRows() {
+  function openBuilder() {
+    openModal({
+      title:
+        "Create Custom Timetable",
+
+      subtitle:
+        "Saving replaces the timetable.",
+
+      html:
+        renderBuilderHTML(
+          currentDay
+        )
+    });
+
+    wireBuilder();
+  }
+
+  function readRows() {
     return $$("#periodList .period-row")
       .map(
         row => ({
@@ -4215,43 +4042,40 @@ function wireBuilder(
 
   function saveCurrentDay() {
     const rows =
-      readCurrentRows();
+      readRows();
 
-    for (
-      const row of rows
-    ) {
-      if (
-        !row.start ||
-        !row.end ||
-        !row.code
-      ) {
-        throw new Error(
-          "Every period needs a start time, end time and subject code."
-        );
-      }
+    rows.forEach(
+      row => {
+        if (
+          !row.start ||
+          !row.end ||
+          !row.code
+        ) {
+          throw new Error(
+            "Every period must have a start time, end time and subject code."
+          );
+        }
 
-      if (
-        timeToMinutes(
-          row.end
-        ) <=
-        timeToMinutes(
-          row.start
-        )
-      ) {
-        throw new Error(
-          `End time must be after start time for ${row.code}.`
-        );
+        if (
+          timeToMinutes(
+            row.end
+          ) <=
+          timeToMinutes(
+            row.start
+          )
+        ) {
+          throw new Error(
+            `End time must be later than start time for ${row.code}.`
+          );
+        }
       }
-    }
+    );
 
     state.timetable[
       currentDay
     ] =
       rows.sort(
-        (
-          a,
-          b
-        ) =>
+        (a, b) =>
           timeToMinutes(
             a.start
           ) -
@@ -4273,7 +4097,9 @@ function wireBuilder(
               .trim()
               .toUpperCase();
 
-          if (code) {
+          if (
+            code
+          ) {
             codes.add(
               code
             );
@@ -4286,10 +4112,11 @@ function wireBuilder(
         getDaySlots(
           day
         ).forEach(
-          slot =>
+          slot => {
             codes.add(
               slot.code
-            )
+            );
+          }
         );
       }
     );
@@ -4299,19 +4126,18 @@ function wireBuilder(
     ).sort();
   }
 
-  function renderMapping() {
-    const list =
+  function renderMappings() {
+    const mapping =
       $("#mappingList");
 
-    if (!list) {
+    if (
+      !mapping
+    ) {
       return;
     }
 
-    const codes =
-      collectCodes();
-
-    list.innerHTML =
-      codes
+    mapping.innerHTML =
+      collectCodes()
         .map(
           code => `
             <div
@@ -4321,17 +4147,15 @@ function wireBuilder(
               )}"
             >
 
-              <div>
-                <strong
-                  style="
-                    font-size:.72rem;
-                  "
-                >
-                  ${escapeHTML(
-                    code
-                  )}
-                </strong>
-              </div>
+              <strong
+                style="
+                  font-size:.72rem;
+                "
+              >
+                ${escapeHTML(
+                  code
+                )}
+              </strong>
 
               <input
                 class="input mapping-name-input"
@@ -4351,28 +4175,8 @@ function wireBuilder(
         .join("");
   }
 
-  function wireRemoveButtons() {
-    $$(
-      "[data-remove-period]"
-    ).forEach(
-      button => {
-        button.addEventListener(
-          "click",
-          () => {
-            button
-              .closest(
-                ".period-row"
-              )
-              .remove();
+  function wireBuilder() {
 
-            renderMapping();
-          }
-        );
-      }
-    );
-  }
-
-  function wireEvents() {
     $$(
       "[data-builder-day]"
     ).forEach(
@@ -4382,7 +4186,8 @@ function wireBuilder(
           () => {
             try {
               saveCurrentDay();
-            } catch (
+            }
+            catch (
               error
             ) {
               alert(
@@ -4401,18 +4206,37 @@ function wireBuilder(
                 currentDay
               );
 
-            els.modalBody.dataset.scrollTrapInstalled =
+            els.modalBody.dataset
+              .scrollTrapInstalled =
               "false";
 
             installOnePixelScrollTrap(
               els.modalBody
             );
 
-            wireEvents();
+            wireBuilder();
           }
         );
       }
     );
+
+    $$("#periodList .remove-period-btn")
+      .forEach(
+        button => {
+          button.addEventListener(
+            "click",
+            () => {
+              button
+                .closest(
+                  ".period-row"
+                )
+                .remove();
+
+              renderMappings();
+            }
+          );
+        }
+      );
 
     $("#addPeriodBtn")
       .addEventListener(
@@ -4442,9 +4266,9 @@ function wireBuilder(
             )
           );
 
-          wireRemoveButtons();
+          wireBuilder();
 
-          renderMapping();
+          renderMappings();
         }
       );
 
@@ -4468,7 +4292,8 @@ function wireBuilder(
                     );
 
                   const name =
-                    input.value.trim();
+                    input.value
+                      .trim();
 
                   if (
                     name
@@ -4480,22 +4305,6 @@ function wireBuilder(
                   }
                 }
               );
-
-            DAY_KEYS.forEach(
-              day => {
-                state.timetable[
-                  day
-                ] =
-                  getDaySlots(
-                    day
-                  ).filter(
-                    slot =>
-                      slot.start &&
-                      slot.end &&
-                      slot.code
-                  );
-              }
-            );
 
             addHistory({
               type:
@@ -4513,7 +4322,8 @@ function wireBuilder(
             closeModal();
 
             renderMain(false);
-          } catch (
+          }
+          catch (
             error
           ) {
             alert(
@@ -4523,12 +4333,165 @@ function wireBuilder(
         }
       );
 
-    wireRemoveButtons();
-
-    renderMapping();
+    renderMappings();
   }
 
-  wireEvents();
+  openBuilder();
+}
+
+function renderPeriodRow(
+  slot,
+  index
+) {
+  return `
+    <div
+      class="period-row"
+      data-period-row="${index}"
+    >
+
+      <input
+        class="input period-start"
+        type="time"
+        value="${escapeAttribute(
+          slot.start
+        )}"
+      >
+
+      <input
+        class="input period-end"
+        type="time"
+        value="${escapeAttribute(
+          slot.end
+        )}"
+      >
+
+      <input
+        class="input period-code"
+        type="text"
+        value="${escapeAttribute(
+          slot.code
+        )}"
+        placeholder="Subject code"
+      >
+
+      <button
+        type="button"
+        class="remove-period-btn"
+        data-remove-period="${index}"
+      >
+        ×
+      </button>
+
+    </div>
+  `;
+}
+
+function renderBuilderHTML(
+  day
+) {
+  return `
+    <div class="notice">
+      Configure each day and map your subject codes to full
+      subject names.
+    </div>
+
+    <div
+      id="builderDayBar"
+      class="builder-day-bar"
+    >
+      ${DAY_KEYS
+        .map(
+          key => `
+            <button
+              type="button"
+              class="builder-day-btn ${
+                key === day
+                  ? "active"
+                  : ""
+              }"
+              data-builder-day="${key}"
+            >
+              ${key}
+            </button>
+          `
+        )
+        .join("")}
+    </div>
+
+    <div
+      id="periodList"
+      class="period-list"
+    >
+      ${getDaySlots(day)
+        .map(
+          (
+            slot,
+            index
+          ) =>
+            renderPeriodRow(
+              slot,
+              index
+            )
+        )
+        .join("")}
+    </div>
+
+    <div class="form-actions">
+
+      <button
+        id="addPeriodBtn"
+        class="btn btn-muted"
+        type="button"
+      >
+        + Add Period
+      </button>
+
+    </div>
+
+    <div
+      class="mapping-section"
+    >
+
+      <div class="section-heading-row">
+
+        <div>
+
+          <h3
+            style="
+              margin:0;
+              font-size:.9rem;
+            "
+          >
+            Subject Name Mapping
+          </h3>
+
+          <p class="muted-text">
+            Give each subject code its full display name.
+          </p>
+
+        </div>
+
+      </div>
+
+      <div
+        id="mappingList"
+        class="mapping-list"
+      ></div>
+
+    </div>
+
+    <div class="form-actions">
+
+      <button
+        id="saveTimetable"
+        class="btn btn-primary"
+        type="button"
+      >
+        Save Timetable
+      </button>
+
+    </div>
+  `;
 }
 
 /* ============================================================
@@ -4606,24 +4569,19 @@ function formatHistoryTime(
 }
 
 function openHistory() {
-  const history =
-    state.history;
-
   openModal({
     title:
       "History Log",
 
     subtitle:
-      "Recent attendance and configuration actions",
+      "Recent activity.",
 
     html: `
       ${
-        history.length
+        state.history.length
           ? `
-            <div
-              class="history-list"
-            >
-              ${history
+            <div class="history-list">
+              ${state.history
                 .map(
                   item => `
                     <div
@@ -4669,12 +4627,9 @@ function openHistory() {
 
                           ${
                             item.date
-                              ? `
-                                •
-                                ${escapeHTML(
+                              ? ` • ${escapeHTML(
                                   item.date
-                                )}
-                              `
+                                )}`
                               : ""
                           }
                         </div>
@@ -4696,17 +4651,13 @@ function openHistory() {
             </div>
           `
           : `
-            <div
-              class="notice"
-            >
+            <div class="notice">
               No history entries yet.
             </div>
           `
       }
 
-      <div
-        class="form-actions"
-      >
+      <div class="form-actions">
 
         <button
           id="clearHistory"
@@ -4725,19 +4676,17 @@ function openHistory() {
       "click",
       () => {
         if (
-          !confirm(
+          confirm(
             "Clear all history?"
           )
         ) {
-          return;
+          state.history =
+            [];
+
+          persistState();
+
+          openHistory();
         }
-
-        state.history =
-          [];
-
-        persistState();
-
-        openHistory();
       }
     );
 }
@@ -4749,15 +4698,33 @@ function openHistory() {
 let calendarObjectURL =
   null;
 
+function openCalendar() {
+  app.calendarViewYear =
+    new Date().getFullYear();
+
+  openModal({
+    title:
+      "Academic Calendar",
+
+    subtitle:
+      "Paint dates and upload your college calendar.",
+
+    className:
+      "calendar-modal",
+
+    html:
+      renderCalendarHTML()
+  });
+
+  wireCalendar();
+}
+
 function renderCalendarHTML() {
   return `
     <div
       class="calendar-split"
     >
 
-      <!-- ============================
-           TOP 45%
-      ============================= -->
       <div
         class="calendar-preview-pane"
       >
@@ -4767,6 +4734,7 @@ function renderCalendarHTML() {
         >
 
           <div>
+
             <strong
               style="
                 font-size:.74rem;
@@ -4788,6 +4756,7 @@ function renderCalendarHTML() {
                 "No file selected"
               }
             </div>
+
           </div>
 
           <label
@@ -4820,15 +4789,9 @@ function renderCalendarHTML() {
             <div
               class="calendar-preview-empty"
             >
-              ${
-                state.calendarUploadedName
-                  ? "Your uploaded calendar is ready."
-                  : `
-                    Upload your college academic calendar.
-                    <br><br>
-                    Pinch with two fingers to zoom.
-                  `
-              }
+              Upload your college calendar here.
+              <br><br>
+              Pinch with two fingers to zoom.
             </div>
 
           </div>
@@ -4837,9 +4800,6 @@ function renderCalendarHTML() {
 
       </div>
 
-      <!-- ============================
-           BOTTOM 55%
-      ============================= -->
       <div
         class="calendar-grid-pane"
       >
@@ -4877,56 +4837,34 @@ function renderCalendarHTML() {
           class="calendar-legend"
         >
 
-          <span
-            class="legend-item"
-          >
+          <span class="legend-item">
             <span
               class="legend-dot"
               style="
-                background:
-                var(--red)
+                background:var(--red)
               "
             ></span>
             Holiday
           </span>
 
-          <span
-            class="legend-item"
-          >
+          <span class="legend-item">
             <span
               class="legend-dot"
               style="
-                background:
-                var(--blue)
+                background:var(--blue)
               "
             ></span>
             Important
           </span>
 
-          <span
-            class="legend-item"
-          >
+          <span class="legend-item">
             <span
               class="legend-dot"
               style="
-                background:
-                var(--green)
+                background:var(--green)
               "
             ></span>
             Present
-          </span>
-
-          <span
-            class="legend-item"
-          >
-            <span
-              class="legend-dot"
-              style="
-                background:
-                var(--primary)
-              "
-            ></span>
-            Today
           </span>
 
         </div>
@@ -4940,27 +4878,6 @@ function renderCalendarHTML() {
 
     </div>
   `;
-}
-
-function openCalendar() {
-  app.calendarViewYear =
-    new Date().getFullYear();
-
-  openModal({
-    title:
-      "Academic Calendar",
-
-    subtitle:
-      "Paint dates as Holiday, Important, Present or Default",
-
-    className:
-      "calendar-modal",
-
-    html:
-      renderCalendarHTML()
-  });
-
-  wireCalendar();
 }
 
 function wireCalendar() {
@@ -4999,7 +4916,9 @@ function renderMonthGrid() {
   const grid =
     $("#monthGrid");
 
-  if (!grid) {
+  if (
+    !grid
+  ) {
     return;
   }
 
@@ -5007,7 +4926,7 @@ function renderMonthGrid() {
     .textContent =
     app.calendarViewYear;
 
-  let output =
+  let html =
     "";
 
   for (
@@ -5015,7 +4934,7 @@ function renderMonthGrid() {
     month < 12;
     month++
   ) {
-    output +=
+    html +=
       renderMonth(
         app.calendarViewYear,
         month
@@ -5023,7 +4942,7 @@ function renderMonthGrid() {
   }
 
   grid.innerHTML =
-    output;
+    html;
 
   $$("#monthGrid .calendar-day")
     .forEach(
@@ -5053,7 +4972,7 @@ function renderMonth(
   year,
   month
 ) {
-  const monthName =
+  const name =
     new Date(
       year,
       month,
@@ -5066,7 +4985,7 @@ function renderMonth(
       }
     );
 
-  const firstDay =
+  const first =
     new Date(
       year,
       month,
@@ -5074,11 +4993,10 @@ function renderMonth(
     ).getDay();
 
   const leading =
-    firstDay ===
+    first ===
     0
       ? 6
-      : firstDay -
-        1;
+      : first - 1;
 
   const numberOfDays =
     new Date(
@@ -5121,37 +5039,31 @@ function renderMonth(
         "0"
       )}`;
 
-    const calendarState =
+    const stateValue =
       getCalendarState(
         date
       );
 
-    const sunday =
-      isSunday(
-        date
-      );
-
-    const today =
-      date ===
-      todayISO();
-
     const classes = [
       "calendar-day",
 
-      sunday
+      isSunday(date)
         ? "sunday"
         : "",
 
-      today
+      date ===
+      todayISO()
         ? "today"
         : "",
 
-      calendarState !==
+      stateValue !==
       "default"
-        ? calendarState
+        ? stateValue
         : ""
     ]
-      .filter(Boolean)
+      .filter(
+        Boolean
+      )
       .join(" ");
 
     cells += `
@@ -5159,11 +5071,6 @@ function renderMonth(
         type="button"
         class="${classes}"
         data-date="${date}"
-        ${
-          sunday
-            ? `title="Sunday — immutable holiday"`
-            : ""
-        }
       >
         ${day}
       </button>
@@ -5178,7 +5085,7 @@ function renderMonth(
       <div
         class="month-title"
       >
-        ${monthName}
+        ${name}
       </div>
 
       <div
@@ -5194,13 +5101,14 @@ function renderMonth(
           "S"
         ]
           .map(
-            day => `
-              <div
-                class="weekday"
-              >
-                ${day}
-              </div>
-            `
+            day =>
+              `
+                <div
+                  class="weekday"
+                >
+                  ${day}
+                </div>
+              `
           )
           .join("")}
       </div>
@@ -5215,21 +5123,6 @@ function renderMonth(
   `;
 }
 
-/*
- * Cycle:
- *
- * Default
- *   ↓
- * Holiday
- *   ↓
- * Important
- *   ↓
- * Present
- *   ↓
- * Default
- *
- * Sundays are immutable.
- */
 function cycleCalendarDate(
   date
 ) {
@@ -5244,7 +5137,7 @@ function cycleCalendarDate(
       date
     );
 
-  const nextMap = {
+  const nextStates = {
     default:
       "holiday",
 
@@ -5259,7 +5152,9 @@ function cycleCalendarDate(
   };
 
   const next =
-    nextMap[current];
+    nextStates[
+      current
+    ];
 
   if (
     next ===
@@ -5295,20 +5190,19 @@ function cycleCalendarDate(
 }
 
 /* ============================================================
-   MARK TODAY HOLIDAY
+   TODAY HOLIDAY
 ============================================================ */
 
 els.markTodayHoliday.addEventListener(
   "click",
   () => {
-    const date =
+    const today =
       todayISO();
 
-    /*
-     * Sunday is immutable.
-     */
     if (
-      isSunday(date)
+      isSunday(
+        today
+      )
     ) {
       alert(
         "Sunday is an immutable holiday."
@@ -5319,12 +5213,12 @@ els.markTodayHoliday.addEventListener(
 
     if (
       state.calendarStates[
-        date
+        today
       ] ===
       "holiday"
     ) {
       delete state.calendarStates[
-        date
+        today
       ];
 
       addHistory({
@@ -5332,7 +5226,7 @@ els.markTodayHoliday.addEventListener(
           "info",
 
         date:
-          date,
+          today,
 
         detail:
           "Today holiday removed"
@@ -5340,7 +5234,7 @@ els.markTodayHoliday.addEventListener(
     }
     else {
       state.calendarStates[
-        date
+        today
       ] =
         "holiday";
 
@@ -5349,7 +5243,7 @@ els.markTodayHoliday.addEventListener(
           "info",
 
         date:
-          date,
+          today,
 
         detail:
           "Today marked holiday"
@@ -5363,7 +5257,7 @@ els.markTodayHoliday.addEventListener(
 );
 
 /* ============================================================
-   CALENDAR FILE UPLOAD
+   CALENDAR FILE
 ============================================================ */
 
 function handleCalendarUpload(
@@ -5372,7 +5266,9 @@ function handleCalendarUpload(
   const file =
     event.target.files?.[0];
 
-  if (!file) {
+  if (
+    !file
+  ) {
     return;
   }
 
@@ -5384,7 +5280,9 @@ function handleCalendarUpload(
   const label =
     $("#calendarFileName");
 
-  if (label) {
+  if (
+    label
+  ) {
     label.textContent =
       file.name;
   }
@@ -5395,9 +5293,6 @@ function handleCalendarUpload(
     URL.revokeObjectURL(
       calendarObjectURL
     );
-
-    calendarObjectURL =
-      null;
   }
 
   calendarObjectURL =
@@ -5418,7 +5313,7 @@ function handleCalendarUpload(
     preview.innerHTML = `
       <iframe
         src="${calendarObjectURL}"
-        title="Academic calendar PDF"
+        title="Academic calendar"
       ></iframe>
     `;
   }
@@ -5430,7 +5325,7 @@ function handleCalendarUpload(
     preview.innerHTML = `
       <img
         src="${calendarObjectURL}"
-        alt="Uploaded academic calendar"
+        alt="Academic calendar"
         draggable="false"
       >
     `;
@@ -5448,13 +5343,11 @@ function handleCalendarUpload(
   app.calendarPreview.scale =
     1;
 
-  requestAnimationFrame(
-    applyCalendarPreviewTransform
-  );
+  applyCalendarPreviewTransform();
 }
 
 /* ============================================================
-   CALENDAR PINCH ZOOM
+   PINCH ZOOM
 ============================================================ */
 
 function distance(
@@ -5462,8 +5355,11 @@ function distance(
   b
 ) {
   return Math.hypot(
-    a.x - b.x,
-    a.y - b.y
+    a.x -
+      b.x,
+
+    a.y -
+      b.y
   );
 }
 
@@ -5471,7 +5367,9 @@ function applyCalendarPreviewTransform() {
   const content =
     $("#calendarPreviewContent");
 
-  if (!content) {
+  if (
+    !content
+  ) {
     return;
   }
 
@@ -5483,11 +5381,13 @@ function setupCalendarPinchZoom() {
   const preview =
     $("#calendarPreview");
 
-  if (!preview) {
+  if (
+    !preview
+  ) {
     return;
   }
 
-  let pointers =
+  const pointers =
     new Map();
 
   preview.style.touchAction =
@@ -5552,9 +5452,7 @@ function setupCalendarPinchZoom() {
 
       if (
         pointers.size !==
-          2 ||
-        !app.calendarPreview
-          .startDistance
+        2
       ) {
         return;
       }
@@ -5570,10 +5468,20 @@ function setupCalendarPinchZoom() {
           points[1]
         );
 
-      const ratio =
-        currentDistance /
+      const startDistance =
         app.calendarPreview
           .startDistance;
+
+      if (
+        startDistance <=
+        0
+      ) {
+        return;
+      }
+
+      const ratio =
+        currentDistance /
+        startDistance;
 
       app.calendarPreview.scale =
         clamp(
@@ -5581,18 +5489,16 @@ function setupCalendarPinchZoom() {
             .startScale *
             ratio,
 
-          app.calendarPreview
-            .minScale,
+          1,
 
-          app.calendarPreview
-            .maxScale
+          4
         );
 
       applyCalendarPreviewTransform();
     }
   );
 
-  const releasePointer =
+  const release =
     event => {
       pointers.delete(
         event.pointerId
@@ -5609,55 +5515,12 @@ function setupCalendarPinchZoom() {
 
   preview.addEventListener(
     "pointerup",
-    releasePointer
+    release
   );
 
   preview.addEventListener(
     "pointercancel",
-    releasePointer
-  );
-
-  preview.addEventListener(
-    "pointerleave",
-    releasePointer
-  );
-
-  /*
-   * Desktop trackpad / mouse zoom.
-   */
-  preview.addEventListener(
-    "wheel",
-    event => {
-      if (
-        !event.ctrlKey
-      ) {
-        return;
-      }
-
-      event.preventDefault();
-
-      const direction =
-        event.deltaY >
-        0
-          ? -1
-          : 1;
-
-      app.calendarPreview.scale =
-        clamp(
-          app.calendarPreview.scale +
-            direction *
-              0.15,
-
-          1,
-          4
-        );
-
-      applyCalendarPreviewTransform();
-    },
-    {
-      passive:
-        false
-    }
+    release
   );
 }
 
@@ -5665,16 +5528,12 @@ function setupCalendarPinchZoom() {
    MOBILE SCROLL TRAP
 ============================================================ */
 
-/*
- * Important:
- *
- * Only intercept overscroll at the very top/bottom.
- * Normal finger scrolling is never blocked.
- */
 function installOnePixelScrollTrap(
   container
 ) {
-  if (!container) {
+  if (
+    !container
+  ) {
     return;
   }
 
@@ -5716,9 +5575,6 @@ function installOnePixelScrollTrap(
         container.scrollHeight -
         container.clientHeight;
 
-      /*
-       * 1-pixel top trap.
-       */
       if (
         maxScroll > 0 &&
         container.scrollTop <=
@@ -5728,9 +5584,6 @@ function installOnePixelScrollTrap(
           1;
       }
 
-      /*
-       * 1-pixel bottom trap.
-       */
       if (
         maxScroll > 0 &&
         container.scrollTop >=
@@ -5785,26 +5638,20 @@ function installOnePixelScrollTrap(
         startScrollTop >=
         maxScroll - 1;
 
-      /*
-       * User is trying to pull the container downward
-       * when already at the top.
-       */
       if (
         atTop &&
-        delta > 0
+        delta >
+          0
       ) {
         event.preventDefault();
 
         return;
       }
 
-      /*
-       * User is trying to pull the container upward
-       * when already at the bottom.
-       */
       if (
         atBottom &&
-        delta < 0
+        delta <
+          0
       ) {
         event.preventDefault();
       }
@@ -5817,66 +5664,12 @@ function installOnePixelScrollTrap(
 }
 
 /* ============================================================
-   PERSISTED DATA CLEANUP
-============================================================ */
-
-function reconcilePastData() {
-  /*
-   * Past absent classes are calculated dynamically.
-   *
-   * This intentionally avoids creating thousands of localStorage
-   * records and makes the application much faster on phones.
-   */
-}
-
-/* ============================================================
-   INITIALIZATION
-============================================================ */
-
-function initialize() {
-  reconcilePastData();
-
-  app.selectedDay =
-    getTodayDayKey();
-
-  applyTheme();
-
-  updateClock();
-
-  renderMain(
-    true
-  );
-
-  /*
-   * Clock only.
-   *
-   * This does NOT rebuild the DOM.
-   */
-  setInterval(
-    updateClock,
-    1000
-  );
-
-  /*
-   * Attendance/timetable refresh.
-   *
-   * Much less frequent so touch scrolling is not interrupted.
-   */
-  setInterval(
-    refreshDynamicAttendanceUI,
-    15000
-  );
-}
-
-/* ============================================================
    DYNAMIC REFRESH
 ============================================================ */
 
 function refreshDynamicAttendanceUI() {
   /*
-   * Never rebuild the page while the user has a modal open.
-   * This is especially important on phones because rebuilding
-   * modal DOM can interrupt keyboard input and scrolling.
+   * Never rebuild the page while a modal is open.
    */
   if (
     !els.modalBackdrop.classList.contains(
@@ -5887,7 +5680,7 @@ function refreshDynamicAttendanceUI() {
   }
 
   /*
-   * Preserve horizontal class timeline position.
+   * Keep the user's horizontal scroll position.
    */
   const previousScroll =
     els.timeline.scrollLeft;
@@ -5905,9 +5698,6 @@ function refreshDynamicAttendanceUI() {
 
   renderCourseDashboard();
 
-  /*
-   * Restore state after DOM rebuild.
-   */
   app.openCourse =
     previousCourse;
 
@@ -5920,7 +5710,37 @@ function refreshDynamicAttendanceUI() {
 }
 
 /* ============================================================
-   START
+   INITIALIZE
 ============================================================ */
 
-initialize();
+function initialize() {
+  applyTheme();
+
+  renderMain(
+    true
+  );
+
+  startClock();
+
+  setInterval(
+    refreshDynamicAttendanceUI,
+    15000
+  );
+}
+
+/*
+ * Wait for the DOM before initializing everything.
+ * This is the important fix for the date/time loading problem.
+ */
+if (
+  document.readyState ===
+  "loading"
+) {
+  document.addEventListener(
+    "DOMContentLoaded",
+    initialize
+  );
+}
+else {
+  initialize();
+}

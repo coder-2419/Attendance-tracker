@@ -5,7 +5,7 @@ body.dark-mode { --bg-color: #121212; --card-bg: #1e1e1e; --text-main: #ffffff; 
 html, body { 
   background-color: var(--bg-color); color: var(--text-main); transition: background-color 0.3s; 
   overflow-x: hidden; 
-  overscroll-behavior-y: none; /* Stops the background page from bouncing natively */
+  overscroll-behavior-y: none;
 }
 
 .header { display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; background-color: var(--card-bg); box-shadow: 0 2px 10px var(--header-shadow); position: sticky; top: 0; z-index: 10; transition: background-color 0.3s; }
@@ -143,7 +143,6 @@ body.dark-mode .cal-day:hover:not(.empty):not(.holiday):not(.important) span { b
 
 /* =========================================
    STRICT ABSOLUTE SPLIT SCREEN OVERLAY
-   (Traps all background physics natively)
    ========================================= */
 .split-screen-overlay { 
   position: fixed; top: 0; left: 0; right: 0; bottom: 0; 

@@ -1,4 +1,4 @@
-const DB_KEY = 'attendance_tracker_v37';
+const DB_KEY = 'attendance_tracker_v37'; // Kept safe!
 const HISTORY_KEY = 'attendance_history_v37';
 const CALENDAR_KEY = 'academic_calendar_v37';
 const MARKED_DATES_KEY = 'marked_dates_v37';
@@ -317,14 +317,21 @@ function buildSetupCalendar(startStr, endStr) {
   }
   container.innerHTML = html;
 
-  // 1-PIXEL HACK: Guaranteed method to block native pull-to-refresh bubbling on older mobile browsers
-  container.addEventListener('touchstart', function() {
-      if (container.scrollTop === 0) {
-          container.scrollTop = 1;
-      } else if (container.scrollTop + container.clientHeight >= container.scrollHeight) {
-          container.scrollTop -= 1;
-      }
+  // --- THE ULTIMATE ACTIVE SCROLL INTERCEPTOR ---
+  let startY = 0;
+  container.addEventListener('touchstart', function(e) {
+      startY = e.touches[0].pageY;
   }, { passive: true });
+
+  container.addEventListener('touchmove', function(e) {
+      const y = e.touches[0].pageY;
+      const swipingDown = y > startY; // User pulling down to scroll UP
+      
+      // If we are at the absolute top of the container and swiping down, kill the scroll physics instantly to prevent pull-to-refresh
+      if (container.scrollTop <= 0 && swipingDown) {
+          e.preventDefault();
+      }
+  }, { passive: false });
 }
 
 function cyclePaintMode(dateStr, element) {
@@ -372,7 +379,7 @@ function closeSplitScreen() {
 
 function resetToDefaultTimetable() {
   if(confirm("Are you sure you want to completely clear your timetable?")) {
-    courses = [];
+    courses = buildInitialDatabase();
     saveToDatabase();
     renderUI();
     closeModal();
@@ -405,6 +412,28 @@ function toggleFullDayPresent(dateString) {
   } else {
     markedDates.push(dateString);
     addHistory(`Marked Day Present: ${dateString}`);
+    
+    let dailyMarks = JSON.parse(localStorage.getItem('daily_marks_v37')) || {};
+    const [y, m, d] = dateString.split('-');
+    const localDate = new Date(y, m-1, d);
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const dayName = days[localDate.getDay()];
+
+    courses.forEach(c => {
+       if (c.schedule && c.schedule[dayName]) {
+          c.schedule[dayName].forEach(slot => {
+             const slotKey = `${dateString}_${c.id}_${slot.start}`;
+             if (dailyMarks[slotKey] === 'present') {
+                 c.present -= 1;
+                 if (academicCalendar && academicCalendar.startDate) c.absent += 1;
+             } else if (dailyMarks[slotKey] === 'absent') {
+                 if (!academicCalendar || !academicCalendar.startDate) c.absent -= 1;
+             }
+             delete dailyMarks[slotKey];
+          });
+       }
+    });
+    localStorage.setItem('daily_marks_v37', JSON.stringify(dailyMarks));
   }
   
   saveToDatabase(); 

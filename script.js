@@ -1,8 +1,8 @@
-const DB_KEY = 'attendance_tracker_v33';
-const HISTORY_KEY = 'attendance_history_v33';
-const CALENDAR_KEY = 'academic_calendar_v33';
-const MARKED_DATES_KEY = 'marked_dates_v33';
-const MANUAL_SHOWN_KEY = 'appManualShown_v33';
+const DB_KEY = 'attendance_tracker_v41'; // Keeping data intact!
+const HISTORY_KEY = 'attendance_history_v41';
+const CALENDAR_KEY = 'academic_calendar_v41';
+const MARKED_DATES_KEY = 'marked_dates_v41';
+const MANUAL_SHOWN_KEY = 'appManualShown_v41';
 
 let targetPercentage = parseInt(localStorage.getItem('target_percentage'), 10) || 75;
 let historyLog = JSON.parse(localStorage.getItem(HISTORY_KEY)) || [];
@@ -40,19 +40,19 @@ function getTodayDateString() {
 }
 
 const masterScheduleMap = {
-  '25CIV104': { name: 'Environmental Science and Sustainability', schedule: { Monday: [{ start: '09:00', end: '09:55' }], Tuesday: [{ start: '13:30', end: '14:25' }] } },
-  '25ECE111': { name: 'Basic Electronics', schedule: { Monday: [{ start: '09:55', end: '10:50' }], Tuesday: [{ start: '11:55', end: '12:50' }], Thursday: [{ start: '09:55', end: '10:50' }], Saturday: [{ start: '09:00', end: '09:55' }] } },
-  '25PHY102': { name: 'Quantum Computing and Modern Physics', schedule: { Monday: [{ start: '11:00', end: '11:55' }], Tuesday: [{ start: '14:25', end: '15:20' }], Wednesday: [{ start: '09:55', end: '10:50' }, { start: '13:30', end: '14:25' }], Saturday: [{ start: '09:55', end: '10:50' }] } },
-  '25MAT103': { name: 'Advanced Calculus', schedule: { Monday: [{ start: '11:55', end: '12:50' }], Wednesday: [{ start: '11:55', end: '12:50' }], Thursday: [{ start: '09:00', end: '09:55' }], Friday: [{ start: '09:55', end: '10:50' }], Saturday: [{ start: '11:00', end: '11:55' }] } },
-  '25CSE103': { name: 'Problem Solving Through Programming', schedule: { Monday: [{ start: '13:30', end: '14:25' }], Thursday: [{ start: '11:55', end: '12:50' }], Friday: [{ start: '09:00', end: '09:55' }], Saturday: [{ start: '11:55', end: '12:50' }] } },
-  '25HSS131': { name: 'Communicative English', schedule: { Monday: [{ start: '14:25', end: '15:20' }], Tuesday: [{ start: '11:00', end: '11:55' }], Thursday: [{ start: '11:00', end: '11:55' }] } },
-  'PHYSICS_LAB': { name: 'Physics Lab', schedule: { Tuesday: [{ start: '09:00', end: '10:50' }] } },
-  '25BTY111': { name: 'Biology for Engineers', schedule: { Wednesday: [{ start: '09:00', end: '09:55' }] } },
-  '25HSS132': { name: 'Knowing Yourself', schedule: { Wednesday: [{ start: '11:00', end: '11:55' }] } },
-  '25MAT107': { name: 'MATLAB', schedule: { Wednesday: [{ start: '14:25', end: '16:15' }] } },
-  '25MEC122': { name: 'Engineering Visualization', schedule: { Thursday: [{ start: '14:25', end: '16:15' }] } },
-  'CSE_LAB': { name: 'CSE Lab', schedule: { Friday: [{ start: '11:00', end: '12:50' }] } },
-  '25HSS102': { name: 'UHV and Indian Constitution', schedule: { Friday: [{ start: '13:30', end: '16:15' }] } }
+  '25CIV104': { name: 'ENVIRONMENTAL SCIENCE AND SUSTAINABILITY', schedule: { Monday: [{ start: '09:00', end: '09:55' }], Tuesday: [{ start: '13:30', end: '14:25' }] } },
+  '25ECE111': { name: 'BASIC ELECTRONICS', schedule: { Monday: [{ start: '09:55', end: '10:50' }], Tuesday: [{ start: '11:55', end: '12:50' }], Thursday: [{ start: '09:55', end: '10:50' }], Saturday: [{ start: '09:00', end: '09:55' }] } },
+  '25PHY102': { name: 'QUANTUM COMPUTING AND MODERN PHYSICS', schedule: { Monday: [{ start: '11:00', end: '11:55' }], Tuesday: [{ start: '14:25', end: '15:20' }], Wednesday: [{ start: '09:55', end: '10:50' }, { start: '13:30', end: '14:25' }], Saturday: [{ start: '09:55', end: '10:50' }] } },
+  '25MAT103': { name: 'ADVANCED CALCULUS', schedule: { Monday: [{ start: '11:55', end: '12:50' }], Wednesday: [{ start: '11:55', end: '12:50' }], Thursday: [{ start: '09:00', end: '09:55' }], Friday: [{ start: '09:55', end: '10:50' }], Saturday: [{ start: '11:00', end: '11:55' }] } },
+  '25CSE103': { name: 'PROBLEM SOLVING THROUGH PROGRAMMING', schedule: { Monday: [{ start: '13:30', end: '14:25' }], Thursday: [{ start: '11:55', end: '12:50' }], Friday: [{ start: '09:00', end: '09:55' }], Saturday: [{ start: '11:55', end: '12:50' }] } },
+  '25HSS131': { name: 'COMMUNICATIVE ENGLISH', schedule: { Monday: [{ start: '14:25', end: '15:20' }], Tuesday: [{ start: '11:00', end: '11:55' }], Thursday: [{ start: '11:00', end: '11:55' }] } },
+  'PHYSICS_LAB': { name: 'PHYSICS LAB', schedule: { Tuesday: [{ start: '09:00', end: '09:55' }, { start: '09:55', end: '10:50' }] } },
+  '25BTY111': { name: 'BIOLOGY FOR ENGINEERS', schedule: { Wednesday: [{ start: '09:00', end: '09:55' }] } },
+  '25HSS132': { name: 'KNOWING YOURSELF', schedule: { Wednesday: [{ start: '11:00', end: '11:55' }] } },
+  '25MAT107': { name: 'MATLAB', schedule: { Wednesday: [{ start: '14:25', end: '15:20' }, { start: '15:20', end: '16:15' }] } },
+  '25MEC122': { name: 'ENGINEERING VISUALIZATION', schedule: { Thursday: [{ start: '14:25', end: '15:20' }, { start: '15:20', end: '16:15' }] } },
+  'CSE_LAB': { name: 'CSE LAB', schedule: { Friday: [{ start: '11:00', end: '11:55' }, { start: '11:55', end: '12:50' }] } },
+  '25HSS102': { name: 'UHV AND INDIAN CONSTITUTION', schedule: { Friday: [{ start: '13:30', end: '14:25' }, { start: '14:25', end: '15:20' }, { start: '15:20', end: '16:15' }] } }
 };
 
 function buildInitialDatabase() {
@@ -148,12 +148,11 @@ function updateHolidayButton() {
   }
 }
 
-// Solid State Attendance Engine (Prevents Negative Number & Double Counting Bugs)
 function getCalculatedAttendance() {
   let calc = {};
   courses.forEach(c => calc[c.id] = { p: 0, a: 0 });
 
-  let dailyMarks = JSON.parse(localStorage.getItem('daily_marks_v33')) || {};
+  let dailyMarks = JSON.parse(localStorage.getItem('daily_marks_v41')) || {};
 
   if (academicCalendar && academicCalendar.startDate) {
     let currDate = new Date(academicCalendar.startDate + 'T00:00:00');
@@ -278,7 +277,7 @@ function startCalendarSetup() {
     };
 
   } else {
-    previewWrapper.innerHTML = `<iframe src="${setupBlobUrl}" style="position:absolute; top:0; left:0; width:100%; height:100%; border:none; background:white;"></iframe>`;
+    previewWrapper.innerHTML = `<iframe src="${setupBlobUrl}" style="position:absolute; top:0; left:0; width:100%; height:100%; border:none; background:white; pointer-events:auto;"></iframe>`;
   }
   
   setupTempData = {}; 
@@ -318,6 +317,39 @@ function buildSetupCalendar(startStr, endStr) {
   }
   container.innerHTML = html;
 }
+
+// --- BULLETPROOF MOBILE SCROLL INTERCEPTOR ---
+// This listens to touch events on the entire modal overlay. 
+// It selectively blocks dragging gestures that cause the native browser to bounce.
+const splitOverlay = document.getElementById('splitScreenOverlay');
+splitOverlay.addEventListener('touchstart', function(e) {
+    this.startY = e.touches[0].clientY;
+}, { passive: true });
+
+splitOverlay.addEventListener('touchmove', function(e) {
+    const scrollable = e.target.closest('#setupCalendarContainer');
+    
+    // If the user drags outside the specific scrollable area (like the PDF or header), kill the swipe to prevent bounce
+    if (!scrollable) {
+        e.preventDefault(); 
+        return;
+    }
+
+    const y = e.touches[0].clientY;
+    const swipingDown = y > this.startY; // User pulling finger down (to scroll up)
+    const swipingUp = y < this.startY;   // User pulling finger up (to scroll down)
+
+    // If the user hits the exact top and pulls down, natively cancel it to prevent refresh
+    if (scrollable.scrollTop <= 0 && swipingDown) {
+        e.preventDefault();
+    }
+    
+    // If the user hits the exact bottom and pulls up, natively cancel it to prevent bounce
+    if (scrollable.scrollTop + scrollable.clientHeight >= scrollable.scrollHeight && swipingUp) {
+        e.preventDefault();
+    }
+}, { passive: false });
+
 
 function cyclePaintMode(dateStr, element) {
   if (element.classList.contains('holiday')) {
@@ -363,12 +395,17 @@ function closeSplitScreen() {
 }
 
 function resetToDefaultTimetable() {
-  if(confirm("Are you sure you want to reset to the default timetable? This will replace your current courses.")) {
+  if(confirm("Are you sure you want to completely clear your timetable and load the default schedule?")) {
     courses = buildInitialDatabase();
+    markedDates = [];
+    historyLog = [];
+    localStorage.removeItem('handled_live_classes');
+    localStorage.removeItem('daily_marks_v41'); 
+    addHistory("Reset to default timetable.");
     saveToDatabase();
     renderUI();
     closeModal();
-    alert("Timetable reset successfully.");
+    alert("Default Timetable loaded successfully.");
   }
 }
 
@@ -397,6 +434,28 @@ function toggleFullDayPresent(dateString) {
   } else {
     markedDates.push(dateString);
     addHistory(`Marked Day Present: ${dateString}`);
+    
+    let dailyMarks = JSON.parse(localStorage.getItem('daily_marks_v41')) || {};
+    const [y, m, d] = dateString.split('-');
+    const localDate = new Date(y, m-1, d);
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const dayName = days[localDate.getDay()];
+
+    courses.forEach(c => {
+       if (c.schedule && c.schedule[dayName]) {
+          c.schedule[dayName].forEach(slot => {
+             const slotKey = `${dateString}_${c.id}_${slot.start}`;
+             if (dailyMarks[slotKey] === 'present') {
+                 c.present -= 1;
+                 if (academicCalendar && academicCalendar.startDate) c.absent += 1;
+             } else if (dailyMarks[slotKey] === 'absent') {
+                 if (!academicCalendar || !academicCalendar.startDate) c.absent -= 1;
+             }
+             delete dailyMarks[slotKey];
+          });
+       }
+    });
+    localStorage.setItem('daily_marks_v41', JSON.stringify(dailyMarks));
   }
   
   saveToDatabase(); 
@@ -530,7 +589,7 @@ function saveBuiltTimetable() {
         courses = initialCourses;
         markedDates = [];
         localStorage.removeItem('handled_live_classes');
-        localStorage.removeItem('daily_marks_v33'); 
+        localStorage.removeItem('daily_marks_v41'); 
 
         addHistory(`Created custom timetable via Builder`);
         saveToDatabase();
@@ -745,8 +804,8 @@ function loadCourseToEdit() {
   if (!course) return;
   
   const baseStats = getCalculatedAttendance();
-  const totalPresent = (baseStats[course.id]?.p || 0) + (course.present || 0);
-  const totalAbsent = (baseStats[course.id]?.a || 0) + (course.absent || 0);
+  const totalPresent = Math.max(0, (baseStats[course.id]?.p || 0) + (course.present || 0));
+  const totalAbsent = Math.max(0, (baseStats[course.id]?.a || 0) + (course.absent || 0));
   
   const total = totalPresent + totalAbsent;
   const percent = total === 0 ? 0 : Math.round((totalPresent / total) * 100);
@@ -789,8 +848,8 @@ function saveSingleCourseAttendance() {
 
   const baseStats = getCalculatedAttendance();
   
-  course.present = Math.max(0, p - (baseStats[course.id]?.p || 0));
-  course.absent = Math.max(0, (t - p) - (baseStats[course.id]?.a || 0));
+  course.present = p - (baseStats[course.id]?.p || 0);
+  course.absent = (t - p) - (baseStats[course.id]?.a || 0);
 
   addHistory(`Edited: ${course.name} (Now P:${p}, Total:${t})`);
   saveToDatabase();
@@ -835,7 +894,6 @@ function removeCourseById(id) {
   }
 }
 
-// Fixed Bunk Meter with Precision Floating Point Protection
 function getBunkStatus(present, absent) {
   present = Math.max(0, parseInt(present, 10) || 0);
   absent = Math.max(0, parseInt(absent, 10) || 0);
@@ -874,7 +932,7 @@ function checkAndAutoMarkDay() {
   const todayName = getTodayString();
   if (markedDates.includes(todayStr)) return; 
 
-  let dailyMarks = JSON.parse(localStorage.getItem('daily_marks_v33')) || {};
+  let dailyMarks = JSON.parse(localStorage.getItem('daily_marks_v41')) || {};
   let allPresent = true;
   let totalClassesToday = 0;
 
@@ -904,9 +962,9 @@ function handleLiveAttendance(courseId, status, slotKey) {
       localStorage.setItem('handled_live_classes', JSON.stringify(handledClasses));
   }
 
-  let dailyMarks = JSON.parse(localStorage.getItem('daily_marks_v33')) || {};
+  let dailyMarks = JSON.parse(localStorage.getItem('daily_marks_v41')) || {};
   dailyMarks[slotKey] = status;
-  localStorage.setItem('daily_marks_v33', JSON.stringify(dailyMarks));
+  localStorage.setItem('daily_marks_v41', JSON.stringify(dailyMarks));
 
   const course = courses.find(c => c.id === courseId);
   if (!academicCalendar || !academicCalendar.startDate) {

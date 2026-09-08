@@ -148,7 +148,7 @@ body.dark-mode .cal-day:hover:not(.empty):not(.holiday):not(.important) span { b
   position: fixed; top: 0; left: 0; right: 0; bottom: 0; 
   background: var(--bg-color); z-index: 2000; display: none; 
   overscroll-behavior: none; 
-  touch-action: none; /* Stops the OS from initiating pull-to-refresh entirely */
+  touch-action: pan-y; /* Only allows vertical scrolling inside the grid */
 }
 .split-screen-overlay.active { display: block; }
 
@@ -171,7 +171,7 @@ body.dark-mode .cal-day:hover:not(.empty):not(.holiday):not(.important) span { b
   display: flex; justify-content: space-between; align-items: center; 
   padding: 0 15px; background: var(--card-bg); border-bottom: 1px solid var(--border-color); 
   box-shadow: 0 4px 10px rgba(0,0,0,0.05); z-index: 5; 
-  touch-action: none;
+  position: absolute; top: 0; left: 0; right: 0; height: 55px;
 }
 
 .setup-container { 

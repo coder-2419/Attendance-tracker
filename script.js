@@ -1,10 +1,10 @@
-const DB_KEY = 'attendance_tracker_v32';
-const HISTORY_KEY = 'attendance_history_v32';
-const CALENDAR_KEY = 'academic_calendar_v32';
-const MARKED_DATES_KEY = 'marked_dates_v32';
-const MANUAL_SHOWN_KEY = 'appManualShown_v32';
+const DB_KEY = 'attendance_tracker_v33';
+const HISTORY_KEY = 'attendance_history_v33';
+const CALENDAR_KEY = 'academic_calendar_v33';
+const MARKED_DATES_KEY = 'marked_dates_v33';
+const MANUAL_SHOWN_KEY = 'appManualShown_v33';
 
-let targetPercentage = parseInt(localStorage.getItem('target_percentage')) || 75;
+let targetPercentage = parseInt(localStorage.getItem('target_percentage'), 10) || 75;
 let historyLog = JSON.parse(localStorage.getItem(HISTORY_KEY)) || [];
 let academicCalendar = JSON.parse(localStorage.getItem(CALENDAR_KEY)) || null;
 let markedDates = JSON.parse(localStorage.getItem(MARKED_DATES_KEY)) || [];
@@ -17,7 +17,6 @@ function getTodayString() {
 let currentSelectedDay = getTodayString();
 let currentCalDate = new Date(); 
 
-// --- TIMETABLE BUILDER ENGINE ---
 let activeBuilderDay = 'Monday';
 let customScheduleMap = { Monday:[], Tuesday:[], Wednesday:[], Thursday:[], Friday:[], Saturday:[] };
 let customSubjectNames = {};
@@ -149,43 +148,57 @@ function updateHolidayButton() {
   }
 }
 
+// Solid State Attendance Engine (Prevents Negative Number & Double Counting Bugs)
 function getCalculatedAttendance() {
   let calc = {};
   courses.forEach(c => calc[c.id] = { p: 0, a: 0 });
 
+  let dailyMarks = JSON.parse(localStorage.getItem('daily_marks_v33')) || {};
+
   if (academicCalendar && academicCalendar.startDate) {
-    let currDate = new Date(academicCalendar.startDate);
-    currDate.setHours(0, 0, 0, 0);
-    
-    let endDate = new Date(getTodayDateString());
-    endDate.setHours(0, 0, 0, 0);
-    
+    let currDate = new Date(academicCalendar.startDate + 'T00:00:00');
+    let endDate = new Date(getTodayDateString() + 'T00:00:00');
+
     if (academicCalendar.endDate) {
-      let termEnd = new Date(academicCalendar.endDate);
-      termEnd.setHours(0, 0, 0, 0);
+      let termEnd = new Date(academicCalendar.endDate + 'T00:00:00');
       if (termEnd < endDate) endDate = termEnd;
     }
 
     const now = new Date();
     const nowStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+    const todayStr = getTodayDateString();
 
-    while(currDate <= endDate) {
-      const dateStr = `${currDate.getFullYear()}-${String(currDate.getMonth() + 1).padStart(2, '0')}-${String(currDate.getDate()).padStart(2, '0')}`;
-      const dayName = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][currDate.getDay()];
+    while (currDate <= endDate) {
+      const y = currDate.getFullYear();
+      const m = String(currDate.getMonth() + 1).padStart(2, '0');
+      const d = String(currDate.getDate()).padStart(2, '0');
+      const dateStr = `${y}-${m}-${d}`;
 
-      const isHoliday = academicCalendar.holidays && academicCalendar.holidays.includes(dateStr);
-      const isMarked = markedDates.includes(dateStr);
-      const isTodayLoop = (currDate.getTime() === endDate.getTime());
+      const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      const dayName = days[currDate.getDay()];
+
+      const isHoliday = (currDate.getDay() === 0) || (academicCalendar.holidays && academicCalendar.holidays.includes(dateStr));
+      const isFullDayMarked = markedDates.includes(dateStr);
+      const isToday = (dateStr === todayStr);
 
       if (!isHoliday) {
         courses.forEach(course => {
           if (course.schedule && course.schedule[dayName]) {
             course.schedule[dayName].forEach(slot => {
-              if (isMarked) {
-                calc[course.id].p += 1; 
+              const slotKey = `${dateStr}_${course.id}_${slot.start}`;
+              const slotMark = dailyMarks[slotKey];
+
+              if (isFullDayMarked) {
+                calc[course.id].p += 1;
+              } else if (slotMark === 'present') {
+                calc[course.id].p += 1;
+              } else if (slotMark === 'absent') {
+                calc[course.id].a += 1;
               } else {
-                if (!isTodayLoop || nowStr >= slot.start) {
-                  calc[course.id].a += 1; 
+                if (!isToday) {
+                  calc[course.id].a += 1;
+                } else if (nowStr >= slot.start) {
+                  calc[course.id].a += 1;
                 }
               }
             });
@@ -198,7 +211,6 @@ function getCalculatedAttendance() {
   return calc;
 }
 
-// --- SETUP CALENDAR FUNCTIONS ---
 let setupBlobUrl = null;
 let setupTempData = {};
 let setupStartDate = null;
@@ -279,8 +291,8 @@ function startCalendarSetup() {
 function buildSetupCalendar(startStr, endStr) {
   const container = document.getElementById('setupCalendarContainer');
   let html = '';
-  let startDate = new Date(startStr);
-  let endDate = new Date(endStr);
+  let startDate = new Date(startStr + 'T00:00:00');
+  let endDate = new Date(endStr + 'T00:00:00');
   let startYear = startDate.getFullYear();
   let endYear = Math.max(endDate.getFullYear(), startYear + 1);
   let curr = new Date(startYear, 0, 1); 
@@ -385,28 +397,6 @@ function toggleFullDayPresent(dateString) {
   } else {
     markedDates.push(dateString);
     addHistory(`Marked Day Present: ${dateString}`);
-    
-    let dailyMarks = JSON.parse(localStorage.getItem('daily_marks_v32')) || {};
-    const [y, m, d] = dateString.split('-');
-    const localDate = new Date(y, m-1, d);
-    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    const dayName = days[localDate.getDay()];
-
-    courses.forEach(c => {
-       if (c.schedule && c.schedule[dayName]) {
-          c.schedule[dayName].forEach(slot => {
-             const slotKey = `${dateString}_${c.id}_${slot.start}`;
-             if (dailyMarks[slotKey] === 'present') {
-                 c.present -= 1;
-                 if (academicCalendar && academicCalendar.startDate) c.absent += 1;
-             } else if (dailyMarks[slotKey] === 'absent') {
-                 if (!academicCalendar || !academicCalendar.startDate) c.absent -= 1;
-             }
-             delete dailyMarks[slotKey];
-          });
-       }
-    });
-    localStorage.setItem('daily_marks_v32', JSON.stringify(dailyMarks));
   }
   
   saveToDatabase(); 
@@ -424,7 +414,6 @@ function closeModal(e) {
   document.getElementById('modalOverlay').classList.remove('active'); 
 }
 
-// --- BUILDER DOM FUNCTIONS ---
 function switchBuilderDay(day) {
     activeBuilderDay = day;
     document.querySelectorAll('.builder-days button').forEach(b => b.classList.remove('active-day'));
@@ -500,7 +489,6 @@ function saveBuiltTimetable() {
     let newMasterMap = {};
     let uniqueCodes = new Set();
     
-    // Validation
     for(let day in customScheduleMap) {
         for (let i = 0; i < customScheduleMap[day].length; i++) {
             const p = customScheduleMap[day][i];
@@ -542,7 +530,7 @@ function saveBuiltTimetable() {
         courses = initialCourses;
         markedDates = [];
         localStorage.removeItem('handled_live_classes');
-        localStorage.removeItem('daily_marks_v32'); 
+        localStorage.removeItem('daily_marks_v33'); 
 
         addHistory(`Created custom timetable via Builder`);
         saveToDatabase();
@@ -552,7 +540,6 @@ function saveBuiltTimetable() {
     }
 }
 
-// --- MODAL CONTROLLER ---
 function openModal(type) {
   document.getElementById('sidebar').classList.remove('open');
   document.getElementById('menuOverlay').classList.remove('active');
@@ -758,8 +745,8 @@ function loadCourseToEdit() {
   if (!course) return;
   
   const baseStats = getCalculatedAttendance();
-  const totalPresent = baseStats[course.id].p + course.present;
-  const totalAbsent = baseStats[course.id].a + course.absent;
+  const totalPresent = (baseStats[course.id]?.p || 0) + (course.present || 0);
+  const totalAbsent = (baseStats[course.id]?.a || 0) + (course.absent || 0);
   
   const total = totalPresent + totalAbsent;
   const percent = total === 0 ? 0 : Math.round((totalPresent / total) * 100);
@@ -802,8 +789,8 @@ function saveSingleCourseAttendance() {
 
   const baseStats = getCalculatedAttendance();
   
-  course.present = p - baseStats[course.id].p;
-  course.absent = (t - p) - baseStats[course.id].a;
+  course.present = Math.max(0, p - (baseStats[course.id]?.p || 0));
+  course.absent = Math.max(0, (t - p) - (baseStats[course.id]?.a || 0));
 
   addHistory(`Edited: ${course.name} (Now P:${p}, Total:${t})`);
   saveToDatabase();
@@ -848,19 +835,32 @@ function removeCourseById(id) {
   }
 }
 
+// Fixed Bunk Meter with Precision Floating Point Protection
 function getBunkStatus(present, absent) {
+  present = Math.max(0, parseInt(present, 10) || 0);
+  absent = Math.max(0, parseInt(absent, 10) || 0);
   const total = present + absent;
-  if (total === 0) return `<span class="bunk-meter" style="color:var(--text-sub);">No classes yet</span>`;
+
+  if (total === 0) {
+    return `<span class="bunk-meter" style="color:var(--text-sub);">No classes yet</span>`;
+  }
+
+  const target = targetPercentage / 100;
   const currentPercent = (present / total) * 100;
-  
+
   if (currentPercent >= targetPercentage) {
-    const buffer = Math.floor((present / (targetPercentage / 100)) - total);
-    return buffer > 0 
-      ? `<span class="bunk-meter bunk-safe">Safe to bunk ${buffer} classes</span>` 
-      : `<span class="bunk-meter bunk-safe">On track (0 buffer)</span>`;
+    const buffer = Math.floor(((present / target) - total) + 0.0001);
+    if (buffer > 0) {
+      return `<span class="bunk-meter bunk-safe">Safe to bunk ${buffer} class${buffer > 1 ? 'es' : ''}</span>`;
+    } else {
+      return `<span class="bunk-meter bunk-safe">On track (0 buffer)</span>`;
+    }
   } else {
-    const required = Math.ceil(((targetPercentage / 100) * total - present) / (1 - (targetPercentage / 100)));
-    return `<span class="bunk-meter bunk-danger">Attend next ${required} classes</span>`;
+    if (target >= 1) {
+      return `<span class="bunk-meter bunk-danger">Cannot reach 100%</span>`;
+    }
+    const required = Math.ceil((((target * total) - present) / (1 - target)) - 0.0001);
+    return `<span class="bunk-meter bunk-danger">Attend next ${required} class${required > 1 ? 'es' : ''}</span>`;
   }
 }
 
@@ -874,7 +874,7 @@ function checkAndAutoMarkDay() {
   const todayName = getTodayString();
   if (markedDates.includes(todayStr)) return; 
 
-  let dailyMarks = JSON.parse(localStorage.getItem('daily_marks_v32')) || {};
+  let dailyMarks = JSON.parse(localStorage.getItem('daily_marks_v33')) || {};
   let allPresent = true;
   let totalClassesToday = 0;
 
@@ -892,16 +892,6 @@ function checkAndAutoMarkDay() {
 
   if (totalClassesToday > 0 && allPresent) {
     markedDates.push(todayStr); 
-    
-    courses.forEach(c => {
-      if (c.schedule && c.schedule[todayName]) {
-        c.schedule[todayName].forEach(slot => {
-          c.present -= 1; 
-          if (academicCalendar && academicCalendar.startDate) c.absent += 1;
-        });
-      }
-    });
-
     addHistory(`All classes attended! Auto-marked calendar for ${todayStr}.`);
     localStorage.setItem(MARKED_DATES_KEY, JSON.stringify(markedDates));
   }
@@ -914,16 +904,14 @@ function handleLiveAttendance(courseId, status, slotKey) {
       localStorage.setItem('handled_live_classes', JSON.stringify(handledClasses));
   }
 
-  let dailyMarks = JSON.parse(localStorage.getItem('daily_marks_v32')) || {};
+  let dailyMarks = JSON.parse(localStorage.getItem('daily_marks_v33')) || {};
   dailyMarks[slotKey] = status;
-  localStorage.setItem('daily_marks_v32', JSON.stringify(dailyMarks));
+  localStorage.setItem('daily_marks_v33', JSON.stringify(dailyMarks));
 
   const course = courses.find(c => c.id === courseId);
-  if (status === 'present') {
-      course.present += 1;
-      if (academicCalendar && academicCalendar.startDate) course.absent -= 1; 
-  } else if (status === 'absent') {
-      if (!academicCalendar || !academicCalendar.startDate) course.absent += 1;
+  if (!academicCalendar || !academicCalendar.startDate) {
+    if (status === 'present') course.present += 1;
+    if (status === 'absent') course.absent += 1;
   }
   
   addHistory(`Live ${status.toUpperCase()}: ${course.name}`);
@@ -932,7 +920,6 @@ function handleLiveAttendance(courseId, status, slotKey) {
   saveToDatabase();
   renderUI();
 }
-
 
 function renderUI() {
   document.querySelectorAll('.day-selector button').forEach(btn => {
@@ -1054,8 +1041,8 @@ function renderUI() {
   const baseStats = getCalculatedAttendance();
 
   courses.forEach(course => {
-    const totalPresent = baseStats[course.id].p + course.present;
-    const totalAbsent = baseStats[course.id].a + course.absent;
+    const totalPresent = Math.max(0, (baseStats[course.id]?.p || 0) + (course.present || 0));
+    const totalAbsent = Math.max(0, (baseStats[course.id]?.a || 0) + (course.absent || 0));
     const total = totalPresent + totalAbsent;
     
     const percentage = total === 0 ? 0 : Math.round((totalPresent / total) * 100);
@@ -1087,12 +1074,12 @@ function renderUI() {
 
 function markAttendance(id, status) {
   const course = courses.find(c => c.id === id);
+  if (!course) return;
   if (status === 'present') {
-      course.present += 1;
-      if (academicCalendar && academicCalendar.startDate) course.absent -= 1;
+      course.present = (course.present || 0) + 1;
   }
   if (status === 'absent') {
-      if (!academicCalendar || !academicCalendar.startDate) course.absent += 1;
+      course.absent = (course.absent || 0) + 1;
   }
   addHistory(`Manual ${status.toUpperCase()}: ${course.name}`);
   toggleActionBar(id); 

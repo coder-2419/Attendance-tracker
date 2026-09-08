@@ -143,27 +143,45 @@ body.dark-mode .cal-day:hover:not(.empty):not(.holiday):not(.important) span { b
 
 
 /* =========================================
-   FLEXBOX SCROLL FIX FOR SPLIT SCREEN 
+   HARD-LOCKED SCROLL FOR SPLIT SCREEN 
+   (Solves rubber-banding calendar bug)
    ========================================= */
 .split-screen-overlay { 
-  position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; 
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0; 
+  width: 100vw; height: 100dvh; 
   background: var(--bg-color); z-index: 2000; display: none; flex-direction: column; 
+  overflow: hidden; 
 }
 .split-screen-overlay.active { display: flex; }
+
 .split-top { 
-  height: 50%; flex: none; 
-  position: relative; background: #222; overflow: hidden; 
+  height: 50dvh; max-height: 50dvh; flex: 0 0 50dvh; 
+  min-height: 0; position: relative; background: #222; overflow: hidden; 
   display: flex; justify-content: center; align-items: center; border-bottom: 3px solid var(--border-color); 
 }
 .split-top iframe { width: 100%; height: 100%; border: none; background: white; }
+
 .split-bottom { 
-  height: 50%; flex: none; 
-  background: var(--bg-color); display: flex; flex-direction: column; 
+  height: 50dvh; max-height: 50dvh; flex: 0 0 50dvh; 
+  min-height: 0; background: var(--bg-color); 
+  display: flex; flex-direction: column; overflow: hidden; position: relative;
 }
-.setup-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; background: var(--card-bg); border-bottom: 1px solid var(--border-color); box-shadow: 0 4px 10px rgba(0,0,0,0.05); z-index: 5; }
+
+.setup-header { 
+  flex: 0 0 auto; 
+  display: flex; justify-content: space-between; align-items: center; 
+  padding: 12px 15px; background: var(--card-bg); border-bottom: 1px solid var(--border-color); 
+  box-shadow: 0 4px 10px rgba(0,0,0,0.05); z-index: 5; 
+}
+
 .setup-container { 
-  flex: 1; overflow-y: auto; padding-bottom: 80px; 
+  flex: 1 1 0; min-height: 0; height: 0; 
+  overflow-y: scroll; 
   -webkit-overflow-scrolling: touch; 
+  touch-action: pan-y; 
+  overscroll-behavior-y: contain; 
+  padding-bottom: 120px; 
 }
+
 .setup-month { margin-top: 20px; padding: 0 15px; }
 .setup-month-title { font-size: 1.1rem; font-weight: 800; margin-bottom: 10px; text-transform: uppercase; color: var(--text-main); border-bottom: 2px solid var(--border-color); padding-bottom: 5px; }

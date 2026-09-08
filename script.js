@@ -1,1164 +1,5926 @@
-const DB_KEY = 'attendance_tracker_v41'; // Keeping data intact!
-const HISTORY_KEY = 'attendance_history_v41';
-const CALENDAR_KEY = 'academic_calendar_v41';
-const MARKED_DATES_KEY = 'marked_dates_v41';
-const MANUAL_SHOWN_KEY = 'appManualShown_v41';
+"use strict";
 
-let targetPercentage = parseInt(localStorage.getItem('target_percentage'), 10) || 75;
-let historyLog = JSON.parse(localStorage.getItem(HISTORY_KEY)) || [];
-let academicCalendar = JSON.parse(localStorage.getItem(CALENDAR_KEY)) || null;
-let markedDates = JSON.parse(localStorage.getItem(MARKED_DATES_KEY)) || [];
+/* ============================================================
+   ATTENDANCE TRACKER
+   COMPLETE MOBILE-OPTIMIZED VERSION
+============================================================ */
 
-function getTodayString() {
-  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  return days[new Date().getDay()];
-}
+/* ============================================================
+   DEFAULT TIMETABLE
+============================================================ */
 
-let currentSelectedDay = getTodayString();
-let currentCalDate = new Date(); 
+const DEFAULT_TIMETABLE = {
+  Mon: [
+    {
+      start: "09:00",
+      end: "09:55",
+      code: "25CIV104"
+    },
+    {
+      start: "09:55",
+      end: "10:50",
+      code: "25ECE111"
+    },
+    {
+      start: "11:00",
+      end: "11:55",
+      code: "25PHY102"
+    },
+    {
+      start: "11:55",
+      end: "12:50",
+      code: "25MAT103"
+    },
+    {
+      start: "13:30",
+      end: "14:25",
+      code: "25CSE103"
+    },
+    {
+      start: "14:25",
+      end: "15:20",
+      code: "25HSS131"
+    }
+  ],
 
-let activeBuilderDay = 'Monday';
-let customScheduleMap = { Monday:[], Tuesday:[], Wednesday:[], Thursday:[], Friday:[], Saturday:[] };
-let customSubjectNames = {};
+  Tue: [
+    {
+      start: "09:00",
+      end: "10:50",
+      code: "PHYSICS_LAB"
+    },
+    {
+      start: "11:00",
+      end: "11:55",
+      code: "25HSS131"
+    },
+    {
+      start: "11:55",
+      end: "12:50",
+      code: "25ECE111"
+    },
+    {
+      start: "13:30",
+      end: "14:25",
+      code: "25CIV104"
+    },
+    {
+      start: "14:25",
+      end: "15:20",
+      code: "25PHY102"
+    }
+  ],
 
-function initBuilder() {
-    activeBuilderDay = 'Monday';
-    customScheduleMap = { Monday:[], Tuesday:[], Wednesday:[], Thursday:[], Friday:[], Saturday:[] };
-    customSubjectNames = {};
-}
+  Wed: [
+    {
+      start: "09:00",
+      end: "09:55",
+      code: "25BTY111"
+    },
+    {
+      start: "09:55",
+      end: "10:50",
+      code: "25PHY102"
+    },
+    {
+      start: "11:00",
+      end: "11:55",
+      code: "25HSS132"
+    },
+    {
+      start: "11:55",
+      end: "12:50",
+      code: "25MAT103"
+    },
+    {
+      start: "13:30",
+      end: "14:25",
+      code: "25PHY102"
+    },
+    {
+      start: "14:25",
+      end: "16:15",
+      code: "25MAT107"
+    }
+  ],
 
-if(localStorage.getItem('darkMode') === 'true') document.body.classList.add('dark-mode');
+  Thu: [
+    {
+      start: "09:00",
+      end: "09:55",
+      code: "25MAT103"
+    },
+    {
+      start: "09:55",
+      end: "10:50",
+      code: "25ECE111"
+    },
+    {
+      start: "11:00",
+      end: "11:55",
+      code: "25HSS131"
+    },
+    {
+      start: "11:55",
+      end: "12:50",
+      code: "25CSE103"
+    },
+    {
+      start: "14:25",
+      end: "16:15",
+      code: "25MEC122"
+    }
+  ],
 
-function toggleDarkMode() {
-  document.body.classList.toggle('dark-mode');
-  localStorage.setItem('darkMode', document.body.classList.contains('dark-mode'));
-}
+  Fri: [
+    {
+      start: "09:00",
+      end: "09:55",
+      code: "25CSE103"
+    },
+    {
+      start: "09:55",
+      end: "10:50",
+      code: "25MAT103"
+    },
+    {
+      start: "11:00",
+      end: "12:50",
+      code: "CSE_LAB"
+    },
+    {
+      start: "13:30",
+      end: "16:15",
+      code: "25HSS102"
+    }
+  ],
 
-function getTodayDateString() {
-  const now = new Date(); 
-  return `${now.getFullYear()}-${(now.getMonth()+1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
-}
-
-const masterScheduleMap = {
-  '25CIV104': { name: 'ENVIRONMENTAL SCIENCE AND SUSTAINABILITY', schedule: { Monday: [{ start: '09:00', end: '09:55' }], Tuesday: [{ start: '13:30', end: '14:25' }] } },
-  '25ECE111': { name: 'BASIC ELECTRONICS', schedule: { Monday: [{ start: '09:55', end: '10:50' }], Tuesday: [{ start: '11:55', end: '12:50' }], Thursday: [{ start: '09:55', end: '10:50' }], Saturday: [{ start: '09:00', end: '09:55' }] } },
-  '25PHY102': { name: 'QUANTUM COMPUTING AND MODERN PHYSICS', schedule: { Monday: [{ start: '11:00', end: '11:55' }], Tuesday: [{ start: '14:25', end: '15:20' }], Wednesday: [{ start: '09:55', end: '10:50' }, { start: '13:30', end: '14:25' }], Saturday: [{ start: '09:55', end: '10:50' }] } },
-  '25MAT103': { name: 'ADVANCED CALCULUS', schedule: { Monday: [{ start: '11:55', end: '12:50' }], Wednesday: [{ start: '11:55', end: '12:50' }], Thursday: [{ start: '09:00', end: '09:55' }], Friday: [{ start: '09:55', end: '10:50' }], Saturday: [{ start: '11:00', end: '11:55' }] } },
-  '25CSE103': { name: 'PROBLEM SOLVING THROUGH PROGRAMMING', schedule: { Monday: [{ start: '13:30', end: '14:25' }], Thursday: [{ start: '11:55', end: '12:50' }], Friday: [{ start: '09:00', end: '09:55' }], Saturday: [{ start: '11:55', end: '12:50' }] } },
-  '25HSS131': { name: 'COMMUNICATIVE ENGLISH', schedule: { Monday: [{ start: '14:25', end: '15:20' }], Tuesday: [{ start: '11:00', end: '11:55' }], Thursday: [{ start: '11:00', end: '11:55' }] } },
-  'PHYSICS_LAB': { name: 'PHYSICS LAB', schedule: { Tuesday: [{ start: '09:00', end: '09:55' }, { start: '09:55', end: '10:50' }] } },
-  '25BTY111': { name: 'BIOLOGY FOR ENGINEERS', schedule: { Wednesday: [{ start: '09:00', end: '09:55' }] } },
-  '25HSS132': { name: 'KNOWING YOURSELF', schedule: { Wednesday: [{ start: '11:00', end: '11:55' }] } },
-  '25MAT107': { name: 'MATLAB', schedule: { Wednesday: [{ start: '14:25', end: '15:20' }, { start: '15:20', end: '16:15' }] } },
-  '25MEC122': { name: 'ENGINEERING VISUALIZATION', schedule: { Thursday: [{ start: '14:25', end: '15:20' }, { start: '15:20', end: '16:15' }] } },
-  'CSE_LAB': { name: 'CSE LAB', schedule: { Friday: [{ start: '11:00', end: '11:55' }, { start: '11:55', end: '12:50' }] } },
-  '25HSS102': { name: 'UHV AND INDIAN CONSTITUTION', schedule: { Friday: [{ start: '13:30', end: '14:25' }, { start: '14:25', end: '15:20' }, { start: '15:20', end: '16:15' }] } }
+  Sat: [
+    {
+      start: "09:00",
+      end: "09:55",
+      code: "25ECE111"
+    },
+    {
+      start: "09:55",
+      end: "10:50",
+      code: "25PHY102"
+    },
+    {
+      start: "11:00",
+      end: "11:55",
+      code: "25MAT103"
+    },
+    {
+      start: "11:55",
+      end: "12:50",
+      code: "25CSE103"
+    }
+  ]
 };
 
-function buildInitialDatabase() {
-  const initialCourses = [];
-  Object.keys(masterScheduleMap).forEach((code, index) => {
-    initialCourses.push({ 
-      id: Date.now() + index, 
-      name: masterScheduleMap[code].name, 
-      code: code, 
-      present: 0, 
-      absent: 0, 
-      schedule: masterScheduleMap[code].schedule 
-    });
-  });
-  return initialCourses;
+const DAY_KEYS = [
+  "Mon",
+  "Tue",
+  "Wed",
+  "Thu",
+  "Fri",
+  "Sat"
+];
+
+const DAY_NAMES = {
+  Mon: "Monday",
+  Tue: "Tuesday",
+  Wed: "Wednesday",
+  Thu: "Thursday",
+  Fri: "Friday",
+  Sat: "Saturday",
+  Sun: "Sunday"
+};
+
+const DEFAULT_SUBJECT_NAMES = {
+  "25CIV104":
+    "Civil Engineering",
+
+  "25ECE111":
+    "Electronics & Communication",
+
+  "25PHY102":
+    "Physics",
+
+  "25MAT103":
+    "Mathematics",
+
+  "25CSE103":
+    "Computer Science",
+
+  "25HSS131":
+    "Humanities & Social Sciences",
+
+  "25BTY111":
+    "Biotechnology",
+
+  "25HSS132":
+    "Humanities & Social Sciences II",
+
+  "25MAT107":
+    "Mathematics II",
+
+  "25MEC122":
+    "Mechanical Engineering",
+
+  "25HSS102":
+    "Humanities & Social Sciences III",
+
+  "PHYSICS_LAB":
+    "Physics Lab",
+
+  "CSE_LAB":
+    "Computer Science Lab"
+};
+
+const STORAGE_KEY =
+  "attendanceTrackerDB_v4";
+
+/* ============================================================
+   HELPERS
+============================================================ */
+
+function clone(value) {
+  return JSON.parse(
+    JSON.stringify(value)
+  );
 }
 
-function loadFromDatabase() {
-  const storedData = localStorage.getItem(DB_KEY);
-  if (storedData) return JSON.parse(storedData);
-  const defaultData = buildInitialDatabase();
-  localStorage.setItem(DB_KEY, JSON.stringify(defaultData));
-  return defaultData;
+function clamp(
+  value,
+  min,
+  max
+) {
+  return Math.min(
+    max,
+    Math.max(min, value)
+  );
 }
 
-let courses = loadFromDatabase();
+function todayISO() {
+  const d = new Date();
 
-function saveToDatabase() {
-  localStorage.setItem(DB_KEY, JSON.stringify(courses));
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(historyLog));
-  localStorage.setItem(MARKED_DATES_KEY, JSON.stringify(markedDates));
+  const year =
+    d.getFullYear();
+
+  const month =
+    String(
+      d.getMonth() + 1
+    ).padStart(2, "0");
+
+  const day =
+    String(
+      d.getDate()
+    ).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
 }
 
-function addHistory(action) {
-  const now = new Date();
-  const timestamp = `${now.toLocaleDateString()} ${now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
-  historyLog.unshift({ time: timestamp, action });
-  if (historyLog.length > 50) historyLog.pop(); 
-  saveToDatabase();
+function toISODate(date) {
+  const d =
+    new Date(date);
+
+  return [
+    d.getFullYear(),
+    String(
+      d.getMonth() + 1
+    ).padStart(2, "0"),
+    String(
+      d.getDate()
+    ).padStart(2, "0")
+  ].join("-");
 }
 
-function format12Hour(time24) {
-  if (!time24 || time24 === '--:--') return '--:--';
-  let [hours, minutes] = time24.split(':');
-  hours = parseInt(hours, 10);
-  const ampm = hours >= 12 ? 'PM' : 'AM';
-  hours = hours % 12;
-  hours = hours ? hours : 12; 
-  return `${hours}:${minutes} ${ampm}`;
+function dateFromISO(iso) {
+  const [
+    year,
+    month,
+    day
+  ] =
+    iso.split("-").map(Number);
+
+  return new Date(
+    year,
+    month - 1,
+    day
+  );
 }
 
-function startLiveClock() {
-  const clockElement = document.getElementById('liveClock');
-  if (!clockElement) return;
-  setInterval(() => {
-    const now = new Date();
-    clockElement.innerHTML = `
-      <div class="clock-time">${now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true })}</div>
-      <div class="clock-date">${now.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}</div>
-    `;
-  }, 1000);
-}
+function formatDate(
+  iso,
+  options = {}
+) {
+  return dateFromISO(
+    iso
+  ).toLocaleDateString(
+    undefined,
+    {
+      weekday:
+        options.weekday,
 
-function isTodayHoliday() { 
-  return localStorage.getItem('holiday_' + getTodayDateString()) === 'true'; 
-}
+      day:
+        options.day || "numeric",
 
-function toggleHoliday() {
-  if (getTodayString() === 'Sunday') return; 
-  const todayStr = getTodayDateString();
-  if (isTodayHoliday()) localStorage.removeItem('holiday_' + todayStr);
-  else localStorage.setItem('holiday_' + todayStr, 'true');
-  updateHolidayButton(); 
-  renderUI(); 
-}
+      month:
+        options.month || "short",
 
-function updateHolidayButton() {
-  const btn = document.getElementById('holidayBtn');
-  if (!btn) return;
-  
-  if (getTodayString() === 'Sunday') {
-    btn.classList.add('active');
-    btn.innerText = 'SUNDAY - HOLIDAY';
-    btn.style.pointerEvents = 'none'; 
-  } else if (isTodayHoliday()) { 
-    btn.classList.add('active'); 
-    btn.innerText = 'HOLIDAY ACTIVE'; 
-    btn.style.pointerEvents = 'auto';
-  } else { 
-    btn.classList.remove('active'); 
-    btn.innerText = 'Mark Today Holiday'; 
-    btn.style.pointerEvents = 'auto';
-  }
-}
-
-function getCalculatedAttendance() {
-  let calc = {};
-  courses.forEach(c => calc[c.id] = { p: 0, a: 0 });
-
-  let dailyMarks = JSON.parse(localStorage.getItem('daily_marks_v41')) || {};
-
-  if (academicCalendar && academicCalendar.startDate) {
-    let currDate = new Date(academicCalendar.startDate + 'T00:00:00');
-    let endDate = new Date(getTodayDateString() + 'T00:00:00');
-
-    if (academicCalendar.endDate) {
-      let termEnd = new Date(academicCalendar.endDate + 'T00:00:00');
-      if (termEnd < endDate) endDate = termEnd;
+      year:
+        options.year
     }
+  );
+}
 
-    const now = new Date();
-    const nowStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-    const todayStr = getTodayDateString();
+function formatFullDate(
+  iso
+) {
+  return dateFromISO(
+    iso
+  ).toLocaleDateString(
+    undefined,
+    {
+      weekday:
+        "long",
 
-    while (currDate <= endDate) {
-      const y = currDate.getFullYear();
-      const m = String(currDate.getMonth() + 1).padStart(2, '0');
-      const d = String(currDate.getDate()).padStart(2, '0');
-      const dateStr = `${y}-${m}-${d}`;
+      day:
+        "numeric",
 
-      const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-      const dayName = days[currDate.getDay()];
+      month:
+        "long",
 
-      const isHoliday = (currDate.getDay() === 0) || (academicCalendar.holidays && academicCalendar.holidays.includes(dateStr));
-      const isFullDayMarked = markedDates.includes(dateStr);
-      const isToday = (dateStr === todayStr);
-
-      if (!isHoliday) {
-        courses.forEach(course => {
-          if (course.schedule && course.schedule[dayName]) {
-            course.schedule[dayName].forEach(slot => {
-              const slotKey = `${dateStr}_${course.id}_${slot.start}`;
-              const slotMark = dailyMarks[slotKey];
-
-              if (isFullDayMarked) {
-                calc[course.id].p += 1;
-              } else if (slotMark === 'present') {
-                calc[course.id].p += 1;
-              } else if (slotMark === 'absent') {
-                calc[course.id].a += 1;
-              } else {
-                if (!isToday) {
-                  calc[course.id].a += 1;
-                } else if (nowStr >= slot.start) {
-                  calc[course.id].a += 1;
-                }
-              }
-            });
-          }
-        });
-      }
-      currDate.setDate(currDate.getDate() + 1);
+      year:
+        "numeric"
     }
-  }
-  return calc;
+  );
 }
 
-let setupBlobUrl = null;
-let setupTempData = {};
-let setupStartDate = null;
-let setupEndDate = null;
-
-function startCalendarSetup() {
-  const fileInput = document.getElementById('calFileInput');
-  setupStartDate = document.getElementById('termStart').value;
-  setupEndDate = document.getElementById('termEnd').value;
-
-  if (!fileInput.files.length || !setupStartDate || !setupEndDate) {
-    return alert("Please upload a file and select both start and end dates.");
-  }
-  if (new Date(setupStartDate) > new Date(setupEndDate)) {
-    return alert("Start date cannot be after the end date.");
+function timeToMinutes(
+  time
+) {
+  if (!time) {
+    return 0;
   }
 
-  const file = fileInput.files[0];
-  setupBlobUrl = URL.createObjectURL(file);
-  
-  const previewWrapper = document.getElementById('previewWrapper');
-  const isImage = file.type.match(/image/i) || file.name.match(/\.(jpg|jpeg|png|gif|webp|heic)$/i);
-  
-  previewWrapper.ontouchstart = null;
-  previewWrapper.ontouchmove = null;
-  previewWrapper.ontouchend = null;
+  const parts =
+    time
+      .split(":")
+      .map(Number);
 
-  if (isImage) {
-    previewWrapper.innerHTML = `<img id="setupImagePreview" src="${setupBlobUrl}" style="position:absolute; top:0; left:0; width:100%; height:100%; object-fit:contain; display:block; transform-origin:center;" alt="Calendar Preview" />`;
-    
-    const img = document.getElementById('setupImagePreview');
-    let scale = 1, posX = 0, posY = 0;
-    let startX, startY, initialDist;
-
-    previewWrapper.ontouchstart = (e) => {
-      if (e.touches.length === 2) {
-        initialDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-      } else if (e.touches.length === 1) {
-        startX = e.touches[0].clientX - posX;
-        startY = e.touches[0].clientY - posY;
-      }
-    };
-
-    previewWrapper.ontouchmove = (e) => {
-      e.stopPropagation();
-      e.preventDefault(); 
-      if (e.touches.length === 2) {
-        const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-        scale = Math.min(Math.max(1, scale * (dist / initialDist)), 6); 
-        initialDist = dist;
-      } else if (e.touches.length === 1 && scale > 1) {
-        posX = e.touches[0].clientX - startX;
-        posY = e.touches[0].clientY - startY;
-      }
-      img.style.transform = `translate(${posX}px, ${posY}px) scale(${scale})`;
-    };
-
-    previewWrapper.ontouchend = () => {
-      if (scale <= 1) {
-        scale = 1; posX = 0; posY = 0;
-        img.style.transition = 'transform 0.2s ease';
-        img.style.transform = `translate(0px, 0px) scale(1)`;
-        setTimeout(() => img.style.transition = 'none', 200);
-      }
-    };
-
-  } else {
-    previewWrapper.innerHTML = `<iframe src="${setupBlobUrl}" style="position:absolute; top:0; left:0; width:100%; height:100%; border:none; background:white; pointer-events:auto;"></iframe>`;
-  }
-  
-  setupTempData = {}; 
-  buildSetupCalendar(setupStartDate, setupEndDate);
-  
-  closeModal();
-  document.getElementById('splitScreenOverlay').classList.add('active');
+  return (
+    parts[0] * 60 +
+    parts[1]
+  );
 }
 
-function buildSetupCalendar(startStr, endStr) {
-  const container = document.getElementById('setupCalendarContainer');
-  let html = '';
-  let startDate = new Date(startStr + 'T00:00:00');
-  let endDate = new Date(endStr + 'T00:00:00');
-  let startYear = startDate.getFullYear();
-  let endYear = Math.max(endDate.getFullYear(), startYear + 1);
-  let curr = new Date(startYear, 0, 1); 
-  let finalDate = new Date(endYear, 11, 31); 
-  
-  while (curr <= finalDate) {
-    const year = curr.getFullYear();
-    const month = curr.getMonth();
-    const firstDay = new Date(year, month, 1).getDay();
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-    const monthNames = ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"];
-    
-    html += `<div class="setup-month"><div class="setup-month-title">${monthNames[month]} ${year}</div><div class="cal-weekdays"><span>Su</span><span>M</span><span>Tu</span><span>W</span><span>Th</span><span>F</span><span>Sa</span></div><div class="cal-grid-month">`;
-    for (let i = 0; i < firstDay; i++) { html += `<div class="cal-day empty"></div>`; }
-    for (let i = 1; i <= daysInMonth; i++) {
-      const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
-      const iterDate = new Date(year, month, i);
-      const isSunday = iterDate.getDay() === 0 ? 'sunday' : '';
-      html += `<div class="cal-day ${isSunday}" id="setup-${dateStr}" onclick="cyclePaintMode('${dateStr}', this)"><span>${i}</span></div>`;
-    }
-    html += `</div></div>`;
-    curr.setMonth(curr.getMonth() + 1); 
-  }
-  container.innerHTML = html;
+function currentMinutes() {
+  const d =
+    new Date();
+
+  return (
+    d.getHours() * 60 +
+    d.getMinutes()
+  );
 }
 
-// --- BULLETPROOF MOBILE SCROLL INTERCEPTOR ---
-// This listens to touch events on the entire modal overlay. 
-// It selectively blocks dragging gestures that cause the native browser to bounce.
-const splitOverlay = document.getElementById('splitScreenOverlay');
-splitOverlay.addEventListener('touchstart', function(e) {
-    this.startY = e.touches[0].clientY;
-}, { passive: true });
+function getDateDayKey(
+  iso
+) {
+  const day =
+    dateFromISO(
+      iso
+    ).getDay();
 
-splitOverlay.addEventListener('touchmove', function(e) {
-    const scrollable = e.target.closest('#setupCalendarContainer');
-    
-    // If the user drags outside the specific scrollable area (like the PDF or header), kill the swipe to prevent bounce
-    if (!scrollable) {
-        e.preventDefault(); 
+  if (day === 0) {
+    return "Sun";
+  }
+
+  return DAY_KEYS[
+    day - 1
+  ];
+}
+
+function getTodayDayKey() {
+  const day =
+    new Date().getDay();
+
+  if (day === 0) {
+    return "Mon";
+  }
+
+  return DAY_KEYS[
+    day - 1
+  ];
+}
+
+function isSunday(
+  iso
+) {
+  return (
+    dateFromISO(
+      iso
+    ).getDay() === 0
+  );
+}
+
+function subjectLabel(
+  code
+) {
+  return (
+    state.subjectNames?.[code] ||
+    code
+  );
+}
+
+function escapeHTML(
+  value
+) {
+  return String(value)
+    .replaceAll(
+      "&",
+      "&amp;"
+    )
+    .replaceAll(
+      "<",
+      "&lt;"
+    )
+    .replaceAll(
+      ">",
+      "&gt;"
+    )
+    .replaceAll(
+      '"',
+      "&quot;"
+    )
+    .replaceAll(
+      "'",
+      "&#039;"
+    );
+}
+
+function escapeAttribute(
+  value
+) {
+  return escapeHTML(
+    value
+  );
+}
+
+function safeParse(
+  text,
+  fallback
+) {
+  try {
+    return JSON.parse(
+      text
+    );
+  } catch {
+    return fallback;
+  }
+}
+
+/* ============================================================
+   TERM START
+============================================================ */
+
+function defaultTermStart() {
+  /*
+   * Default to 1 July of the current year.
+   * User can change this.
+   */
+  const d =
+    new Date();
+
+  d.setMonth(6);
+  d.setDate(1);
+
+  if (
+    d >
+    new Date()
+  ) {
+    d.setFullYear(
+      d.getFullYear() - 1
+    );
+  }
+
+  return toISODate(d);
+}
+
+/* ============================================================
+   STATE
+============================================================ */
+
+function createDefaultState() {
+  return {
+    theme:
+      "light",
+
+    target:
+      75,
+
+    termStart:
+      defaultTermStart(),
+
+    timetable:
+      clone(
+        DEFAULT_TIMETABLE
+      ),
+
+    subjectNames:
+      clone(
+        DEFAULT_SUBJECT_NAMES
+      ),
+
+    calendarStates:
+      {},
+
+    marks:
+      {},
+
+    adjustments:
+      {},
+
+    history:
+      [],
+
+    calendarUploadedName:
+      ""
+  };
+}
+
+function normalizeTimetable(
+  input
+) {
+  const timetable =
+    clone(
+      DEFAULT_TIMETABLE
+    );
+
+  if (
+    !input ||
+    typeof input !==
+      "object"
+  ) {
+    return timetable;
+  }
+
+  DAY_KEYS.forEach(
+    day => {
+      if (
+        !Array.isArray(
+          input[day]
+        )
+      ) {
+        timetable[day] = [];
         return;
-    }
-
-    const y = e.touches[0].clientY;
-    const swipingDown = y > this.startY; // User pulling finger down (to scroll up)
-    const swipingUp = y < this.startY;   // User pulling finger up (to scroll down)
-
-    // If the user hits the exact top and pulls down, natively cancel it to prevent refresh
-    if (scrollable.scrollTop <= 0 && swipingDown) {
-        e.preventDefault();
-    }
-    
-    // If the user hits the exact bottom and pulls up, natively cancel it to prevent bounce
-    if (scrollable.scrollTop + scrollable.clientHeight >= scrollable.scrollHeight && swipingUp) {
-        e.preventDefault();
-    }
-}, { passive: false });
-
-
-function cyclePaintMode(dateStr, element) {
-  if (element.classList.contains('holiday')) {
-    element.classList.remove('holiday');
-    element.classList.add('important');
-    setupTempData[dateStr] = 'important';
-  } else if (element.classList.contains('important')) {
-    element.classList.remove('important');
-    delete setupTempData[dateStr];
-  } else {
-    element.classList.add('holiday');
-    setupTempData[dateStr] = 'holiday';
-  }
-}
-
-function saveSetupCalendar() {
-  let holidays = [];
-  let importantDates = [];
-  for (const [date, type] of Object.entries(setupTempData)) {
-    if (type === 'holiday') holidays.push(date);
-    if (type === 'important') importantDates.push(date);
-  }
-  academicCalendar = { startDate: setupStartDate, endDate: setupEndDate, holidays: holidays, importantDates: importantDates };
-  localStorage.setItem(CALENDAR_KEY, JSON.stringify(academicCalendar));
-  alert("Calendar Saved Successfully!");
-  closeSplitScreen();
-  renderUI(); 
-}
-
-function closeSplitScreen() {
-  document.getElementById('splitScreenOverlay').classList.remove('active');
-  const previewWrapper = document.getElementById('previewWrapper');
-  if (previewWrapper) {
-      previewWrapper.innerHTML = '';
-      previewWrapper.ontouchstart = null;
-      previewWrapper.ontouchmove = null;
-      previewWrapper.ontouchend = null;
-  }
-  if (setupBlobUrl) {
-    URL.revokeObjectURL(setupBlobUrl);
-    setupBlobUrl = null;
-  }
-}
-
-function resetToDefaultTimetable() {
-  if(confirm("Are you sure you want to completely clear your timetable and load the default schedule?")) {
-    courses = buildInitialDatabase();
-    markedDates = [];
-    historyLog = [];
-    localStorage.removeItem('handled_live_classes');
-    localStorage.removeItem('daily_marks_v41'); 
-    addHistory("Reset to default timetable.");
-    saveToDatabase();
-    renderUI();
-    closeModal();
-    alert("Default Timetable loaded successfully.");
-  }
-}
-
-function changeCalendarMonth(dir) {
-  currentCalDate.setMonth(currentCalDate.getMonth() + dir);
-  openModal('calendarMode');
-}
-
-function toggleFullDayPresent(dateString) {
-  if (!academicCalendar || !academicCalendar.startDate) {
-    alert("Please sync your Academic Calendar first to set the term start date."); return;
-  }
-  if (dateString < academicCalendar.startDate) {
-    alert("You cannot mark attendance for days before the term started."); return;
-  }
-  
-  const todayStr = getTodayDateString();
-  if (dateString > todayStr) {
-    alert("You cannot mark attendance for future dates."); return;
-  }
-
-  const isAlreadyMarked = markedDates.includes(dateString);
-  if (isAlreadyMarked) {
-    markedDates = markedDates.filter(d => d !== dateString);
-    addHistory(`Unmarked Day: ${dateString}`);
-  } else {
-    markedDates.push(dateString);
-    addHistory(`Marked Day Present: ${dateString}`);
-    
-    let dailyMarks = JSON.parse(localStorage.getItem('daily_marks_v41')) || {};
-    const [y, m, d] = dateString.split('-');
-    const localDate = new Date(y, m-1, d);
-    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    const dayName = days[localDate.getDay()];
-
-    courses.forEach(c => {
-       if (c.schedule && c.schedule[dayName]) {
-          c.schedule[dayName].forEach(slot => {
-             const slotKey = `${dateString}_${c.id}_${slot.start}`;
-             if (dailyMarks[slotKey] === 'present') {
-                 c.present -= 1;
-                 if (academicCalendar && academicCalendar.startDate) c.absent += 1;
-             } else if (dailyMarks[slotKey] === 'absent') {
-                 if (!academicCalendar || !academicCalendar.startDate) c.absent -= 1;
-             }
-             delete dailyMarks[slotKey];
-          });
-       }
-    });
-    localStorage.setItem('daily_marks_v41', JSON.stringify(dailyMarks));
-  }
-  
-  saveToDatabase(); 
-  openModal('calendarMode'); 
-  renderUI(); 
-}
-
-function toggleMenu() { 
-  document.getElementById('sidebar').classList.toggle('open'); 
-  document.getElementById('menuOverlay').classList.toggle('active'); 
-}
-
-function closeModal(e) { 
-  if (e && e.target !== document.getElementById('modalOverlay') && !e.target.classList.contains('close-btn')) return; 
-  document.getElementById('modalOverlay').classList.remove('active'); 
-}
-
-function switchBuilderDay(day) {
-    activeBuilderDay = day;
-    document.querySelectorAll('.builder-days button').forEach(b => b.classList.remove('active-day'));
-    const activeBtn = document.getElementById(`bDay-${day}`);
-    if(activeBtn) activeBtn.classList.add('active-day');
-    renderBuilderPeriods();
-}
-
-function addBuilderPeriod() {
-    customScheduleMap[activeBuilderDay].push({ start: '', end: '', code: '' });
-    renderBuilderPeriods();
-}
-
-function updateBuilderPeriod(index, field, value) {
-    customScheduleMap[activeBuilderDay][index][field] = value;
-    if(field === 'code') renderBuilderSubjects(); 
-}
-
-function removeBuilderPeriod(index) {
-    customScheduleMap[activeBuilderDay].splice(index, 1);
-    renderBuilderPeriods();
-    renderBuilderSubjects();
-}
-
-function renderBuilderPeriods() {
-    const container = document.getElementById('builderPeriods');
-    if(!container) return;
-    let html = '';
-    customScheduleMap[activeBuilderDay].forEach((period, idx) => {
-        html += `
-        <div style="display:flex; gap:6px; margin-bottom:10px; align-items:center;">
-            <input type="time" class="modal-input" style="flex:1; margin-bottom:0; padding:10px 4px; font-size:0.85rem;" value="${period.start}" onchange="updateBuilderPeriod(${idx}, 'start', this.value)">
-            <input type="time" class="modal-input" style="flex:1; margin-bottom:0; padding:10px 4px; font-size:0.85rem;" value="${period.end}" onchange="updateBuilderPeriod(${idx}, 'end', this.value)">
-            <input type="text" class="modal-input" style="flex:1.2; margin-bottom:0; padding:10px; font-size:0.85rem;" placeholder="Code (e.g. CSE101)" value="${period.code}" oninput="updateBuilderPeriod(${idx}, 'code', this.value.toUpperCase())">
-            <button onclick="removeBuilderPeriod(${idx})" style="flex:none; background:#e74c3c; color:white; border:none; width:32px; height:32px; border-radius:50%; font-weight:bold; cursor:pointer;">×</button>
-        </div>
-        `;
-    });
-    if(customScheduleMap[activeBuilderDay].length === 0) {
-        html = `<p style="color:var(--text-sub); font-size:0.9rem; text-align:center; margin-top:10px;">No periods added for ${activeBuilderDay}.</p>`;
-    }
-    container.innerHTML = html;
-}
-
-function renderBuilderSubjects() {
-    const container = document.getElementById('builderSubjects');
-    if(!container) return;
-
-    let uniqueCodes = new Set();
-    for(let day in customScheduleMap) {
-        customScheduleMap[day].forEach(p => {
-            if(p.code.trim()) uniqueCodes.add(p.code.trim().toUpperCase());
-        });
-    }
-
-    let html = '';
-    uniqueCodes.forEach(code => {
-        const existingName = customSubjectNames[code] || '';
-        html += `
-        <div style="display:flex; gap:10px; margin-bottom:10px; align-items:center;">
-            <span style="font-weight:800; min-width:85px; color:#3498db; font-size:0.9rem;">${code}</span>
-            <input type="text" class="modal-input" style="flex:1; margin-bottom:0; padding:10px; font-size:0.9rem;" placeholder="Full Subject Name" value="${existingName}" oninput="customSubjectNames['${code}'] = this.value">
-        </div>
-        `;
-    });
-    if(uniqueCodes.size === 0) {
-        html = `<p style="color:var(--text-sub); font-size:0.9rem; text-align:center;">Add a period above with a subject code first.</p>`;
-    }
-    container.innerHTML = html;
-}
-
-function saveBuiltTimetable() {
-    let newMasterMap = {};
-    let uniqueCodes = new Set();
-    
-    for(let day in customScheduleMap) {
-        for (let i = 0; i < customScheduleMap[day].length; i++) {
-            const p = customScheduleMap[day][i];
-            if(!p.start || !p.end || !p.code.trim()) {
-                alert(`Please completely fill out all fields for the period on ${day}.`);
-                return;
-            }
-            uniqueCodes.add(p.code.trim().toUpperCase());
-        }
-    }
-
-    if (uniqueCodes.size === 0) return alert("Please add at least one period before saving.");
-
-    uniqueCodes.forEach(code => {
-        newMasterMap[code] = { name: customSubjectNames[code] || code, schedule: {} };
-    });
-
-    for(let day in customScheduleMap) {
-        customScheduleMap[day].forEach(p => {
-            const code = p.code.trim().toUpperCase();
-            if(!newMasterMap[code].schedule[day]) newMasterMap[code].schedule[day] = [];
-            newMasterMap[code].schedule[day].push({ start: p.start, end: p.end });
-        });
-    }
-
-    if(confirm("This will replace your current timetable completely. Do you want to proceed?")) {
-        const initialCourses = [];
-        Object.keys(newMasterMap).forEach((code, index) => {
-            initialCourses.push({ 
-                id: Date.now() + index, 
-                name: newMasterMap[code].name, 
-                code: code, 
-                present: 0, 
-                absent: 0, 
-                schedule: newMasterMap[code].schedule 
-            });
-        });
-
-        courses = initialCourses;
-        markedDates = [];
-        localStorage.removeItem('handled_live_classes');
-        localStorage.removeItem('daily_marks_v41'); 
-
-        addHistory(`Created custom timetable via Builder`);
-        saveToDatabase();
-        renderUI();
-        closeModal();
-        alert("New Timetable Created and Applied Successfully!");
-    }
-}
-
-function openModal(type) {
-  document.getElementById('sidebar').classList.remove('open');
-  document.getElementById('menuOverlay').classList.remove('active');
-  const modalOverlay = document.getElementById('modalOverlay');
-  const modalContent = document.getElementById('modalContent');
-  modalOverlay.classList.add('active');
-  let html = `<button class="close-btn" onclick="closeModal()">×</button>`;
-
-  if (type === 'createTimetable') {
-    initBuilder();
-    html += `
-      <h2>Timetable Builder</h2>
-      <div class="day-selector builder-days" style="margin-top:15px; margin-bottom:15px; padding-bottom: 5px;">
-        <button id="bDay-Monday" onclick="switchBuilderDay('Monday')">Mon</button>
-        <button id="bDay-Tuesday" onclick="switchBuilderDay('Tuesday')">Tue</button>
-        <button id="bDay-Wednesday" onclick="switchBuilderDay('Wednesday')">Wed</button>
-        <button id="bDay-Thursday" onclick="switchBuilderDay('Thursday')">Thu</button>
-        <button id="bDay-Friday" onclick="switchBuilderDay('Friday')">Fri</button>
-        <button id="bDay-Saturday" onclick="switchBuilderDay('Saturday')">Sat</button>
-      </div>
-      
-      <div id="builderPeriods" style="margin-bottom:15px; min-height:60px;"></div>
-      <button class="btn-present" onclick="addBuilderPeriod()" style="width:100%; margin-bottom: 25px; background:var(--bg-color); color:#3498db; border:2px dashed #3498db;">+ Add Period</button>
-
-      <hr style="border:0; border-top:1px solid var(--border-color); margin-bottom:20px;" />
-
-      <h3>Define Subjects</h3>
-      <p style="font-size:0.8rem; color:var(--text-sub); margin-bottom:15px;">Unique codes from your schedule will appear below automatically.</p>
-      <div id="builderSubjects" style="margin-bottom:25px; min-height:40px;"></div>
-
-      <button class="btn-present" style="width:100%; background:#3498db; font-size:1.1rem; padding:15px;" onclick="saveBuiltTimetable()">Save & Apply Timetable</button>
-    `;
-    setTimeout(() => { switchBuilderDay('Monday'); renderBuilderSubjects(); }, 0);
-  }
-  else if (type === 'userManual') {
-    html += `
-      <h2>How to Use This App</h2>
-      <div style="max-height: 60vh; overflow-y: auto; padding-right: 10px; text-align: left;">
-        <div class="manual-section" style="margin-bottom:15px;">
-          <h3 style="font-size:1rem; margin-bottom:4px;">1. Getting Started</h3>
-          <p style="font-size:0.85rem; color:var(--text-sub);">Your schedule is pre-loaded! If you ever need to restore it, click "Reset Default Timetable" in the menu.</p>
-        </div>
-        <div class="manual-section" style="margin-bottom:15px;">
-          <h3 style="font-size:1rem; margin-bottom:4px;">2. Set Term & Calendar</h3>
-          <p style="font-size:0.85rem; color:var(--text-sub);"><b>CRITICAL:</b> Upload your calendar to set the <b>Term Start Date</b>. The app will automatically mark you absent for every scheduled class between the start date and today unless marked green.</p>
-        </div>
-        <div class="manual-section" style="margin-bottom:15px;">
-          <h3 style="font-size:1rem; margin-bottom:4px;">3. Live Daily Tracking</h3>
-          <p style="font-size:0.85rem; color:var(--text-sub);">When a class is happening, a glowing <b>LIVE NOW</b> card will appear. Tap Present or Absent to log it instantly!</p>
-        </div>
-        <div class="manual-section" style="margin-bottom:15px;">
-          <h3 style="font-size:1rem; margin-bottom:4px;">4. Bunk Meter</h3>
-          <p style="font-size:0.85rem; color:var(--text-sub);">Set your target percentage in the menu. Each card displays safe bunks remaining or the exact number of classes you must attend.</p>
-        </div>
-      </div>`;
-  } else if (type === 'historyLog') {
-    html += `<h2>History Log</h2><div class="history-list">`;
-    if (historyLog.length === 0) html += `<p style="color:var(--text-sub);">No history yet.</p>`;
-    historyLog.forEach(log => { 
-      html += `<div class="history-item"><span>${log.action}</span><span style="color:var(--text-sub); font-size:0.75rem;">${log.time}</span></div>`; 
-    });
-    html += `</div>`;
-  } else if (type === 'setupCalendar') {
-    html += `
-      <h2>Upload Academic Calendar</h2>
-      <div style="text-align:left; margin-top:15px;">
-        <label style="font-size:0.85rem; color:var(--text-sub);">Select Calendar (Image or PDF)</label>
-        <input type="file" id="calFileInput" accept="image/*, application/pdf" class="modal-input" />
-        
-        <label style="font-size:0.85rem; color:var(--text-sub);">Term Start Date</label>
-        <input type="date" id="termStart" class="modal-input" />
-        
-        <label style="font-size:0.85rem; color:var(--text-sub);">Term End Date</label>
-        <input type="date" id="termEnd" class="modal-input" />
-        
-        <button class="btn-present" style="width:100%; padding:12px;" onclick="startCalendarSetup()">Start Setup Mode</button>
-      </div>`;
-  } else if (type === 'calendarMode') {
-    if (!academicCalendar) {
-      html += `<h2>Calendar</h2><p style="color:var(--text-sub); margin-top:15px;">Sync the calendar from the menu first.</p>`;
-    } else {
-      const year = currentCalDate.getFullYear();
-      const month = currentCalDate.getMonth();
-      const firstDay = new Date(year, month, 1).getDay();
-      const daysInMonth = new Date(year, month + 1, 0).getDate();
-      const monthNames = ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"];
-      const todayStr = getTodayDateString();
-
-      html += `
-        <div class="month-header">
-          <button class="month-nav" onclick="changeCalendarMonth(-1)">&#10094;</button>
-          <h2>${monthNames[month]} ${year}</h2>
-          <button class="month-nav" onclick="changeCalendarMonth(1)">&#10095;</button>
-        </div>
-        <div class="cal-weekdays"><span>Su</span><span>M</span><span>Tu</span><span>W</span><span>Th</span><span>F</span><span>Sa</span></div>
-        <div class="cal-grid-month">`;
-
-      for (let i = 0; i < firstDay; i++) {
-        html += `<div class="cal-day empty"></div>`;
       }
 
-      for (let i = 1; i <= daysInMonth; i++) {
-        const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
-        
-        let statusClass = '';
-        if (academicCalendar.holidays && academicCalendar.holidays.includes(dateStr)) statusClass = 'holiday';
-        else if (academicCalendar.importantDates && academicCalendar.importantDates.includes(dateStr)) statusClass = 'important';
+      timetable[day] =
+        input[day]
+          .filter(
+            item =>
+              item &&
+              typeof item.start ===
+                "string" &&
+              typeof item.end ===
+                "string" &&
+              typeof item.code ===
+                "string" &&
+              item.code.trim()
+          )
+          .map(
+            item => ({
+              start:
+                item.start,
 
-        const isSunday = new Date(year, month, i).getDay() === 0 ? 'sunday' : '';
-        const isFuture = dateStr > todayStr ? 'future' : '';
-        const isBeforeStart = dateStr < academicCalendar.startDate ? 'future' : ''; 
-        const isMarked = markedDates.includes(dateStr) ? 'present' : '';
-        
-        html += `<div class="cal-day ${statusClass} ${isSunday} ${isFuture} ${isBeforeStart} ${isMarked}" onclick="toggleFullDayPresent('${dateStr}')"><span>${i}</span></div>`;
-      }
-      
-      html += `</div>
-        <div style="margin-top:20px; display:flex; justify-content:center; gap:15px; font-size:0.85rem; font-weight:700;">
-          <span style="color:#9b2226">■ Holiday</span> 
-          <span style="color:#005f73">■ Important</span>
-          <span style="color:#2ecc71">■ Present</span>
-        </div>`;
+              end:
+                item.end,
+
+              code:
+                item.code
+                  .trim()
+                  .toUpperCase()
+            })
+          )
+          .sort(
+            (a, b) =>
+              timeToMinutes(
+                a.start
+              ) -
+              timeToMinutes(
+                b.start
+              )
+          );
     }
-  } else if (type === 'setTarget') {
-    html += `
-      <h2>Set Target Attendance</h2>
-      <div style="text-align:left; margin-top:15px;">
-        <p style="font-size:0.85rem; color:var(--text-sub); margin-bottom:10px;">Enter the minimum attendance percentage required by your institution.</p>
-        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px;">
-          <input type="number" id="targetInput" class="modal-input" style="margin-bottom: 0;" value="${targetPercentage}" min="1" max="100" />
-          <span style="font-size:1.2rem; font-weight:800;">%</span>
-        </div>
-        <button class="btn-present" style="width:100%; padding:12px;" onclick="saveTargetPercentage()">Save Target</button>
-      </div>`;
-  } else if (type === 'addCourse') {
-    html += `
-      <h2>Add Custom Course</h2>
-      <div style="text-align:left; margin-top:15px;">
-        <label style="font-size:0.85rem; color:var(--text-sub);">Course Name</label>
-        <input type="text" id="newCourseName" class="modal-input" placeholder="e.g. Data Structures" />
-        <label style="font-size:0.85rem; color:var(--text-sub);">Course Code (Optional)</label>
-        <input type="text" id="newCourseCode" class="modal-input" placeholder="e.g. 25CSE201" />
-        <button class="btn-present" style="width:100%; padding:12px;" onclick="handleAddCourse()">Add Course</button>
-      </div>`;
-  } else if (type === 'editAttendance') {
-    if (courses.length === 0) {
-      html += `<h2>Edit Attendance</h2><p style="color:var(--text-sub); margin-top:15px;">No courses available to edit.</p>`;
-    } else {
-      let options = courses.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
-      html += `
-        <h2>Edit Attendance</h2>
-        <div style="margin-top:15px; text-align: left;">
-          <label style="font-size:0.85rem; color:var(--text-sub);">Select Course</label>
-          <select id="editCourseSelect" class="modal-input" onchange="loadCourseToEdit()" style="margin-bottom: 25px;">
-            ${options}
-          </select>
-          <div style="display:flex; gap:15px; align-items:stretch; margin-bottom:25px;">
-            <div style="display:flex; flex-direction:column; gap:15px; flex:1;">
-              <div>
-                <label style="font-size:0.85rem; color:var(--text-sub);">Present</label>
-                <input type="number" id="editPresent" class="modal-input" style="margin-bottom:0; padding:10px;" min="0" oninput="syncEditFields('present')" />
-              </div>
-              <div>
-                <label style="font-size:0.85rem; color:var(--text-sub);">Total Classes</label>
-                <input type="number" id="editTotal" class="modal-input" style="margin-bottom:0; padding:10px;" min="0" oninput="syncEditFields('total')" />
-              </div>
-            </div>
-            <div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; background:var(--bg-color); padding:15px; border-radius:12px; border:1px solid var(--border-color); box-shadow: inset 0 2px 5px rgba(0,0,0,0.05);">
-              <label style="font-size:0.85rem; color:var(--text-sub); margin-bottom:8px;">Percentage</label>
-              <div style="display:flex; align-items:center; gap:5px;">
-                <input type="number" id="editPercent" class="modal-input" style="margin-bottom:0; width:70px; text-align:center; font-size:1.2rem; font-weight:800; padding:8px;" min="0" max="100" oninput="syncEditFields('percent')" />
-                <span style="font-size:1.2rem; font-weight:800;">%</span>
-              </div>
-            </div>
-          </div>
-          <button class="btn-present" style="width:100%; padding:14px;" onclick="saveSingleCourseAttendance()">Save Changes</button>
-        </div>`;
-      setTimeout(loadCourseToEdit, 0); 
-    }
-  } else if (type === 'removeCourse') {
-    html += `<h2>Remove Course</h2><div style="max-height: 55vh; overflow-y: auto; margin-top: 15px;">`;
-    if (courses.length === 0) {
-      html += `<p style="color:var(--text-sub);">No courses to remove.</p>`;
-    } else {
-      courses.forEach(c => {
-        html += `
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; border-bottom:1px solid var(--border-color); padding-bottom:8px;">
-            <span style="font-size:0.9rem; font-weight:700; max-width:250px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${c.name}</span>
-            <button onclick="removeCourseById(${c.id})" style="background:#e74c3c; color:white; border:none; width:32px; height:32px; border-radius:50%; font-size:1.2rem; font-weight:bold; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0;">-</button>
-          </div>`;
+  );
+
+  return timetable;
+}
+
+function loadState() {
+  const stored =
+    localStorage.getItem(
+      STORAGE_KEY
+    );
+
+  if (!stored) {
+    const fresh =
+      createDefaultState();
+
+    persistState(fresh);
+
+    return fresh;
+  }
+
+  const parsed =
+    safeParse(
+      stored,
+      null
+    );
+
+  if (
+    !parsed ||
+    typeof parsed !==
+      "object"
+  ) {
+    const fresh =
+      createDefaultState();
+
+    persistState(fresh);
+
+    return fresh;
+  }
+
+  const defaults =
+    createDefaultState();
+
+  return {
+    ...defaults,
+
+    ...parsed,
+
+    target:
+      clamp(
+        Number(
+          parsed.target
+        ) || 75,
+        1,
+        100
+      ),
+
+    timetable:
+      normalizeTimetable(
+        parsed.timetable
+      ),
+
+    subjectNames: {
+      ...defaults.subjectNames,
+      ...(parsed.subjectNames ||
+        {})
+    },
+
+    calendarStates:
+      parsed.calendarStates ||
+      {},
+
+    marks:
+      parsed.marks ||
+      {},
+
+    adjustments:
+      parsed.adjustments ||
+      {},
+
+    history:
+      Array.isArray(
+        parsed.history
+      )
+        ? parsed.history
+        : [],
+
+    theme:
+      parsed.theme ===
+      "dark"
+        ? "dark"
+        : "light"
+  };
+}
+
+function persistState(
+  current = state
+) {
+  localStorage.setItem(
+    STORAGE_KEY,
+    JSON.stringify(
+      current
+    )
+  );
+}
+
+let state =
+  loadState();
+
+/* ============================================================
+   APP
+============================================================ */
+
+const app = {
+  selectedDay:
+    getTodayDayKey(),
+
+  openCourse:
+    null,
+
+  modalCloseHandler:
+    null,
+
+  calendarViewYear:
+    new Date().getFullYear(),
+
+  calendarPreview: {
+    scale: 1,
+    minScale: 1,
+    maxScale: 4,
+    startDistance: 0,
+    startScale: 1
+  }
+};
+
+/* ============================================================
+   DOM
+============================================================ */
+
+const $ =
+  selector =>
+    document.querySelector(
+      selector
+    );
+
+const $$ =
+  selector =>
+    Array.from(
+      document.querySelectorAll(
+        selector
+      )
+    );
+
+const els = {
+  body:
+    document.body,
+
+  sidebar:
+    $("#sidebar"),
+
+  sidebarOverlay:
+    $("#sidebarOverlay"),
+
+  sidebarClose:
+    $("#sidebarClose"),
+
+  hamburger:
+    $("#hamburger"),
+
+  themeToggle:
+    $("#themeToggle"),
+
+  themeIcon:
+    $("#themeIcon"),
+
+  liveClock:
+    $("#liveClock"),
+
+  liveDate:
+    $("#liveDate"),
+
+  headerDay:
+    $("#headerDay"),
+
+  targetAttendanceValue:
+    $("#targetAttendanceValue"),
+
+  targetInline:
+    $("#targetInline"),
+
+  termStartValue:
+    $("#termStartValue"),
+
+  termStartLabel:
+    $("#termStartLabel"),
+
+  markTodayHoliday:
+    $("#markTodayHoliday"),
+
+  daySelector:
+    $("#daySelector"),
+
+  selectedDayDate:
+    $("#selectedDayDate"),
+
+  holidayBanner:
+    $("#holidayBanner"),
+
+  livePromptContainer:
+    $("#livePromptContainer"),
+
+  timelineSection:
+    $("#timelineSection"),
+
+  timeline:
+    $("#timeline"),
+
+  courseGrid:
+    $("#courseGrid"),
+
+  emptyState:
+    $("#emptyState"),
+
+  modalBackdrop:
+    $("#modalBackdrop"),
+
+  modal:
+    $("#modal"),
+
+  modalClose:
+    $("#modalClose"),
+
+  modalTitle:
+    $("#modalTitle"),
+
+  modalSubtitle:
+    $("#modalSubtitle"),
+
+  modalBody:
+    $("#modalBody")
+};
+
+/* ============================================================
+   SIDEBAR
+============================================================ */
+
+function openSidebar() {
+  document.body.classList.add(
+    "sidebar-open"
+  );
+
+  els.sidebarOverlay.setAttribute(
+    "aria-hidden",
+    "false"
+  );
+
+  requestAnimationFrame(
+    () => {
+      els.sidebarClose.focus({
+        preventScroll: true
       });
     }
-    html += `</div>`;
-  }
-  
-  modalContent.innerHTML = html;
+  );
 }
 
-function loadCourseToEdit() {
-  const select = document.getElementById('editCourseSelect');
-  if (!select) return;
-  const course = courses.find(c => c.id === parseInt(select.value, 10));
-  if (!course) return;
-  
-  const baseStats = getCalculatedAttendance();
-  const totalPresent = Math.max(0, (baseStats[course.id]?.p || 0) + (course.present || 0));
-  const totalAbsent = Math.max(0, (baseStats[course.id]?.a || 0) + (course.absent || 0));
-  
-  const total = totalPresent + totalAbsent;
-  const percent = total === 0 ? 0 : Math.round((totalPresent / total) * 100);
-  
-  document.getElementById('editPresent').value = totalPresent;
-  document.getElementById('editTotal').value = total;
-  document.getElementById('editPercent').value = percent;
-}
+function closeSidebar() {
+  document.body.classList.remove(
+    "sidebar-open"
+  );
 
-function syncEditFields(source) {
-  const pEl = document.getElementById('editPresent');
-  const tEl = document.getElementById('editTotal');
-  const pctEl = document.getElementById('editPercent');
-  
-  let p = parseFloat(pEl.value) || 0;
-  let t = parseFloat(tEl.value) || 0;
-  let pct = parseFloat(pctEl.value) || 0;
+  els.sidebarOverlay.setAttribute(
+    "aria-hidden",
+    "true"
+  );
 
-  if (source === 'present' || source === 'total') {
-    pctEl.value = t > 0 ? Math.round((p / t) * 100) : 0;
-  } else if (source === 'percent') {
-    if (t > 0) {
-      pEl.value = Math.round((pct / 100) * t);
-    }
+  if (
+    window.innerWidth <=
+    1000
+  ) {
+    requestAnimationFrame(
+      () => {
+        els.hamburger.focus({
+          preventScroll: true
+        });
+      }
+    );
   }
 }
 
-function saveSingleCourseAttendance() {
-  const select = document.getElementById('editCourseSelect');
-  if (!select) return;
-  
-  const courseId = parseInt(select.value, 10);
-  const course = courses.find(c => c.id === courseId);
-  if (!course) return;
+els.hamburger.addEventListener(
+  "click",
+  openSidebar
+);
 
-  let p = parseInt(document.getElementById('editPresent').value, 10) || 0;
-  let t = parseInt(document.getElementById('editTotal').value, 10) || 0;
-  
-  if (p > t) t = p;
+els.sidebarClose.addEventListener(
+  "click",
+  closeSidebar
+);
 
-  const baseStats = getCalculatedAttendance();
-  
-  course.present = p - (baseStats[course.id]?.p || 0);
-  course.absent = (t - p) - (baseStats[course.id]?.a || 0);
+els.sidebarOverlay.addEventListener(
+  "click",
+  closeSidebar
+);
 
-  addHistory(`Edited: ${course.name} (Now P:${p}, Total:${t})`);
-  saveToDatabase();
-  renderUI();
-  alert(`Attendance updated for ${course.name}`);
-  closeModal();
+/* ============================================================
+   THEME
+============================================================ */
+
+function applyTheme() {
+  document.documentElement.dataset.theme =
+    state.theme;
+
+  els.themeToggle.checked =
+    state.theme ===
+    "dark";
+
+  els.themeIcon.textContent =
+    state.theme ===
+    "dark"
+      ? "☾"
+      : "☀";
+
+  const meta =
+    document.querySelector(
+      'meta[name="theme-color"]'
+    );
+
+  if (meta) {
+    meta.content =
+      state.theme ===
+      "dark"
+        ? "#10141b"
+        : "#f5f7fb";
+  }
 }
 
-function handleAddCourse() {
-  const name = document.getElementById('newCourseName').value.trim();
-  const code = document.getElementById('newCourseCode').value.trim();
-  if (!name) return alert("Please enter a course name.");
-  courses.push({ id: Date.now(), name: name, code: code || 'CUSTOM', present: 0, absent: 0, schedule: {} });
-  addHistory(`Added Course: ${name}`); 
-  saveToDatabase(); 
-  renderUI(); 
-  closeModal();
+els.themeToggle.addEventListener(
+  "change",
+  () => {
+    state.theme =
+      els.themeToggle.checked
+        ? "dark"
+        : "light";
+
+    persistState();
+
+    applyTheme();
+  }
+);
+
+/* ============================================================
+   CLOCK
+============================================================ */
+
+function updateClock() {
+  const now =
+    new Date();
+
+  els.liveClock.textContent =
+    now.toLocaleTimeString(
+      undefined,
+      {
+        hour12: false
+      }
+    );
+
+  els.liveDate.textContent =
+    now.toLocaleDateString(
+      undefined,
+      {
+        weekday:
+          "short",
+
+        day:
+          "numeric",
+
+        month:
+          "short",
+
+        year:
+          "numeric"
+      }
+    );
+
+  const day =
+    now.getDay();
+
+  els.headerDay.textContent =
+    day === 0
+      ? "Sunday • Holiday"
+      : DAY_NAMES[
+          DAY_KEYS[
+            day - 1
+          ]
+        ];
 }
 
-function saveTargetPercentage() {
-  const inputVal = document.getElementById('targetInput').value;
-  const newTarget = parseInt(inputVal, 10);
-  if (isNaN(newTarget) || newTarget < 1 || newTarget > 100) {
-    alert("Please enter a valid percentage between 1 and 100.");
+/* ============================================================
+   DAY DATE
+============================================================ */
+
+function nextDateForDayKey(
+  referenceISO,
+  wantedDay
+) {
+  const reference =
+    dateFromISO(
+      referenceISO
+    );
+
+  let current =
+    reference.getDay();
+
+  if (
+    current === 0
+  ) {
+    current = 1;
+  }
+
+  const wanted =
+    DAY_KEYS.indexOf(
+      wantedDay
+    ) + 1;
+
+  let delta =
+    wanted -
+    current;
+
+  const d =
+    new Date(reference);
+
+  d.setDate(
+    d.getDate() + delta
+  );
+
+  return toISODate(d);
+}
+
+function selectedDateForApp() {
+  return nextDateForDayKey(
+    todayISO(),
+    app.selectedDay
+  );
+}
+
+/* ============================================================
+   CALENDAR STATE
+============================================================ */
+
+function isDateHoliday(
+  date
+) {
+  if (
+    isSunday(date)
+  ) {
+    return true;
+  }
+
+  return (
+    state.calendarStates[
+      date
+    ] === "holiday"
+  );
+}
+
+function isDatePresent(
+  date
+) {
+  return (
+    state.calendarStates[
+      date
+    ] === "present"
+  );
+}
+
+function getCalendarState(
+  date
+) {
+  if (
+    isSunday(date)
+  ) {
+    return "holiday";
+  }
+
+  return (
+    state.calendarStates[
+      date
+    ] ||
+    "default"
+  );
+}
+
+/* ============================================================
+   TIMETABLE
+============================================================ */
+
+function getDaySlots(
+  day
+) {
+  return (
+    state.timetable[day] ||
+    []
+  );
+}
+
+function slotKey(
+  date,
+  slot
+) {
+  return [
+    date,
+    slot.start,
+    slot.end,
+    slot.code
+  ].join("|");
+}
+
+/* ============================================================
+   SLOT STATUS
+============================================================ */
+
+function getSlotStatus(
+  date,
+  slot
+) {
+  if (
+    isDateHoliday(date)
+  ) {
+    return "holiday";
+  }
+
+  const key =
+    slotKey(
+      date,
+      slot
+    );
+
+  const explicit =
+    state.marks[key];
+
+  if (
+    explicit ===
+      "present" ||
+    explicit ===
+      "absent"
+  ) {
+    return explicit;
+  }
+
+  if (
+    date <
+    todayISO()
+  ) {
+    return "past";
+  }
+
+  if (
+    date >
+    todayISO()
+  ) {
+    return "upcoming";
+  }
+
+  const now =
+    currentMinutes();
+
+  const start =
+    timeToMinutes(
+      slot.start
+    );
+
+  const end =
+    timeToMinutes(
+      slot.end
+    );
+
+  if (
+    now < start
+  ) {
+    return "upcoming";
+  }
+
+  if (
+    now >= end
+  ) {
+    return "past";
+  }
+
+  return "live";
+}
+
+/* ============================================================
+   SUMMARY
+============================================================ */
+
+function renderSummary() {
+  els.targetAttendanceValue.textContent =
+    `${state.target}%`;
+
+  els.targetInline.textContent =
+    `${state.target}%`;
+
+  const dateText =
+    formatDate(
+      state.termStart,
+      {
+        day:
+          "numeric",
+
+        month:
+          "short",
+
+        year:
+          "numeric"
+      }
+    );
+
+  els.termStartValue.textContent =
+    dateText;
+
+  els.termStartLabel.textContent =
+    dateText;
+}
+
+/* ============================================================
+   DAY SELECTOR
+============================================================ */
+
+function renderDaySelector() {
+  const today =
+    todayISO();
+
+  els.daySelector.innerHTML =
+    DAY_KEYS
+      .map(
+        day => {
+          const active =
+            day ===
+            app.selectedDay;
+
+          const date =
+            nextDateForDayKey(
+              today,
+              day
+            );
+
+          const holiday =
+            isDateHoliday(
+              date
+            );
+
+          return `
+            <button
+              type="button"
+              role="tab"
+              class="day-pill ${
+                active
+                  ? "active"
+                  : ""
+              }"
+              data-day="${day}"
+              aria-selected="${active}"
+            >
+              ${day}
+              ${
+                holiday
+                  ? " 🏖️"
+                  : ""
+              }
+            </button>
+          `;
+        }
+      )
+      .join("");
+
+  $$(".day-pill")
+    .forEach(
+      button => {
+        button.addEventListener(
+          "click",
+          () => {
+            app.selectedDay =
+              button.dataset.day;
+
+            renderMain(
+              true
+            );
+          }
+        );
+      }
+    );
+}
+
+/* ============================================================
+   TIMELINE
+============================================================ */
+
+function renderTimeline(
+  date,
+  shouldScroll
+) {
+  const day =
+    getDateDayKey(
+      date
+    );
+
+  const slots =
+    getDaySlots(day);
+
+  if (!slots.length) {
+    els.timeline.innerHTML = `
+      <div
+        class="empty-state"
+        style="grid-column:1/-1;"
+      >
+        <div class="empty-icon">
+          🗓️
+        </div>
+
+        <h3>
+          No classes scheduled
+        </h3>
+
+        <p>
+          No timetable entries exist for this day.
+        </p>
+      </div>
+    `;
+
     return;
   }
-  targetPercentage = newTarget;
-  localStorage.setItem('target_percentage', targetPercentage);
-  renderUI();
-  closeModal();
-}
 
-function removeCourseById(id) {
-  const course = courses.find(c => c.id === id);
-  if (!course) return;
-  if (confirm(`Are you sure you want to remove ${course.name}?`)) {
-    courses = courses.filter(c => c.id !== id);
-    addHistory(`Removed Course: ${course.name}`);
-    saveToDatabase(); 
-    renderUI(); 
-    openModal('removeCourse');
-  }
-}
+  els.timeline.innerHTML =
+    slots
+      .map(
+        (slot, index) => {
+          const status =
+            getSlotStatus(
+              date,
+              slot
+            );
 
-function getBunkStatus(present, absent) {
-  present = Math.max(0, parseInt(present, 10) || 0);
-  absent = Math.max(0, parseInt(absent, 10) || 0);
-  const total = present + absent;
+          let statusLabel =
+            "Past";
 
-  if (total === 0) {
-    return `<span class="bunk-meter" style="color:var(--text-sub);">No classes yet</span>`;
-  }
+          if (
+            status ===
+            "live"
+          ) {
+            statusLabel =
+              "LIVE NOW";
+          }
 
-  const target = targetPercentage / 100;
-  const currentPercent = (present / total) * 100;
+          if (
+            status ===
+            "upcoming"
+          ) {
+            statusLabel =
+              "Upcoming";
+          }
 
-  if (currentPercent >= targetPercentage) {
-    const buffer = Math.floor(((present / target) - total) + 0.0001);
-    if (buffer > 0) {
-      return `<span class="bunk-meter bunk-safe">Safe to bunk ${buffer} class${buffer > 1 ? 'es' : ''}</span>`;
-    } else {
-      return `<span class="bunk-meter bunk-safe">On track (0 buffer)</span>`;
-    }
-  } else {
-    if (target >= 1) {
-      return `<span class="bunk-meter bunk-danger">Cannot reach 100%</span>`;
-    }
-    const required = Math.ceil((((target * total) - present) / (1 - target)) - 0.0001);
-    return `<span class="bunk-meter bunk-danger">Attend next ${required} class${required > 1 ? 'es' : ''}</span>`;
-  }
-}
+          if (
+            status ===
+            "present"
+          ) {
+            statusLabel =
+              "✓ Present";
+          }
 
-function changeDay(dayName) { 
-  currentSelectedDay = dayName; 
-  renderUI(); 
-}
+          if (
+            status ===
+            "absent"
+          ) {
+            statusLabel =
+              "✖ Absent";
+          }
 
-function checkAndAutoMarkDay() {
-  const todayStr = getTodayDateString();
-  const todayName = getTodayString();
-  if (markedDates.includes(todayStr)) return; 
+          const visualClass =
+            status ===
+              "present" ||
+            status ===
+              "absent"
+              ? status ===
+                "present"
+                ? "present"
+                : "past"
+              : status;
 
-  let dailyMarks = JSON.parse(localStorage.getItem('daily_marks_v41')) || {};
-  let allPresent = true;
-  let totalClassesToday = 0;
+          return `
+            <article
+              class="class-card ${visualClass}"
+              data-slot-index="${index}"
+            >
+              <div
+                class="status-bar"
+              ></div>
 
-  courses.forEach(c => {
-    if (c.schedule && c.schedule[todayName]) {
-      c.schedule[todayName].forEach(slot => {
-        totalClassesToday++;
-        const slotKey = `${todayStr}_${c.id}_${slot.start}`;
-        if (dailyMarks[slotKey] !== 'present') {
-          allPresent = false;
+              <div
+                class="class-time"
+              >
+                ${escapeHTML(
+                  slot.start
+                )}
+                –
+                ${escapeHTML(
+                  slot.end
+                )}
+              </div>
+
+              <div
+                class="class-subject"
+              >
+                ${escapeHTML(
+                  subjectLabel(
+                    slot.code
+                  )
+                )}
+              </div>
+
+              <div
+                class="class-code"
+              >
+                ${escapeHTML(
+                  slot.code
+                )}
+              </div>
+
+              <div
+                class="class-status"
+              >
+                ${
+                  status ===
+                  "live"
+                    ? `
+                      <span
+                        class="live-dot"
+                      ></span>
+                    `
+                    : ""
+                }
+
+                ${statusLabel}
+              </div>
+            </article>
+          `;
         }
-      });
-    }
-  });
+      )
+      .join("");
 
-  if (totalClassesToday > 0 && allPresent) {
-    markedDates.push(todayStr); 
-    addHistory(`All classes attended! Auto-marked calendar for ${todayStr}.`);
-    localStorage.setItem(MARKED_DATES_KEY, JSON.stringify(markedDates));
-  }
-}
+  if (
+    shouldScroll &&
+    date ===
+      todayISO()
+  ) {
+    requestAnimationFrame(
+      () => {
+        const live =
+          els.timeline.querySelector(
+            ".class-card.live"
+          );
 
-function handleLiveAttendance(courseId, status, slotKey) {
-  let handledClasses = JSON.parse(localStorage.getItem('handled_live_classes')) || [];
-  if (!handledClasses.includes(slotKey)) {
-      handledClasses.push(slotKey);
-      localStorage.setItem('handled_live_classes', JSON.stringify(handledClasses));
-  }
+        if (live) {
+          setTimeout(
+            () => {
+              live.scrollIntoView(
+                {
+                  behavior:
+                    "smooth",
 
-  let dailyMarks = JSON.parse(localStorage.getItem('daily_marks_v41')) || {};
-  dailyMarks[slotKey] = status;
-  localStorage.setItem('daily_marks_v41', JSON.stringify(dailyMarks));
+                  block:
+                    "nearest",
 
-  const course = courses.find(c => c.id === courseId);
-  if (!academicCalendar || !academicCalendar.startDate) {
-    if (status === 'present') course.present += 1;
-    if (status === 'absent') course.absent += 1;
-  }
-  
-  addHistory(`Live ${status.toUpperCase()}: ${course.name}`);
-  checkAndAutoMarkDay();
-  
-  saveToDatabase();
-  renderUI();
-}
-
-function renderUI() {
-  document.querySelectorAll('.day-selector button').forEach(btn => {
-    btn.classList.remove('active-day');
-    if (btn.innerText.startsWith(currentSelectedDay.substring(0, 3))) btn.classList.add('active-day');
-  });
-
-  const timeContainer = document.getElementById('timetableContainer');
-  const isToday = getTodayString() === currentSelectedDay;
-  const isSunday = currentSelectedDay === 'Sunday';
-  const isDeclaredHoliday = isToday && isTodayHoliday();
-  
-  const now = new Date(); 
-  const currentTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-
-  if (isSunday || isDeclaredHoliday) {
-    const holidayMsg = isSunday ? 'SUNDAY IS A HOLIDAY' : 'TODAY IS A HOLIDAY';
-    timeContainer.innerHTML = `<div style="text-align:center; padding: 25px 20px; background: #fdf5f5; border-radius: 12px; border: 2px dashed #e74c3c; width:100%;"><p style="color:#e74c3c; font-size:1.15rem; font-weight:800;">🏖️ ${holidayMsg}</p></div>`;
-  } else {
-    let todaysClasses = [];
-    courses.forEach(c => { 
-      if (c.schedule && c.schedule[currentSelectedDay]) {
-        c.schedule[currentSelectedDay].forEach(slot => { 
-          todaysClasses.push({ name: c.name, start: slot.start, end: slot.end, id: c.id }); 
-        });
-      }
-    });
-    
-    if (todaysClasses.length === 0) {
-      timeContainer.innerHTML = `<p style="color:var(--text-sub);">No classes scheduled.</p>`;
-    } else {
-      todaysClasses.sort((a, b) => a.start.localeCompare(b.start));
-      
-      let html = '<div class="timetable-spacer"></div>';
-      let focusId = null;
-      let foundFocus = false;
-
-      todaysClasses.forEach((cls, idx) => {
-        let status = '';
-        let indicator = '';
-        const cardId = `timeline-card-${idx}`;
-        const cascadeDelay = idx * 0.08; 
-
-        if (isToday) { 
-          if (currentTime >= cls.start && currentTime <= cls.end) {
-            status = 'active'; 
-            indicator = '<span class="live-dot-small"></span>';
-            if (!foundFocus) { focusId = cardId; foundFocus = true; }
-          } 
-          else if (currentTime > cls.end) {
-            status = 'past'; 
-          }
-          else {
-            status = 'upcoming';
-            if (!foundFocus) { focusId = cardId; foundFocus = true; }
-          }
+                  inline:
+                    "center"
+                }
+              );
+            },
+            100
+          );
         }
+      }
+    );
+  }
+}
 
-        html += `
-          <div class="timeline-card ${status}" id="${cardId}" style="animation-delay: ${cascadeDelay}s">
-            <div class="timeline-time">${indicator}${format12Hour(cls.start)} - ${format12Hour(cls.end)}</div>
-            <div class="timeline-course">${cls.name}</div>
-          </div>`;
-      });
-      
-      html += '<div class="timetable-spacer"></div>';
-      timeContainer.innerHTML = html;
+/* ============================================================
+   LIVE PROMPT
+============================================================ */
 
-      if (focusId && isToday) {
-        setTimeout(() => {
-          const el = document.getElementById(focusId);
-          if (el) el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-        }, 300); 
+function renderLivePrompt(
+  date
+) {
+  els.livePromptContainer.innerHTML =
+    "";
+
+  if (
+    date !==
+      todayISO() ||
+    isDateHoliday(date) ||
+    isDatePresent(date)
+  ) {
+    return;
+  }
+
+  const slots =
+    getDaySlots(
+      getDateDayKey(
+        date
+      )
+    );
+
+  const now =
+    currentMinutes();
+
+  const liveSlot =
+    slots.find(
+      slot =>
+        now >=
+          timeToMinutes(
+            slot.start
+          ) &&
+        now <
+          timeToMinutes(
+            slot.end
+          )
+    );
+
+  if (!liveSlot) {
+    return;
+  }
+
+  const key =
+    slotKey(
+      date,
+      liveSlot
+    );
+
+  if (
+    state.marks[key]
+  ) {
+    return;
+  }
+
+  const prompt =
+    document.createElement(
+      "div"
+    );
+
+  prompt.className =
+    "live-prompt";
+
+  prompt.innerHTML = `
+    <div
+      class="live-prompt-top"
+    >
+      <span
+        class="live-badge"
+      >
+        <span
+          class="live-dot"
+        ></span>
+
+        LIVE NOW
+      </span>
+
+      <span
+        class="live-time"
+      >
+        ${liveSlot.start}
+        –
+        ${liveSlot.end}
+      </span>
+    </div>
+
+    <div
+      class="live-course-name"
+    >
+      ${escapeHTML(
+        subjectLabel(
+          liveSlot.code
+        )
+      )}
+    </div>
+
+    <div
+      class="live-time"
+    >
+      ${escapeHTML(
+        liveSlot.code
+      )}
+    </div>
+
+    <div class="live-buttons">
+
+      <button
+        type="button"
+        class="live-choice present-choice"
+        data-live-choice="present"
+      >
+        ✓ PRESENT
+      </button>
+
+      <button
+        type="button"
+        class="live-choice absent-choice"
+        data-live-choice="absent"
+      >
+        ✖ ABSENT
+      </button>
+
+    </div>
+  `;
+
+  els.livePromptContainer.appendChild(
+    prompt
+  );
+
+  prompt
+    .querySelectorAll(
+      "[data-live-choice]"
+    )
+    .forEach(
+      button => {
+        button.addEventListener(
+          "click",
+          () => {
+            markSlot(
+              date,
+              liveSlot,
+              button.dataset
+                .liveChoice
+            );
+          }
+        );
+      }
+    );
+}
+
+/* ============================================================
+   SELECTED DAY
+============================================================ */
+
+function renderSelectedDay(
+  shouldScroll
+) {
+  const today =
+    todayISO();
+
+  const date =
+    nextDateForDayKey(
+      today,
+      app.selectedDay
+    );
+
+  els.selectedDayDate.textContent =
+    formatFullDate(
+      date
+    );
+
+  const holiday =
+    isDateHoliday(
+      date
+    );
+
+  els.holidayBanner.classList.toggle(
+    "hidden",
+    !holiday
+  );
+
+  els.timelineSection.classList.toggle(
+    "hidden",
+    holiday
+  );
+
+  if (holiday) {
+    els.timeline.innerHTML =
+      "";
+
+    els.livePromptContainer.innerHTML =
+      "";
+
+    return;
+  }
+
+  renderTimeline(
+    date,
+    shouldScroll
+  );
+
+  renderLivePrompt(
+    date
+  );
+}
+
+/* ============================================================
+   ATTENDANCE ENGINE
+============================================================ */
+
+/*
+ * This dynamically calculates expected attendance from:
+ *
+ * term start -> today
+ *
+ * Rules:
+ *
+ * Sunday:
+ *   ignored as immutable holiday.
+ *
+ * User holiday:
+ *   all classes ignored.
+ *
+ * Full-day present:
+ *   every scheduled class is present.
+ *
+ * Past unmarked class:
+ *   absent.
+ *
+ * Current live/uncompleted class:
+ *   not counted until user chooses.
+ */
+
+function calculateBaseAttendance() {
+  const result =
+    {};
+
+  const start =
+    dateFromISO(
+      state.termStart
+    );
+
+  const end =
+    dateFromISO(
+      todayISO()
+    );
+
+  for (
+    let cursor =
+      new Date(start);
+
+    cursor <= end;
+
+    cursor.setDate(
+      cursor.getDate() + 1
+    )
+  ) {
+    const date =
+      toISODate(
+        cursor
+      );
+
+    if (
+      isSunday(date)
+    ) {
+      continue;
+    }
+
+    if (
+      isDateHoliday(date)
+    ) {
+      continue;
+    }
+
+    const day =
+      getDateDayKey(
+        date
+      );
+
+    const slots =
+      getDaySlots(day);
+
+    if (!slots.length) {
+      continue;
+    }
+
+    const fullPresent =
+      isDatePresent(date);
+
+    for (
+      const slot of slots
+    ) {
+      if (
+        !result[
+          slot.code
+        ]
+      ) {
+        result[
+          slot.code
+        ] = {
+          present:
+            0,
+
+          absent:
+            0,
+
+          total:
+            0
+        };
+      }
+
+      let counted =
+        false;
+
+      let present =
+        false;
+
+      if (
+        fullPresent
+      ) {
+        counted =
+          true;
+
+        present =
+          true;
+      }
+      else if (
+        date <
+        todayISO()
+      ) {
+        counted =
+          true;
+
+        present =
+          state.marks[
+            slotKey(
+              date,
+              slot
+            )
+          ] ===
+          "present";
+      }
+      else if (
+        date ===
+        todayISO()
+      ) {
+        const status =
+          getSlotStatus(
+            date,
+            slot
+          );
+
+        if (
+          status ===
+          "present"
+        ) {
+          counted =
+            true;
+
+          present =
+            true;
+        }
+        else if (
+          status ===
+          "absent"
+        ) {
+          counted =
+            true;
+
+          present =
+            false;
+        }
+        else if (
+          currentMinutes() >=
+          timeToMinutes(
+            slot.end
+          )
+        ) {
+          counted =
+            true;
+
+          present =
+            false;
+        }
+      }
+
+      if (
+        counted
+      ) {
+        result[
+          slot.code
+        ].total++;
+
+        if (
+          present
+        ) {
+          result[
+            slot.code
+          ].present++;
+        }
+        else {
+          result[
+            slot.code
+          ].absent++;
+        }
       }
     }
   }
 
-  let liveClassHTML = '';
-  if (isToday && !isTodayHoliday() && getTodayString() !== 'Sunday') {
-    const todayStr = getTodayDateString();
-    courses.forEach(c => {
-      if (c.schedule && c.schedule[currentSelectedDay]) {
-        c.schedule[currentSelectedDay].forEach(slot => {
-          if (currentTime >= slot.start && currentTime <= slot.end) {
-            const slotKey = `${todayStr}_${c.id}_${slot.start}`;
-            let handledClasses = JSON.parse(localStorage.getItem('handled_live_classes')) || [];
-            if (!handledClasses.includes(slotKey)) {
-              liveClassHTML += `
-                <div class="live-prompt-card">
-                  <div class="live-info-header">
-                    <div class="live-status"><div class="live-dot"></div><span>LIVE NOW</span></div>
-                    <div class="live-time">${format12Hour(slot.start)} - ${format12Hour(slot.end)}</div>
-                  </div>
-                  <div class="live-course-details">
-                    <h4>${c.name}</h4>
-                  </div>
-                  <div class="live-actions-row">
-                    <button class="btn-present-large" onclick="handleLiveAttendance(${c.id}, 'present', '${slotKey}')">✓ PRESENT</button>
-                    <button class="btn-absent-large" onclick="handleLiveAttendance(${c.id}, 'absent', '${slotKey}')">✖ ABSENT</button>
-                  </div>
-                </div>`;
-            }
-          }
-        });
-      }
-    });
+  return result;
+}
+
+/* ============================================================
+   COURSE STATS
+============================================================ */
+
+function getCourseStats(
+  code
+) {
+  const base =
+    calculateBaseAttendance()[
+      code
+    ] || {
+      present:
+        0,
+
+      absent:
+        0,
+
+      total:
+        0
+    };
+
+  const adjustment =
+    state.adjustments[
+      code
+    ] || {
+      present:
+        0,
+
+      absent:
+        0
+    };
+
+  let total =
+    base.total +
+    Number(
+      adjustment.total || 0
+    );
+
+  let present =
+    base.present +
+    Number(
+      adjustment.present ||
+        0
+    );
+
+  let absent =
+    base.absent +
+    Number(
+      adjustment.absent ||
+        0
+    );
+
+  /*
+   * First prevent negative values.
+   */
+  total =
+    Math.max(
+      0,
+      Math.round(total)
+    );
+
+  present =
+    Math.max(
+      0,
+      Math.round(present)
+    );
+
+  absent =
+    Math.max(
+      0,
+      Math.round(absent)
+    );
+
+  /*
+   * Then make sure present + absent = total.
+   */
+  if (
+    present > total
+  ) {
+    present =
+      total;
   }
-  const liveContainer = document.getElementById('liveClassContainer');
-  if (liveContainer) liveContainer.innerHTML = liveClassHTML;
 
-  const listContainer = document.getElementById('courseList');
-  listContainer.innerHTML = '';
-  if (courses.length === 0) { 
-    listContainer.innerHTML = `<p style="color:var(--text-sub); text-align:center; grid-column: 1/-1; padding: 40px 0;">No Courses Found. Add courses from the sidebar.</p>`; 
-    return; 
+  if (
+    absent > total
+  ) {
+    absent =
+      total -
+      present;
+
+    absent =
+      Math.max(
+        0,
+        absent
+      );
   }
 
-  const holidayMode = isTodayHoliday() || getTodayString() === 'Sunday';
-  const baseStats = getCalculatedAttendance();
+  /*
+   * Finally guarantee no mathematical
+   * inconsistency.
+   */
+  if (
+    present + absent >
+    total
+  ) {
+    absent =
+      Math.max(
+        0,
+        total -
+        present
+      );
+  }
 
-  courses.forEach(course => {
-    const totalPresent = Math.max(0, (baseStats[course.id]?.p || 0) + (course.present || 0));
-    const totalAbsent = Math.max(0, (baseStats[course.id]?.a || 0) + (course.absent || 0));
-    const total = totalPresent + totalAbsent;
-    
-    const percentage = total === 0 ? 0 : Math.round((totalPresent / total) * 100);
-    const dashOffset = (2 * Math.PI * 38) - ((percentage / 100) * (2 * Math.PI * 38));
-    let actionHTML = holidayMode 
-      ? `<div class="action-bar" id="action-${course.id}"><span style="font-weight: 800; color: #e74c3c;">HOLIDAY</span></div>` 
-      : `<div class="action-bar" id="action-${course.id}"><button class="btn-present" onclick="markAttendance(${course.id}, 'present')">PRESENT</button><button class="btn-absent" onclick="markAttendance(${course.id}, 'absent')">ABSENT</button></div>`;
+  return {
+    present,
+    absent,
+    total
+  };
+}
 
-    listContainer.innerHTML += `
-      <div class="course-card-wrapper">
-        <div class="course-card" onclick="toggleActionBar(${course.id})">
-          <div class="progress-circle">
-            <svg width="90" height="90">
-              <circle cx="45" cy="45" r="38" stroke="#e74c3c" stroke-width="8" fill="transparent" />
-              <circle cx="45" cy="45" r="38" stroke="#2ecc71" stroke-width="8" fill="transparent" stroke-dasharray="238.7" stroke-dashoffset="${dashOffset}" stroke-linecap="round" style="transition: stroke-dashoffset 1s ease-in-out;" />
+/* ============================================================
+   ALL COURSES
+============================================================ */
+
+function getAllCourseCodes() {
+  const codes =
+    new Set();
+
+  DAY_KEYS.forEach(
+    day => {
+      getDaySlots(
+        day
+      ).forEach(
+        slot =>
+          codes.add(
+            slot.code
+          )
+      );
+    }
+  );
+
+  Object.keys(
+    state.subjectNames ||
+      {}
+  ).forEach(
+    code =>
+      codes.add(code)
+  );
+
+  Object.keys(
+    state.adjustments ||
+      {}
+  ).forEach(
+    code =>
+      codes.add(code)
+  );
+
+  return Array.from(
+    codes
+  ).sort(
+    (a, b) =>
+      subjectLabel(a)
+        .localeCompare(
+          subjectLabel(b)
+        )
+  );
+}
+
+/* ============================================================
+   BUNK METER
+============================================================ */
+
+function calculateBunkMessage(
+  present,
+  total
+) {
+  const target =
+    state.target /
+    100;
+
+  if (
+    total === 0
+  ) {
+    return {
+      type:
+        "safe",
+
+      text:
+        "No classes tracked yet"
+    };
+  }
+
+  const percentage =
+    present /
+    total;
+
+  /*
+   * Safe case:
+   *
+   * present / (total + x) >= target
+   *
+   * x <= present / target - total
+   */
+  if (
+    percentage >=
+    target
+  ) {
+    if (
+      target >= 1
+    ) {
+      return {
+        type:
+          "safe",
+
+        text:
+          "Target is 100%"
+      };
+    }
+
+    const x =
+      Math.floor(
+        (
+          present /
+          target
+        ) -
+        total +
+        1e-10
+      );
+
+    const safeBunk =
+      Math.max(
+        0,
+        x
+      );
+
+    return {
+      type:
+        "safe",
+
+      text:
+        safeBunk ===
+        1
+          ? "Safe to bunk 1 class"
+          : `Safe to bunk ${safeBunk} classes`
+    };
+  }
+
+  /*
+   * Danger case:
+   *
+   * (present + x) / (total + x) >= target
+   *
+   * x >=
+   * (target * total - present)
+   * /
+   * (1 - target)
+   */
+  if (
+    target >= 1
+  ) {
+    return {
+      type:
+        "danger",
+
+      text:
+        "Attend every next class"
+    };
+  }
+
+  const needed =
+    Math.ceil(
+      (
+        target *
+          total -
+        present
+      ) /
+      (1 - target) -
+      1e-10
+    );
+
+  const required =
+    Math.max(
+      0,
+      needed
+    );
+
+  return {
+    type:
+      "danger",
+
+    text:
+      required ===
+      1
+        ? "Attend next 1 class"
+        : `Attend next ${required} classes`
+  };
+}
+
+/* ============================================================
+   COURSE CARD
+============================================================ */
+
+function renderCourseCard(
+  code
+) {
+  const stats =
+    getCourseStats(
+      code
+    );
+
+  const percentage =
+    stats.total ===
+    0
+      ? 0
+      : (
+          stats.present /
+          stats.total
+        ) * 100;
+
+  const bounded =
+    clamp(
+      percentage,
+      0,
+      100
+    );
+
+  const colour =
+    bounded >=
+    state.target
+      ? "var(--green)"
+      : "var(--red)";
+
+  const bunk =
+    calculateBunkMessage(
+      stats.present,
+      stats.total
+    );
+
+  const circumference =
+    2 *
+    Math.PI *
+    33;
+
+  const offset =
+    circumference *
+    (
+      1 -
+      bounded /
+        100
+    );
+
+  const open =
+    app.openCourse ===
+    code;
+
+  const activeDate =
+    selectedDateForApp();
+
+  const activeHoliday =
+    isDateHoliday(
+      activeDate
+    );
+
+  return `
+    <article
+      class="course-card ${
+        open
+          ? "open"
+          : ""
+      }"
+      data-course-card="${escapeAttribute(
+        code
+      )}"
+    >
+
+      <div
+        class="course-main"
+      >
+
+        <div
+          class="course-top"
+        >
+
+          <div
+            class="progress-wrap"
+          >
+
+            <svg
+              class="progress-svg"
+              viewBox="0 0 76 76"
+            >
+              <circle
+                class="progress-bg"
+                cx="38"
+                cy="38"
+                r="33"
+              ></circle>
+
+              <circle
+                class="progress-value"
+                cx="38"
+                cy="38"
+                r="33"
+                style="
+                  stroke:${colour};
+                  stroke-dasharray:${circumference};
+                  stroke-dashoffset:${offset};
+                "
+              ></circle>
             </svg>
-            <div class="percentage-text" style="color:var(--text-main);">${percentage}%</div>
+
+            <div
+              class="progress-center"
+            >
+              <div>
+
+                <div
+                  class="progress-number"
+                  style="
+                    color:${colour}
+                  "
+                >
+                  ${Math.round(
+                    bounded
+                  )}
+                </div>
+
+                <div
+                  class="progress-percent"
+                >
+                  %
+                </div>
+
+              </div>
+            </div>
+
           </div>
-          <div class="course-info">
-            <h2>${course.name}</h2>
-            <p>Total Classes: ${total}</p>
-            ${getBunkStatus(totalPresent, totalAbsent)}
+
+          <div>
+
+            <div
+              class="course-name"
+            >
+              ${escapeHTML(
+                subjectLabel(
+                  code
+                )
+              )}
+            </div>
+
+            <div
+              class="course-code"
+            >
+              ${escapeHTML(
+                code
+              )}
+            </div>
+
+            <div
+              class="course-total"
+            >
+              ${stats.total}
+              total •
+              ${stats.present}
+              present •
+              ${stats.absent}
+              absent
+            </div>
+
+          </div>
+
+        </div>
+
+        <div
+          class="bunk-meter ${
+            bunk.type ===
+            "safe"
+              ? "bunk-safe"
+              : "bunk-danger"
+          }"
+        >
+          ${escapeHTML(
+            bunk.text
+          )}
+        </div>
+
+      </div>
+
+      <div
+        class="course-drawer"
+      >
+
+        <div
+          class="drawer-inner"
+        >
+
+          ${
+            activeHoliday
+              ? `
+                <div
+                  class="manual-lock"
+                >
+                  Manual actions are locked on holidays.
+                </div>
+              `
+              : `
+                <button
+                  type="button"
+                  class="manual-btn manual-present"
+                  data-manual-present="${escapeAttribute(
+                    code
+                  )}"
+                >
+                  ✓ PRESENT
+                </button>
+
+                <button
+                  type="button"
+                  class="manual-btn manual-absent"
+                  data-manual-absent="${escapeAttribute(
+                    code
+                  )}"
+                >
+                  ✖ ABSENT
+                </button>
+              `
+          }
+
+        </div>
+
+      </div>
+
+    </article>
+  `;
+}
+
+/* ============================================================
+   COURSE DASHBOARD
+============================================================ */
+
+function renderCourseDashboard() {
+  const codes =
+    getAllCourseCodes();
+
+  if (!codes.length) {
+    els.courseGrid.innerHTML =
+      "";
+
+    els.emptyState.classList.remove(
+      "hidden"
+    );
+
+    return;
+  }
+
+  els.emptyState.classList.add(
+    "hidden"
+  );
+
+  els.courseGrid.innerHTML =
+    codes
+      .map(
+        code =>
+          renderCourseCard(
+            code
+          )
+      )
+      .join("");
+
+  wireCourseCards();
+}
+
+/* ============================================================
+   COURSE CARD INTERACTIONS
+============================================================ */
+
+function wireCourseCards() {
+  $$(".course-main")
+    .forEach(
+      main => {
+        main.addEventListener(
+          "click",
+          () => {
+            const card =
+              main.closest(
+                ".course-card"
+              );
+
+            const code =
+              card.dataset
+                .courseCard;
+
+            app.openCourse =
+              app.openCourse ===
+              code
+                ? null
+                : code;
+
+            renderCourseDashboard();
+          }
+        );
+      }
+    );
+
+  $$(
+    "[data-manual-present]"
+  ).forEach(
+    button => {
+      button.addEventListener(
+        "click",
+        event => {
+          event.stopPropagation();
+
+          adjustCourse(
+            button.dataset
+              .manualPresent,
+            "present"
+          );
+        }
+      );
+    }
+  );
+
+  $$(
+    "[data-manual-absent]"
+  ).forEach(
+    button => {
+      button.addEventListener(
+        "click",
+        event => {
+          event.stopPropagation();
+
+          adjustCourse(
+            button.dataset
+              .manualAbsent,
+            "absent"
+          );
+        }
+      );
+    }
+  );
+}
+
+/* ============================================================
+   MANUAL COURSE ADJUSTMENT
+============================================================ */
+
+function adjustCourse(
+  code,
+  type
+) {
+  if (
+    isDateHoliday(
+      selectedDateForApp()
+    )
+  ) {
+    return;
+  }
+
+  if (
+    !state.adjustments[
+      code
+    ]
+  ) {
+    state.adjustments[
+      code
+    ] = {
+      present:
+        0,
+
+      absent:
+        0,
+
+      total:
+        0
+    };
+  }
+
+  if (
+    type ===
+    "present"
+  ) {
+    state.adjustments[
+      code
+    ].present++;
+  }
+  else {
+    state.adjustments[
+      code
+    ].absent++;
+  }
+
+  addHistory({
+    type,
+    course:
+      code,
+
+    date:
+      todayISO(),
+
+    detail:
+      type ===
+      "present"
+        ? "Manual present added"
+        : "Manual absent added"
+  });
+
+  persistState();
+
+  renderMain(false);
+}
+
+/* ============================================================
+   MARK INDIVIDUAL CLASS
+============================================================ */
+
+function markSlot(
+  date,
+  slot,
+  choice
+) {
+  if (
+    isDateHoliday(date)
+  ) {
+    return;
+  }
+
+  const key =
+    slotKey(
+      date,
+      slot
+    );
+
+  state.marks[key] =
+    choice;
+
+  addHistory({
+    type:
+      choice,
+
+    course:
+      slot.code,
+
+    date:
+      date,
+
+    detail:
+      choice ===
+      "present"
+        ? `Marked ${slot.start}–${slot.end} present`
+        : `Marked ${slot.start}–${slot.end} absent`
+  });
+
+  /*
+   * If every slot for today has individually been marked
+   * present, automatically make the date Present.
+   */
+  maybeAutoPresentDay(
+    date
+  );
+
+  persistState();
+
+  renderMain(false);
+}
+
+/* ============================================================
+   AUTO PRESENT DAY
+============================================================ */
+
+function maybeAutoPresentDay(
+  date
+) {
+  if (
+    date !==
+    todayISO()
+  ) {
+    return;
+  }
+
+  if (
+    isSunday(date) ||
+    isDateHoliday(date)
+  ) {
+    return;
+  }
+
+  const slots =
+    getDaySlots(
+      getDateDayKey(
+        date
+      )
+    );
+
+  if (!slots.length) {
+    return;
+  }
+
+  const allPresent =
+    slots.every(
+      slot =>
+        state.marks[
+          slotKey(
+            date,
+            slot
+          )
+        ] ===
+        "present"
+    );
+
+  const anyAbsent =
+    slots.some(
+      slot =>
+        state.marks[
+          slotKey(
+            date,
+            slot
+          )
+        ] ===
+        "absent"
+    );
+
+  if (
+    allPresent &&
+    !anyAbsent
+  ) {
+    /*
+     * The day-level Present state is now the source of truth.
+     *
+     * Individual marks do not get separately counted by
+     * calculateBaseAttendance(), which prevents double-counting.
+     */
+    state.calendarStates[
+      date
+    ] = "present";
+  }
+}
+
+/* ============================================================
+   MAIN RENDER
+============================================================ */
+
+function renderMain(
+  shouldScroll = false
+) {
+  applyTheme();
+
+  renderSummary();
+
+  renderDaySelector();
+
+  renderSelectedDay(
+    shouldScroll
+  );
+
+  renderCourseDashboard();
+}
+
+/* ============================================================
+   MODALS
+============================================================ */
+
+function openModal({
+  title,
+  subtitle = "",
+  html,
+  className = "",
+  onOpen = null,
+  onClose = null
+}) {
+  els.modalTitle.textContent =
+    title;
+
+  els.modalSubtitle.textContent =
+    subtitle;
+
+  els.modalBody.innerHTML =
+    html;
+
+  els.modalBody.className =
+    `modal-body touch-trap ${className}`;
+
+  els.modalBackdrop.classList.remove(
+    "hidden"
+  );
+
+  els.modalBackdrop.setAttribute(
+    "aria-hidden",
+    "false"
+  );
+
+  document.body.classList.add(
+    "modal-open"
+  );
+
+  app.modalCloseHandler =
+    onClose;
+
+  /*
+   * Install the scroll trap only once for the modal body.
+   */
+  els.modalBody.dataset.scrollTrapInstalled =
+    "false";
+
+  installOnePixelScrollTrap(
+    els.modalBody
+  );
+
+  if (
+    typeof onOpen ===
+    "function"
+  ) {
+    onOpen();
+  }
+}
+
+function closeModal() {
+  if (
+    typeof app.modalCloseHandler ===
+    "function"
+  ) {
+    app.modalCloseHandler();
+  }
+
+  app.modalCloseHandler =
+    null;
+
+  els.modalBackdrop.classList.add(
+    "hidden"
+  );
+
+  els.modalBackdrop.setAttribute(
+    "aria-hidden",
+    "true"
+  );
+
+  els.modalBody.innerHTML =
+    "";
+
+  document.body.classList.remove(
+    "modal-open"
+  );
+}
+
+els.modalClose.addEventListener(
+  "click",
+  closeModal
+);
+
+els.modalBackdrop.addEventListener(
+  "click",
+  event => {
+    if (
+      event.target ===
+      els.modalBackdrop
+    ) {
+      closeModal();
+    }
+  }
+);
+
+document.addEventListener(
+  "keydown",
+  event => {
+    if (
+      event.key ===
+        "Escape" &&
+      !els.modalBackdrop.classList.contains(
+        "hidden"
+      )
+    ) {
+      closeModal();
+    }
+  }
+);
+
+/* ============================================================
+   NAVIGATION
+============================================================ */
+
+const navigationActions = {
+  howToUse:
+    openHowToUse,
+
+  customTimetable:
+    openTimetableBuilder,
+
+  history:
+    openHistory,
+
+  calendar:
+    openCalendar,
+
+  target:
+    openTargetModal,
+
+  editAttendance:
+    openEditAttendance,
+
+  addCourse:
+    openAddCourse,
+
+  removeCourse:
+    openRemoveCourse,
+
+  resetTimetable:
+    resetDefaultTimetable
+};
+
+$$(".nav-item")
+  .forEach(
+    button => {
+      button.addEventListener(
+        "click",
+        () => {
+          closeSidebar();
+
+          const action =
+            button.dataset
+              .action;
+
+          if (
+            navigationActions[
+              action
+            ]
+          ) {
+            navigationActions[
+              action
+            ]();
+          }
+        }
+      );
+    }
+  );
+
+els.termStartButton.addEventListener(
+  "click",
+  openTermDateModal
+);
+
+/* ============================================================
+   HOW TO USE
+============================================================ */
+
+function openHowToUse() {
+  openModal({
+    title:
+      "How to Use",
+
+    subtitle:
+      "Attendance Tracker guide",
+
+    html: `
+      <div
+        class="help-content"
+      >
+
+        <div
+          class="help-step"
+        >
+          <div
+            class="help-number"
+          >
+            1
+          </div>
+
+          <div>
+            <h3>
+              Set the term start
+            </h3>
+
+            <p>
+              Attendance is calculated from the term start
+              date through today.
+            </p>
           </div>
         </div>
-        ${actionHTML}
-      </div>`;
+
+        <div
+          class="help-step"
+        >
+          <div
+            class="help-number"
+          >
+            2
+          </div>
+
+          <div>
+            <h3>
+              Configure your timetable
+            </h3>
+
+            <p>
+              Use the timetable builder to replace the default
+              schedule.
+            </p>
+          </div>
+        </div>
+
+        <div
+          class="help-step"
+        >
+          <div
+            class="help-number"
+          >
+            3
+          </div>
+
+          <div>
+            <h3>
+              Mark live classes
+            </h3>
+
+            <p>
+              When a class is in progress, the LIVE NOW prompt
+              lets you select PRESENT or ABSENT.
+            </p>
+          </div>
+        </div>
+
+        <div
+          class="help-step"
+        >
+          <div
+            class="help-number"
+          >
+            4
+          </div>
+
+          <div>
+            <h3>
+              Past classes
+            </h3>
+
+            <p>
+              A past class is automatically treated as absent
+              unless it was marked present.
+            </p>
+          </div>
+        </div>
+
+        <div
+          class="help-step"
+        >
+          <div
+            class="help-number"
+          >
+            5
+          </div>
+
+          <div>
+            <h3>
+              Calendar
+            </h3>
+
+            <p>
+              Paint dates as Holiday, Important or Present.
+              Sundays are permanently holidays.
+            </p>
+          </div>
+        </div>
+
+        <div
+          class="help-step"
+        >
+          <div
+            class="help-number"
+          >
+            6
+          </div>
+
+          <div>
+            <h3>
+              Bunk Meter
+            </h3>
+
+            <p>
+              The app calculates how many classes you may bunk
+              or how many consecutive classes you must attend
+              to reach the target.
+            </p>
+          </div>
+        </div>
+
+      </div>
+    `
   });
 }
 
-function markAttendance(id, status) {
-  const course = courses.find(c => c.id === id);
-  if (!course) return;
-  if (status === 'present') {
-      course.present = (course.present || 0) + 1;
-  }
-  if (status === 'absent') {
-      course.absent = (course.absent || 0) + 1;
-  }
-  addHistory(`Manual ${status.toUpperCase()}: ${course.name}`);
-  toggleActionBar(id); 
-  saveToDatabase(); 
-  renderUI();    
-}
+/* ============================================================
+   TARGET MODAL
+============================================================ */
 
-function toggleActionBar(id) {
-  const bar = document.getElementById(`action-${id}`);
-  document.querySelectorAll('.action-bar').forEach(el => { 
-    if (el.id !== `action-${id}`) el.classList.remove('slide-in'); 
+function openTargetModal() {
+  openModal({
+    title:
+      "Set Target Attendance",
+
+    subtitle:
+      "Used by the Bunk Meter",
+
+    html: `
+      <div
+        class="form-group"
+      >
+
+        <label
+          class="form-label"
+          for="targetInput"
+        >
+          Target attendance (%)
+        </label>
+
+        <input
+          id="targetInput"
+          class="input"
+          type="number"
+          min="1"
+          max="100"
+          step="0.1"
+          value="${state.target}"
+        >
+
+      </div>
+
+      <div
+        class="form-actions"
+      >
+
+        <button
+          id="saveTarget"
+          class="btn btn-primary"
+          type="button"
+        >
+          Save Target
+        </button>
+
+      </div>
+    `
   });
-  bar.classList.toggle('slide-in');
+
+  $("#saveTarget")
+    .addEventListener(
+      "click",
+      () => {
+        const input =
+          $("#targetInput");
+
+        let value =
+          Number(
+            input.value
+          );
+
+        if (
+          !Number.isFinite(
+            value
+          )
+        ) {
+          value =
+            75;
+        }
+
+        value =
+          clamp(
+            value,
+            1,
+            100
+          );
+
+        state.target =
+          Math.round(
+            value * 10
+          ) / 10;
+
+        persistState();
+
+        closeModal();
+
+        renderMain(false);
+      }
+    );
 }
 
-startLiveClock(); 
-updateHolidayButton(); 
-renderUI(); 
-setInterval(renderUI, 60000); 
+/* ============================================================
+   TERM START
+============================================================ */
 
-if (!localStorage.getItem(MANUAL_SHOWN_KEY)) { 
-  localStorage.setItem(MANUAL_SHOWN_KEY, 'true'); 
-  setTimeout(() => openModal('userManual'), 300);
+function openTermDateModal() {
+  openModal({
+    title:
+      "Set Term Start Date",
+
+    subtitle:
+      "Attendance starts being calculated from this date.",
+
+    html: `
+      <div
+        class="notice"
+      >
+        Past classes between the term start date and today
+        are calculated automatically from the timetable.
+      </div>
+
+      <div
+        class="form-group"
+      >
+
+        <label
+          class="form-label"
+          for="termDateInput"
+        >
+          Term Start Date
+        </label>
+
+        <input
+          id="termDateInput"
+          class="input"
+          type="date"
+          value="${state.termStart}"
+        >
+
+      </div>
+
+      <div
+        class="form-actions"
+      >
+
+        <button
+          id="saveTermDate"
+          class="btn btn-primary"
+          type="button"
+        >
+          Save Date
+        </button>
+
+      </div>
+    `
+  });
+
+  $("#saveTermDate")
+    .addEventListener(
+      "click",
+      () => {
+        const value =
+          $("#termDateInput")
+            .value;
+
+        if (!value) {
+          return;
+        }
+
+        if (
+          value >
+          todayISO()
+        ) {
+          alert(
+            "Term start date cannot be in the future."
+          );
+
+          return;
+        }
+
+        state.termStart =
+          value;
+
+        persistState();
+
+        closeModal();
+
+        renderMain(false);
+      }
+    );
 }
+
+/* ============================================================
+   EDIT ATTENDANCE
+============================================================ */
+
+function openEditAttendance() {
+  const codes =
+    getAllCourseCodes();
+
+  openModal({
+    title:
+      "Edit Attendance",
+
+    subtitle:
+      "Edit exact displayed attendance numbers",
+
+    html: `
+      <div
+        class="notice"
+      >
+        Present can never exceed Total, and neither Present
+        nor Total can become negative.
+      </div>
+
+      <div
+        class="history-list"
+      >
+        ${
+          codes.length
+            ? codes
+                .map(
+                  code => {
+                    const stats =
+                      getCourseStats(
+                        code
+                      );
+
+                    return `
+                      <div
+                        class="history-item"
+                      >
+
+                        <div
+                          class="history-dot"
+                          style="
+                            background:
+                            var(--primary)
+                          "
+                        ></div>
+
+                        <div>
+
+                          <div
+                            class="history-title"
+                          >
+                            ${escapeHTML(
+                              subjectLabel(
+                                code
+                              )
+                            )}
+                          </div>
+
+                          <div
+                            class="history-sub"
+                          >
+                            ${escapeHTML(
+                              code
+                            )}
+
+                            •
+                            ${stats.present}
+                            /
+                            ${stats.total}
+                          </div>
+
+                        </div>
+
+                        <button
+                          type="button"
+                          class="btn btn-muted"
+                          data-edit-course="${escapeAttribute(
+                            code
+                          )}"
+                        >
+                          Edit
+                        </button>
+
+                      </div>
+                    `;
+                  }
+                )
+                .join("")
+            : `
+              <div
+                class="notice"
+              >
+                No courses found.
+              </div>
+            `
+        }
+      </div>
+    `
+  });
+
+  $$(
+    "[data-edit-course]"
+  ).forEach(
+    button => {
+      button.addEventListener(
+        "click",
+        () => {
+          showCourseAttendanceEditor(
+            button.dataset
+              .editCourse
+          );
+        }
+      );
+    }
+  );
+}
+
+function showCourseAttendanceEditor(
+  code
+) {
+  const base =
+    calculateBaseAttendance()[
+      code
+    ] || {
+      present:
+        0,
+
+      absent:
+        0,
+
+      total:
+        0
+    };
+
+  const current =
+    getCourseStats(
+      code
+    );
+
+  openModal({
+    title:
+      `Edit ${subjectLabel(
+        code
+      )}`,
+
+    subtitle:
+      code,
+
+    html: `
+      <div
+        class="notice"
+      >
+        Automatic baseline:
+        <strong>
+          ${base.present}/${base.total}
+        </strong>
+        <br>
+
+        Current displayed:
+        <strong>
+          ${current.present}/${current.total}
+        </strong>
+      </div>
+
+      <div
+        class="form-grid"
+      >
+
+        <div
+          class="form-group"
+        >
+
+          <label
+            class="form-label"
+            for="manualPresent"
+          >
+            Present
+          </label>
+
+          <input
+            id="manualPresent"
+            class="input"
+            type="number"
+            min="0"
+            step="1"
+            value="${current.present}"
+          >
+
+        </div>
+
+        <div
+          class="form-group"
+        >
+
+          <label
+            class="form-label"
+            for="manualTotal"
+          >
+            Total
+          </label>
+
+          <input
+            id="manualTotal"
+            class="input"
+            type="number"
+            min="0"
+            step="1"
+            value="${current.total}"
+          >
+
+        </div>
+
+      </div>
+
+      <div
+        class="form-actions"
+      >
+
+        <button
+          id="saveManualAttendance"
+          class="btn btn-primary"
+          type="button"
+        >
+          Save
+        </button>
+
+        <button
+          id="cancelManualAttendance"
+          class="btn btn-muted"
+          type="button"
+        >
+          Cancel
+        </button>
+
+      </div>
+    `
+  });
+
+  $("#cancelManualAttendance")
+    .addEventListener(
+      "click",
+      openEditAttendance
+    );
+
+  $("#saveManualAttendance")
+    .addEventListener(
+      "click",
+      () => {
+        let total =
+          Math.floor(
+            Number(
+              $("#manualTotal")
+                .value
+            ) || 0
+          );
+
+        let present =
+          Math.floor(
+            Number(
+              $("#manualPresent")
+                .value
+            ) || 0
+          );
+
+        total =
+          Math.max(
+            0,
+            total
+          );
+
+        present =
+          Math.max(
+            0,
+            present
+          );
+
+        /*
+         * Crucial protection:
+         *
+         * PRESENT can NEVER exceed TOTAL.
+         */
+        present =
+          Math.min(
+            present,
+            total
+          );
+
+        const absent =
+          Math.max(
+            0,
+            total -
+              present
+          );
+
+        /*
+         * Store corrections relative to automatic values.
+         */
+        state.adjustments[
+          code
+        ] = {
+          present:
+            present -
+            base.present,
+
+          absent:
+            absent -
+            base.absent,
+
+          total:
+            total -
+            base.total
+        };
+
+        addHistory({
+          type:
+            "info",
+
+          course:
+            code,
+
+          date:
+            todayISO(),
+
+          detail:
+            `Attendance set to ${present}/${total}`
+        });
+
+        persistState();
+
+        closeModal();
+
+        renderMain(false);
+      }
+    );
+}
+
+/* ============================================================
+   ADD CUSTOM COURSE
+============================================================ */
+
+function openAddCourse() {
+  openModal({
+    title:
+      "Add Custom Course",
+
+    subtitle:
+      "Add a subject code and display name",
+
+    html: `
+      <div
+        class="form-grid"
+      >
+
+        <div
+          class="form-group"
+        >
+
+          <label
+            class="form-label"
+            for="newCourseCode"
+          >
+            Subject Code
+          </label>
+
+          <input
+            id="newCourseCode"
+            class="input"
+            type="text"
+            placeholder="25AI101"
+          >
+
+        </div>
+
+        <div
+          class="form-group"
+        >
+
+          <label
+            class="form-label"
+            for="newCourseName"
+          >
+            Full Subject Name
+          </label>
+
+          <input
+            id="newCourseName"
+            class="input"
+            type="text"
+            placeholder="Artificial Intelligence"
+          >
+
+        </div>
+
+      </div>
+
+      <div
+        class="form-actions"
+      >
+
+        <button
+          id="saveCustomCourse"
+          class="btn btn-primary"
+          type="button"
+        >
+          Add Course
+        </button>
+
+      </div>
+    `
+  });
+
+  $("#saveCustomCourse")
+    .addEventListener(
+      "click",
+      () => {
+        const code =
+          $("#newCourseCode")
+            .value
+            .trim()
+            .toUpperCase();
+
+        const name =
+          $("#newCourseName")
+            .value
+            .trim();
+
+        if (
+          !code ||
+          !name
+        ) {
+          alert(
+            "Enter both the subject code and full subject name."
+          );
+
+          return;
+        }
+
+        state.subjectNames[
+          code
+        ] = name;
+
+        if (
+          !state.adjustments[
+            code
+          ]
+        ) {
+          state.adjustments[
+            code
+          ] = {
+            present:
+              0,
+
+            absent:
+              0,
+
+            total:
+              0
+          };
+        }
+
+        addHistory({
+          type:
+            "info",
+
+          course:
+            code,
+
+          date:
+            todayISO(),
+
+          detail:
+            `Added course: ${name}`
+        });
+
+        persistState();
+
+        closeModal();
+
+        renderMain(false);
+      }
+    );
+}
+
+/* ============================================================
+   REMOVE COURSE
+============================================================ */
+
+function openRemoveCourse() {
+  const codes =
+    getAllCourseCodes();
+
+  openModal({
+    title:
+      "Remove Course",
+
+    subtitle:
+      "Remove a course from your timetable",
+
+    html: `
+      <div
+        class="history-list"
+      >
+
+        ${
+          codes.length
+            ? codes
+                .map(
+                  code => `
+                    <div
+                      class="history-item"
+                    >
+
+                      <div
+                        class="history-dot"
+                        style="
+                          background:
+                          var(--red)
+                        "
+                      ></div>
+
+                      <div>
+
+                        <div
+                          class="history-title"
+                        >
+                          ${escapeHTML(
+                            subjectLabel(
+                              code
+                            )
+                          )}
+                        </div>
+
+                        <div
+                          class="history-sub"
+                        >
+                          ${escapeHTML(
+                            code
+                          )}
+                        </div>
+
+                      </div>
+
+                      <button
+                        type="button"
+                        class="btn btn-red"
+                        data-remove-course="${escapeAttribute(
+                          code
+                        )}"
+                      >
+                        Remove
+                      </button>
+
+                    </div>
+                  `
+                )
+                .join("")
+            : `
+              <div
+                class="notice"
+              >
+                No courses available.
+              </div>
+            `
+        }
+
+      </div>
+    `
+  });
+
+  $$(
+    "[data-remove-course]"
+  ).forEach(
+    button => {
+      button.addEventListener(
+        "click",
+        () => {
+          removeCourse(
+            button.dataset
+              .removeCourse
+          );
+        }
+      );
+    }
+  );
+}
+
+function removeCourse(
+  code
+) {
+  const confirmed =
+    confirm(
+      `Remove "${subjectLabel(
+        code
+      )}" from the timetable?`
+    );
+
+  if (!confirmed) {
+    return;
+  }
+
+  DAY_KEYS.forEach(
+    day => {
+      state.timetable[
+        day
+      ] =
+        getDaySlots(
+          day
+        ).filter(
+          slot =>
+            slot.code !==
+            code
+        );
+    }
+  );
+
+  delete state.subjectNames[
+    code
+  ];
+
+  delete state.adjustments[
+    code
+  ];
+
+  addHistory({
+    type:
+      "info",
+
+    course:
+      code,
+
+    date:
+      todayISO(),
+
+    detail:
+      "Course removed"
+  });
+
+  persistState();
+
+  app.openCourse =
+    null;
+
+  closeModal();
+
+  renderMain(false);
+}
+
+/* ============================================================
+   RESET
+============================================================ */
+
+function resetDefaultTimetable() {
+  const confirmed =
+    confirm(
+      "Reset the timetable to the exact default schedule?"
+    );
+
+  if (!confirmed) {
+    return;
+  }
+
+  state.timetable =
+    clone(
+      DEFAULT_TIMETABLE
+    );
+
+  state.subjectNames = {
+    ...state.subjectNames,
+    ...DEFAULT_SUBJECT_NAMES
+  };
+
+  addHistory({
+    type:
+      "info",
+
+    date:
+      todayISO(),
+
+    detail:
+      "Default timetable restored"
+  });
+
+  persistState();
+
+  closeModal();
+
+  renderMain(false);
+}
+
+/* ============================================================
+   TIMETABLE BUILDER
+============================================================ */
+
+function openTimetableBuilder() {
+  let currentDay =
+    DAY_KEYS.includes(
+      app.selectedDay
+    )
+      ? app.selectedDay
+      : "Mon";
+
+  openModal({
+    title:
+      "Create Custom Timetable",
+
+    subtitle:
+      "Saving replaces the timetable",
+
+    html:
+      renderBuilderHTML(
+        currentDay
+      )
+  });
+
+  wireBuilder(
+    currentDay
+  );
+}
+
+function renderBuilderHTML(
+  day
+) {
+  const slots =
+    getDaySlots(
+      day
+    );
+
+  return `
+    <div
+      class="notice"
+    >
+      Add or remove periods. Subject codes are mapped to
+      full subject names below.
+    </div>
+
+    <div
+      id="builderDayBar"
+      class="builder-day-bar"
+    >
+      ${DAY_KEYS.map(
+        key => `
+          <button
+            type="button"
+            class="builder-day-btn ${
+              key === day
+                ? "active"
+                : ""
+            }"
+            data-builder-day="${key}"
+          >
+            ${key}
+          </button>
+        `
+      ).join("")}
+    </div>
+
+    <div
+      id="periodList"
+      class="period-list"
+    >
+      ${slots
+        .map(
+          (
+            slot,
+            index
+          ) =>
+            renderPeriodRow(
+              slot,
+              index
+            )
+        )
+        .join("")}
+    </div>
+
+    <div
+      class="form-actions"
+    >
+
+      <button
+        id="addPeriodBtn"
+        class="btn btn-muted"
+        type="button"
+      >
+        + Add Period
+      </button>
+
+    </div>
+
+    <div
+      class="mapping-section"
+    >
+
+      <div
+        class="section-heading-row"
+      >
+
+        <div>
+
+          <h3
+            style="
+              margin:0;
+              font-size:.9rem;
+            "
+          >
+            Subject Name Mapping
+          </h3>
+
+          <p
+            class="muted-text"
+          >
+            Map every unique subject code to its full name.
+          </p>
+
+        </div>
+
+      </div>
+
+      <div
+        id="mappingList"
+        class="mapping-list"
+      ></div>
+
+    </div>
+
+    <div
+      class="form-actions"
+    >
+
+      <button
+        id="saveTimetable"
+        class="btn btn-primary"
+        type="button"
+      >
+        Save Timetable
+      </button>
+
+    </div>
+  `;
+}
+
+function renderPeriodRow(
+  slot,
+  index
+) {
+  return `
+    <div
+      class="period-row"
+      data-period-row="${index}"
+    >
+
+      <input
+        class="input period-start"
+        type="time"
+        value="${escapeAttribute(
+          slot.start
+        )}"
+        aria-label="Start time"
+      >
+
+      <input
+        class="input period-end"
+        type="time"
+        value="${escapeAttribute(
+          slot.end
+        )}"
+        aria-label="End time"
+      >
+
+      <input
+        class="input period-code"
+        type="text"
+        value="${escapeAttribute(
+          slot.code
+        )}"
+        placeholder="Subject code"
+        aria-label="Subject code"
+      >
+
+      <button
+        type="button"
+        class="remove-period-btn"
+        data-remove-period="${index}"
+        aria-label="Remove period"
+      >
+        ×
+      </button>
+
+    </div>
+  `;
+}
+
+function wireBuilder(
+  initialDay
+) {
+  let currentDay =
+    initialDay;
+
+  function readCurrentRows() {
+    return $$("#periodList .period-row")
+      .map(
+        row => ({
+          start:
+            row.querySelector(
+              ".period-start"
+            ).value,
+
+          end:
+            row.querySelector(
+              ".period-end"
+            ).value,
+
+          code:
+            row.querySelector(
+              ".period-code"
+            ).value
+              .trim()
+              .toUpperCase()
+        })
+      );
+  }
+
+  function saveCurrentDay() {
+    const rows =
+      readCurrentRows();
+
+    for (
+      const row of rows
+    ) {
+      if (
+        !row.start ||
+        !row.end ||
+        !row.code
+      ) {
+        throw new Error(
+          "Every period needs a start time, end time and subject code."
+        );
+      }
+
+      if (
+        timeToMinutes(
+          row.end
+        ) <=
+        timeToMinutes(
+          row.start
+        )
+      ) {
+        throw new Error(
+          `End time must be after start time for ${row.code}.`
+        );
+      }
+    }
+
+    state.timetable[
+      currentDay
+    ] =
+      rows.sort(
+        (
+          a,
+          b
+        ) =>
+          timeToMinutes(
+            a.start
+          ) -
+          timeToMinutes(
+            b.start
+          )
+      );
+  }
+
+  function collectCodes() {
+    const codes =
+      new Set();
+
+    $$("#periodList .period-code")
+      .forEach(
+        input => {
+          const code =
+            input.value
+              .trim()
+              .toUpperCase();
+
+          if (code) {
+            codes.add(
+              code
+            );
+          }
+        }
+      );
+
+    DAY_KEYS.forEach(
+      day => {
+        getDaySlots(
+          day
+        ).forEach(
+          slot =>
+            codes.add(
+              slot.code
+            )
+        );
+      }
+    );
+
+    return Array.from(
+      codes
+    ).sort();
+  }
+
+  function renderMapping() {
+    const list =
+      $("#mappingList");
+
+    if (!list) {
+      return;
+    }
+
+    const codes =
+      collectCodes();
+
+    list.innerHTML =
+      codes
+        .map(
+          code => `
+            <div
+              class="mapping-row"
+              data-mapping-code="${escapeAttribute(
+                code
+              )}"
+            >
+
+              <div>
+                <strong
+                  style="
+                    font-size:.72rem;
+                  "
+                >
+                  ${escapeHTML(
+                    code
+                  )}
+                </strong>
+              </div>
+
+              <input
+                class="input mapping-name-input"
+                type="text"
+                value="${escapeAttribute(
+                  state.subjectNames[
+                    code
+                  ] ||
+                    code
+                )}"
+                placeholder="Full subject name"
+              >
+
+            </div>
+          `
+        )
+        .join("");
+  }
+
+  function wireRemoveButtons() {
+    $$(
+      "[data-remove-period]"
+    ).forEach(
+      button => {
+        button.addEventListener(
+          "click",
+          () => {
+            button
+              .closest(
+                ".period-row"
+              )
+              .remove();
+
+            renderMapping();
+          }
+        );
+      }
+    );
+  }
+
+  function wireEvents() {
+    $$(
+      "[data-builder-day]"
+    ).forEach(
+      button => {
+        button.addEventListener(
+          "click",
+          () => {
+            try {
+              saveCurrentDay();
+            } catch (
+              error
+            ) {
+              alert(
+                error.message
+              );
+
+              return;
+            }
+
+            currentDay =
+              button.dataset
+                .builderDay;
+
+            els.modalBody.innerHTML =
+              renderBuilderHTML(
+                currentDay
+              );
+
+            els.modalBody.dataset.scrollTrapInstalled =
+              "false";
+
+            installOnePixelScrollTrap(
+              els.modalBody
+            );
+
+            wireEvents();
+          }
+        );
+      }
+    );
+
+    $("#addPeriodBtn")
+      .addEventListener(
+        "click",
+        () => {
+          const list =
+            $("#periodList");
+
+          const index =
+            list.children
+              .length;
+
+          list.insertAdjacentHTML(
+            "beforeend",
+            renderPeriodRow(
+              {
+                start:
+                  "09:00",
+
+                end:
+                  "09:55",
+
+                code:
+                  ""
+              },
+              index
+            )
+          );
+
+          wireRemoveButtons();
+
+          renderMapping();
+        }
+      );
+
+    $("#saveTimetable")
+      .addEventListener(
+        "click",
+        () => {
+          try {
+            saveCurrentDay();
+
+            $$(".mapping-row")
+              .forEach(
+                row => {
+                  const code =
+                    row.dataset
+                      .mappingCode;
+
+                  const input =
+                    row.querySelector(
+                      ".mapping-name-input"
+                    );
+
+                  const name =
+                    input.value.trim();
+
+                  if (
+                    name
+                  ) {
+                    state.subjectNames[
+                      code
+                    ] =
+                      name;
+                  }
+                }
+              );
+
+            DAY_KEYS.forEach(
+              day => {
+                state.timetable[
+                  day
+                ] =
+                  getDaySlots(
+                    day
+                  ).filter(
+                    slot =>
+                      slot.start &&
+                      slot.end &&
+                      slot.code
+                  );
+              }
+            );
+
+            addHistory({
+              type:
+                "info",
+
+              date:
+                todayISO(),
+
+              detail:
+                "Custom timetable saved"
+            });
+
+            persistState();
+
+            closeModal();
+
+            renderMain(false);
+          } catch (
+            error
+          ) {
+            alert(
+              error.message
+            );
+          }
+        }
+      );
+
+    wireRemoveButtons();
+
+    renderMapping();
+  }
+
+  wireEvents();
+}
+
+/* ============================================================
+   HISTORY
+============================================================ */
+
+function addHistory(
+  event
+) {
+  state.history.unshift({
+    id:
+      `${Date.now()}_${Math.random()}`,
+
+    timestamp:
+      new Date().toISOString(),
+
+    type:
+      event.type ||
+      "info",
+
+    course:
+      event.course ||
+      "",
+
+    date:
+      event.date ||
+      "",
+
+    detail:
+      event.detail ||
+      ""
+  });
+
+  state.history =
+    state.history.slice(
+      0,
+      250
+    );
+
+  persistState();
+}
+
+function formatHistoryTime(
+  timestamp
+) {
+  const date =
+    new Date(
+      timestamp
+    );
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+    return "";
+  }
+
+  return date.toLocaleString(
+    undefined,
+    {
+      day:
+        "numeric",
+
+      month:
+        "short",
+
+      hour:
+        "2-digit",
+
+      minute:
+        "2-digit"
+    }
+  );
+}
+
+function openHistory() {
+  const history =
+    state.history;
+
+  openModal({
+    title:
+      "History Log",
+
+    subtitle:
+      "Recent attendance and configuration actions",
+
+    html: `
+      ${
+        history.length
+          ? `
+            <div
+              class="history-list"
+            >
+              ${history
+                .map(
+                  item => `
+                    <div
+                      class="history-item"
+                    >
+
+                      <div
+                        class="history-dot"
+                        style="
+                          background:
+                          ${
+                            item.type ===
+                            "present"
+                              ? "var(--green)"
+                              : item.type ===
+                                  "absent"
+                                ? "var(--red)"
+                                : "var(--primary)"
+                          }
+                        "
+                      ></div>
+
+                      <div>
+
+                        <div
+                          class="history-title"
+                        >
+                          ${escapeHTML(
+                            item.course
+                              ? subjectLabel(
+                                  item.course
+                                )
+                              : "System"
+                          )}
+                        </div>
+
+                        <div
+                          class="history-sub"
+                        >
+                          ${escapeHTML(
+                            item.detail
+                          )}
+
+                          ${
+                            item.date
+                              ? `
+                                •
+                                ${escapeHTML(
+                                  item.date
+                                )}
+                              `
+                              : ""
+                          }
+                        </div>
+
+                      </div>
+
+                      <div
+                        class="history-time"
+                      >
+                        ${formatHistoryTime(
+                          item.timestamp
+                        )}
+                      </div>
+
+                    </div>
+                  `
+                )
+                .join("")}
+            </div>
+          `
+          : `
+            <div
+              class="notice"
+            >
+              No history entries yet.
+            </div>
+          `
+      }
+
+      <div
+        class="form-actions"
+      >
+
+        <button
+          id="clearHistory"
+          class="btn btn-red"
+          type="button"
+        >
+          Clear History
+        </button>
+
+      </div>
+    `
+  });
+
+  $("#clearHistory")
+    .addEventListener(
+      "click",
+      () => {
+        if (
+          !confirm(
+            "Clear all history?"
+          )
+        ) {
+          return;
+        }
+
+        state.history =
+          [];
+
+        persistState();
+
+        openHistory();
+      }
+    );
+}
+
+/* ============================================================
+   CALENDAR
+============================================================ */
+
+let calendarObjectURL =
+  null;
+
+function renderCalendarHTML() {
+  return `
+    <div
+      class="calendar-split"
+    >
+
+      <!-- ============================
+           TOP 45%
+      ============================= -->
+      <div
+        class="calendar-preview-pane"
+      >
+
+        <div
+          class="calendar-upload-toolbar"
+        >
+
+          <div>
+            <strong
+              style="
+                font-size:.74rem;
+              "
+            >
+              College Calendar
+            </strong>
+
+            <div
+              id="calendarFileName"
+              style="
+                font-size:.63rem;
+                opacity:.7;
+                margin-top:2px;
+              "
+            >
+              ${
+                state.calendarUploadedName ||
+                "No file selected"
+              }
+            </div>
+          </div>
+
+          <label
+            for="calendarFileInput"
+            class="btn btn-muted"
+            style="cursor:pointer;"
+          >
+            Upload Image / PDF
+          </label>
+
+          <input
+            id="calendarFileInput"
+            type="file"
+            accept="image/*,.pdf,application/pdf"
+            hidden
+          >
+
+        </div>
+
+        <div
+          id="calendarPreview"
+          class="calendar-preview"
+        >
+
+          <div
+            id="calendarPreviewContent"
+            class="calendar-preview-content"
+          >
+
+            <div
+              class="calendar-preview-empty"
+            >
+              ${
+                state.calendarUploadedName
+                  ? "Your uploaded calendar is ready."
+                  : `
+                    Upload your college academic calendar.
+                    <br><br>
+                    Pinch with two fingers to zoom.
+                  `
+              }
+            </div>
+
+          </div>
+
+        </div>
+
+      </div>
+
+      <!-- ============================
+           BOTTOM 55%
+      ============================= -->
+      <div
+        class="calendar-grid-pane"
+      >
+
+        <div
+          class="calendar-controls"
+        >
+
+          <button
+            id="calendarPrevYear"
+            class="btn btn-muted"
+            type="button"
+          >
+            ‹
+          </button>
+
+          <div
+            id="calendarYearTitle"
+            class="calendar-year-title"
+          >
+            ${app.calendarViewYear}
+          </div>
+
+          <button
+            id="calendarNextYear"
+            class="btn btn-muted"
+            type="button"
+          >
+            ›
+          </button>
+
+        </div>
+
+        <div
+          class="calendar-legend"
+        >
+
+          <span
+            class="legend-item"
+          >
+            <span
+              class="legend-dot"
+              style="
+                background:
+                var(--red)
+              "
+            ></span>
+            Holiday
+          </span>
+
+          <span
+            class="legend-item"
+          >
+            <span
+              class="legend-dot"
+              style="
+                background:
+                var(--blue)
+              "
+            ></span>
+            Important
+          </span>
+
+          <span
+            class="legend-item"
+          >
+            <span
+              class="legend-dot"
+              style="
+                background:
+                var(--green)
+              "
+            ></span>
+            Present
+          </span>
+
+          <span
+            class="legend-item"
+          >
+            <span
+              class="legend-dot"
+              style="
+                background:
+                var(--primary)
+              "
+            ></span>
+            Today
+          </span>
+
+        </div>
+
+        <div
+          id="monthGrid"
+          class="month-grid"
+        ></div>
+
+      </div>
+
+    </div>
+  `;
+}
+
+function openCalendar() {
+  app.calendarViewYear =
+    new Date().getFullYear();
+
+  openModal({
+    title:
+      "Academic Calendar",
+
+    subtitle:
+      "Paint dates as Holiday, Important, Present or Default",
+
+    className:
+      "calendar-modal",
+
+    html:
+      renderCalendarHTML()
+  });
+
+  wireCalendar();
+}
+
+function wireCalendar() {
+  $("#calendarPrevYear")
+    .addEventListener(
+      "click",
+      () => {
+        app.calendarViewYear--;
+
+        renderMonthGrid();
+      }
+    );
+
+  $("#calendarNextYear")
+    .addEventListener(
+      "click",
+      () => {
+        app.calendarViewYear++;
+
+        renderMonthGrid();
+      }
+    );
+
+  $("#calendarFileInput")
+    .addEventListener(
+      "change",
+      handleCalendarUpload
+    );
+
+  renderMonthGrid();
+
+  setupCalendarPinchZoom();
+}
+
+function renderMonthGrid() {
+  const grid =
+    $("#monthGrid");
+
+  if (!grid) {
+    return;
+  }
+
+  $("#calendarYearTitle")
+    .textContent =
+    app.calendarViewYear;
+
+  let output =
+    "";
+
+  for (
+    let month = 0;
+    month < 12;
+    month++
+  ) {
+    output +=
+      renderMonth(
+        app.calendarViewYear,
+        month
+      );
+  }
+
+  grid.innerHTML =
+    output;
+
+  $$("#monthGrid .calendar-day")
+    .forEach(
+      button => {
+        if (
+          button.classList.contains(
+            "empty"
+          )
+        ) {
+          return;
+        }
+
+        button.addEventListener(
+          "click",
+          () => {
+            cycleCalendarDate(
+              button.dataset
+                .date
+            );
+          }
+        );
+      }
+    );
+}
+
+function renderMonth(
+  year,
+  month
+) {
+  const monthName =
+    new Date(
+      year,
+      month,
+      1
+    ).toLocaleString(
+      undefined,
+      {
+        month:
+          "long"
+      }
+    );
+
+  const firstDay =
+    new Date(
+      year,
+      month,
+      1
+    ).getDay();
+
+  const leading =
+    firstDay ===
+    0
+      ? 6
+      : firstDay -
+        1;
+
+  const numberOfDays =
+    new Date(
+      year,
+      month + 1,
+      0
+    ).getDate();
+
+  let cells =
+    "";
+
+  for (
+    let i = 0;
+    i < leading;
+    i++
+  ) {
+    cells += `
+      <div
+        class="calendar-day empty"
+      ></div>
+    `;
+  }
+
+  for (
+    let day = 1;
+    day <=
+    numberOfDays;
+    day++
+  ) {
+    const date =
+      `${year}-${String(
+        month + 1
+      ).padStart(
+        2,
+        "0"
+      )}-${String(
+        day
+      ).padStart(
+        2,
+        "0"
+      )}`;
+
+    const calendarState =
+      getCalendarState(
+        date
+      );
+
+    const sunday =
+      isSunday(
+        date
+      );
+
+    const today =
+      date ===
+      todayISO();
+
+    const classes = [
+      "calendar-day",
+
+      sunday
+        ? "sunday"
+        : "",
+
+      today
+        ? "today"
+        : "",
+
+      calendarState !==
+      "default"
+        ? calendarState
+        : ""
+    ]
+      .filter(Boolean)
+      .join(" ");
+
+    cells += `
+      <button
+        type="button"
+        class="${classes}"
+        data-date="${date}"
+        ${
+          sunday
+            ? `title="Sunday — immutable holiday"`
+            : ""
+        }
+      >
+        ${day}
+      </button>
+    `;
+  }
+
+  return `
+    <section
+      class="month-card"
+    >
+
+      <div
+        class="month-title"
+      >
+        ${monthName}
+      </div>
+
+      <div
+        class="weekday-row"
+      >
+        ${[
+          "M",
+          "T",
+          "W",
+          "T",
+          "F",
+          "S",
+          "S"
+        ]
+          .map(
+            day => `
+              <div
+                class="weekday"
+              >
+                ${day}
+              </div>
+            `
+          )
+          .join("")}
+      </div>
+
+      <div
+        class="date-grid"
+      >
+        ${cells}
+      </div>
+
+    </section>
+  `;
+}
+
+/*
+ * Cycle:
+ *
+ * Default
+ *   ↓
+ * Holiday
+ *   ↓
+ * Important
+ *   ↓
+ * Present
+ *   ↓
+ * Default
+ *
+ * Sundays are immutable.
+ */
+function cycleCalendarDate(
+  date
+) {
+  if (
+    isSunday(date)
+  ) {
+    return;
+  }
+
+  const current =
+    getCalendarState(
+      date
+    );
+
+  const nextMap = {
+    default:
+      "holiday",
+
+    holiday:
+      "important",
+
+    important:
+      "present",
+
+    present:
+      "default"
+  };
+
+  const next =
+    nextMap[current];
+
+  if (
+    next ===
+    "default"
+  ) {
+    delete state.calendarStates[
+      date
+    ];
+  }
+  else {
+    state.calendarStates[
+      date
+    ] =
+      next;
+  }
+
+  addHistory({
+    type:
+      "info",
+
+    date:
+      date,
+
+    detail:
+      `Calendar state changed to ${next}`
+  });
+
+  persistState();
+
+  renderMonthGrid();
+
+  renderMain(false);
+}
+
+/* ============================================================
+   MARK TODAY HOLIDAY
+============================================================ */
+
+els.markTodayHoliday.addEventListener(
+  "click",
+  () => {
+    const date =
+      todayISO();
+
+    /*
+     * Sunday is immutable.
+     */
+    if (
+      isSunday(date)
+    ) {
+      alert(
+        "Sunday is an immutable holiday."
+      );
+
+      return;
+    }
+
+    if (
+      state.calendarStates[
+        date
+      ] ===
+      "holiday"
+    ) {
+      delete state.calendarStates[
+        date
+      ];
+
+      addHistory({
+        type:
+          "info",
+
+        date:
+          date,
+
+        detail:
+          "Today holiday removed"
+      });
+    }
+    else {
+      state.calendarStates[
+        date
+      ] =
+        "holiday";
+
+      addHistory({
+        type:
+          "info",
+
+        date:
+          date,
+
+        detail:
+          "Today marked holiday"
+      });
+    }
+
+    persistState();
+
+    renderMain(false);
+  }
+);
+
+/* ============================================================
+   CALENDAR FILE UPLOAD
+============================================================ */
+
+function handleCalendarUpload(
+  event
+) {
+  const file =
+    event.target.files?.[0];
+
+  if (!file) {
+    return;
+  }
+
+  state.calendarUploadedName =
+    file.name;
+
+  persistState();
+
+  const label =
+    $("#calendarFileName");
+
+  if (label) {
+    label.textContent =
+      file.name;
+  }
+
+  if (
+    calendarObjectURL
+  ) {
+    URL.revokeObjectURL(
+      calendarObjectURL
+    );
+
+    calendarObjectURL =
+      null;
+  }
+
+  calendarObjectURL =
+    URL.createObjectURL(
+      file
+    );
+
+  const preview =
+    $("#calendarPreviewContent");
+
+  if (
+    file.type ===
+      "application/pdf" ||
+    file.name
+      .toLowerCase()
+      .endsWith(".pdf")
+  ) {
+    preview.innerHTML = `
+      <iframe
+        src="${calendarObjectURL}"
+        title="Academic calendar PDF"
+      ></iframe>
+    `;
+  }
+  else if (
+    file.type.startsWith(
+      "image/"
+    )
+  ) {
+    preview.innerHTML = `
+      <img
+        src="${calendarObjectURL}"
+        alt="Uploaded academic calendar"
+        draggable="false"
+      >
+    `;
+  }
+  else {
+    preview.innerHTML = `
+      <div
+        class="calendar-preview-empty"
+      >
+        Unsupported file type.
+      </div>
+    `;
+  }
+
+  app.calendarPreview.scale =
+    1;
+
+  requestAnimationFrame(
+    applyCalendarPreviewTransform
+  );
+}
+
+/* ============================================================
+   CALENDAR PINCH ZOOM
+============================================================ */
+
+function distance(
+  a,
+  b
+) {
+  return Math.hypot(
+    a.x - b.x,
+    a.y - b.y
+  );
+}
+
+function applyCalendarPreviewTransform() {
+  const content =
+    $("#calendarPreviewContent");
+
+  if (!content) {
+    return;
+  }
+
+  content.style.transform =
+    `scale(${app.calendarPreview.scale})`;
+}
+
+function setupCalendarPinchZoom() {
+  const preview =
+    $("#calendarPreview");
+
+  if (!preview) {
+    return;
+  }
+
+  let pointers =
+    new Map();
+
+  preview.style.touchAction =
+    "none";
+
+  preview.addEventListener(
+    "pointerdown",
+    event => {
+      pointers.set(
+        event.pointerId,
+        {
+          x:
+            event.clientX,
+
+          y:
+            event.clientY
+        }
+      );
+
+      if (
+        pointers.size ===
+        2
+      ) {
+        const points =
+          Array.from(
+            pointers.values()
+          );
+
+        app.calendarPreview.startDistance =
+          distance(
+            points[0],
+            points[1]
+          );
+
+        app.calendarPreview.startScale =
+          app.calendarPreview.scale;
+      }
+    }
+  );
+
+  preview.addEventListener(
+    "pointermove",
+    event => {
+      if (
+        !pointers.has(
+          event.pointerId
+        )
+      ) {
+        return;
+      }
+
+      pointers.set(
+        event.pointerId,
+        {
+          x:
+            event.clientX,
+
+          y:
+            event.clientY
+        }
+      );
+
+      if (
+        pointers.size !==
+          2 ||
+        !app.calendarPreview
+          .startDistance
+      ) {
+        return;
+      }
+
+      const points =
+        Array.from(
+          pointers.values()
+        );
+
+      const currentDistance =
+        distance(
+          points[0],
+          points[1]
+        );
+
+      const ratio =
+        currentDistance /
+        app.calendarPreview
+          .startDistance;
+
+      app.calendarPreview.scale =
+        clamp(
+          app.calendarPreview
+            .startScale *
+            ratio,
+
+          app.calendarPreview
+            .minScale,
+
+          app.calendarPreview
+            .maxScale
+        );
+
+      applyCalendarPreviewTransform();
+    }
+  );
+
+  const releasePointer =
+    event => {
+      pointers.delete(
+        event.pointerId
+      );
+
+      if (
+        pointers.size <
+        2
+      ) {
+        app.calendarPreview.startDistance =
+          0;
+      }
+    };
+
+  preview.addEventListener(
+    "pointerup",
+    releasePointer
+  );
+
+  preview.addEventListener(
+    "pointercancel",
+    releasePointer
+  );
+
+  preview.addEventListener(
+    "pointerleave",
+    releasePointer
+  );
+
+  /*
+   * Desktop trackpad / mouse zoom.
+   */
+  preview.addEventListener(
+    "wheel",
+    event => {
+      if (
+        !event.ctrlKey
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+
+      const direction =
+        event.deltaY >
+        0
+          ? -1
+          : 1;
+
+      app.calendarPreview.scale =
+        clamp(
+          app.calendarPreview.scale +
+            direction *
+              0.15,
+
+          1,
+          4
+        );
+
+      applyCalendarPreviewTransform();
+    },
+    {
+      passive:
+        false
+    }
+  );
+}
+
+/* ============================================================
+   MOBILE SCROLL TRAP
+============================================================ */
+
+/*
+ * Important:
+ *
+ * Only intercept overscroll at the very top/bottom.
+ * Normal finger scrolling is never blocked.
+ */
+function installOnePixelScrollTrap(
+  container
+) {
+  if (!container) {
+    return;
+  }
+
+  if (
+    container.dataset
+      .scrollTrapInstalled ===
+    "true"
+  ) {
+    return;
+  }
+
+  container.dataset
+    .scrollTrapInstalled =
+    "true";
+
+  let startY =
+    0;
+
+  let startScrollTop =
+    0;
+
+  container.addEventListener(
+    "touchstart",
+    event => {
+      if (
+        !event.touches.length
+      ) {
+        return;
+      }
+
+      startY =
+        event.touches[0]
+          .clientY;
+
+      startScrollTop =
+        container.scrollTop;
+
+      const maxScroll =
+        container.scrollHeight -
+        container.clientHeight;
+
+      /*
+       * 1-pixel top trap.
+       */
+      if (
+        maxScroll > 0 &&
+        container.scrollTop <=
+          0
+      ) {
+        container.scrollTop =
+          1;
+      }
+
+      /*
+       * 1-pixel bottom trap.
+       */
+      if (
+        maxScroll > 0 &&
+        container.scrollTop >=
+          maxScroll
+      ) {
+        container.scrollTop =
+          Math.max(
+            0,
+            maxScroll - 1
+          );
+      }
+    },
+    {
+      passive:
+        true
+    }
+  );
+
+  container.addEventListener(
+    "touchmove",
+    event => {
+      if (
+        !event.touches.length
+      ) {
+        return;
+      }
+
+      const currentY =
+        event.touches[0]
+          .clientY;
+
+      const delta =
+        currentY -
+        startY;
+
+      const maxScroll =
+        container.scrollHeight -
+        container.clientHeight;
+
+      if (
+        maxScroll <=
+        0
+      ) {
+        return;
+      }
+
+      const atTop =
+        startScrollTop <=
+        1;
+
+      const atBottom =
+        startScrollTop >=
+        maxScroll - 1;
+
+      /*
+       * User is trying to pull the container downward
+       * when already at the top.
+       */
+      if (
+        atTop &&
+        delta > 0
+      ) {
+        event.preventDefault();
+
+        return;
+      }
+
+      /*
+       * User is trying to pull the container upward
+       * when already at the bottom.
+       */
+      if (
+        atBottom &&
+        delta < 0
+      ) {
+        event.preventDefault();
+      }
+    },
+    {
+      passive:
+        false
+    }
+  );
+}
+
+/* ============================================================
+   PERSISTED DATA CLEANUP
+============================================================ */
+
+function reconcilePastData() {
+  /*
+   * Past absent classes are calculated dynamically.
+   *
+   * This intentionally avoids creating thousands of localStorage
+   * records and makes the application much faster on phones.
+   */
+}
+
+/* ============================================================
+   INITIALIZATION
+============================================================ */
+
+function initialize() {
+  reconcilePastData();
+
+  app.selectedDay =
+    getTodayDayKey();
+
+  applyTheme();
+
+  updateClock();
+
+  renderMain(
+    true
+  );
+
+  /*
+   * Clock only.
+   *
+   * This does NOT rebuild the DOM.
+   */
+  setInterval(
+    updateClock,
+    1000
+  );
+
+  /*
+   * Attendance/timetable refresh.
+   *
+   * Much less frequent so touch scrolling is not interrupted.
+   */
+  setInterval(
+    refreshDynamicAttendanceUI,
+    15000
+  );
+}
+
+/* ============================================================
+   DYNAMIC REFRESH
+============================================================ */
+
+function refreshDynamicAttendanceUI() {
+  /*
+   * Never rebuild the page while the user has a modal open.
+   * This is especially important on phones because rebuilding
+   * modal DOM can interrupt keyboard input and scrolling.
+   */
+  if (
+    !els.modalBackdrop.classList.contains(
+      "hidden"
+    )
+  ) {
+    return;
+  }
+
+  /*
+   * Preserve horizontal class timeline position.
+   */
+  const previousScroll =
+    els.timeline.scrollLeft;
+
+  const previousCourse =
+    app.openCourse;
+
+  renderSummary();
+
+  renderDaySelector();
+
+  renderSelectedDay(
+    false
+  );
+
+  renderCourseDashboard();
+
+  /*
+   * Restore state after DOM rebuild.
+   */
+  app.openCourse =
+    previousCourse;
+
+  requestAnimationFrame(
+    () => {
+      els.timeline.scrollLeft =
+        previousScroll;
+    }
+  );
+}
+
+/* ============================================================
+   START
+============================================================ */
+
+initialize();

@@ -316,6 +316,15 @@ function buildSetupCalendar(startStr, endStr) {
     curr.setMonth(curr.getMonth() + 1); 
   }
   container.innerHTML = html;
+
+  // 1-PIXEL HACK: Guaranteed method to block native pull-to-refresh bubbling on older mobile browsers
+  container.addEventListener('touchstart', function() {
+      if (container.scrollTop === 0) {
+          container.scrollTop = 1;
+      } else if (container.scrollTop + container.clientHeight >= container.scrollHeight) {
+          container.scrollTop -= 1;
+      }
+  }, { passive: true });
 }
 
 function cyclePaintMode(dateStr, element) {
@@ -362,8 +371,8 @@ function closeSplitScreen() {
 }
 
 function resetToDefaultTimetable() {
-  if(confirm("Are you sure you want to revert to the default schedule?")) {
-    courses = buildInitialDatabase();
+  if(confirm("Are you sure you want to completely clear your timetable?")) {
+    courses = [];
     saveToDatabase();
     renderUI();
     closeModal();

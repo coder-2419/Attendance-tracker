@@ -1,8 +1,9 @@
-const DB_KEY = 'attendance_tracker_v33';
-const HISTORY_KEY = 'attendance_history_v33';
-const CALENDAR_KEY = 'academic_calendar_v33';
-const MARKED_DATES_KEY = 'marked_dates_v33';
-const MANUAL_SHOWN_KEY = 'appManualShown_v33';
+// NOTE: I am intentionally keeping the DB Keys on v35 so your custom schedule data does not wipe!
+const DB_KEY = 'attendance_tracker_v35';
+const HISTORY_KEY = 'attendance_history_v35';
+const CALENDAR_KEY = 'academic_calendar_v35';
+const MARKED_DATES_KEY = 'marked_dates_v35';
+const MANUAL_SHOWN_KEY = 'appManualShown_v35';
 
 let targetPercentage = parseInt(localStorage.getItem('target_percentage'), 10) || 75;
 let historyLog = JSON.parse(localStorage.getItem(HISTORY_KEY)) || [];
@@ -39,43 +40,14 @@ function getTodayDateString() {
   return `${now.getFullYear()}-${(now.getMonth()+1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
 }
 
-const masterScheduleMap = {
-  '25CIV104': { name: 'Environmental Science and Sustainability', schedule: { Monday: [{ start: '09:00', end: '09:55' }], Tuesday: [{ start: '13:30', end: '14:25' }] } },
-  '25ECE111': { name: 'Basic Electronics', schedule: { Monday: [{ start: '09:55', end: '10:50' }], Tuesday: [{ start: '11:55', end: '12:50' }], Thursday: [{ start: '09:55', end: '10:50' }], Saturday: [{ start: '09:00', end: '09:55' }] } },
-  '25PHY102': { name: 'Quantum Computing and Modern Physics', schedule: { Monday: [{ start: '11:00', end: '11:55' }], Tuesday: [{ start: '14:25', end: '15:20' }], Wednesday: [{ start: '09:55', end: '10:50' }, { start: '13:30', end: '14:25' }], Saturday: [{ start: '09:55', end: '10:50' }] } },
-  '25MAT103': { name: 'Advanced Calculus', schedule: { Monday: [{ start: '11:55', end: '12:50' }], Wednesday: [{ start: '11:55', end: '12:50' }], Thursday: [{ start: '09:00', end: '09:55' }], Friday: [{ start: '09:55', end: '10:50' }], Saturday: [{ start: '11:00', end: '11:55' }] } },
-  '25CSE103': { name: 'Problem Solving Through Programming', schedule: { Monday: [{ start: '13:30', end: '14:25' }], Thursday: [{ start: '11:55', end: '12:50' }], Friday: [{ start: '09:00', end: '09:55' }], Saturday: [{ start: '11:55', end: '12:50' }] } },
-  '25HSS131': { name: 'Communicative English', schedule: { Monday: [{ start: '14:25', end: '15:20' }], Tuesday: [{ start: '11:00', end: '11:55' }], Thursday: [{ start: '11:00', end: '11:55' }] } },
-  'PHYSICS_LAB': { name: 'Physics Lab', schedule: { Tuesday: [{ start: '09:00', end: '10:50' }] } },
-  '25BTY111': { name: 'Biology for Engineers', schedule: { Wednesday: [{ start: '09:00', end: '09:55' }] } },
-  '25HSS132': { name: 'Knowing Yourself', schedule: { Wednesday: [{ start: '11:00', end: '11:55' }] } },
-  '25MAT107': { name: 'MATLAB', schedule: { Wednesday: [{ start: '14:25', end: '16:15' }] } },
-  '25MEC122': { name: 'Engineering Visualization', schedule: { Thursday: [{ start: '14:25', end: '16:15' }] } },
-  'CSE_LAB': { name: 'CSE Lab', schedule: { Friday: [{ start: '11:00', end: '12:50' }] } },
-  '25HSS102': { name: 'UHV and Indian Constitution', schedule: { Friday: [{ start: '13:30', end: '16:15' }] } }
-};
-
 function buildInitialDatabase() {
-  const initialCourses = [];
-  Object.keys(masterScheduleMap).forEach((code, index) => {
-    initialCourses.push({ 
-      id: Date.now() + index, 
-      name: masterScheduleMap[code].name, 
-      code: code, 
-      present: 0, 
-      absent: 0, 
-      schedule: masterScheduleMap[code].schedule 
-    });
-  });
-  return initialCourses;
+  return []; 
 }
 
 function loadFromDatabase() {
   const storedData = localStorage.getItem(DB_KEY);
   if (storedData) return JSON.parse(storedData);
-  const defaultData = buildInitialDatabase();
-  localStorage.setItem(DB_KEY, JSON.stringify(defaultData));
-  return defaultData;
+  return [];
 }
 
 let courses = loadFromDatabase();
@@ -148,12 +120,11 @@ function updateHolidayButton() {
   }
 }
 
-// Solid State Attendance Engine (Prevents Negative Number & Double Counting Bugs)
 function getCalculatedAttendance() {
   let calc = {};
   courses.forEach(c => calc[c.id] = { p: 0, a: 0 });
 
-  let dailyMarks = JSON.parse(localStorage.getItem('daily_marks_v33')) || {};
+  let dailyMarks = JSON.parse(localStorage.getItem('daily_marks_v35')) || {};
 
   if (academicCalendar && academicCalendar.startDate) {
     let currDate = new Date(academicCalendar.startDate + 'T00:00:00');
@@ -363,8 +334,8 @@ function closeSplitScreen() {
 }
 
 function resetToDefaultTimetable() {
-  if(confirm("Are you sure you want to reset to the default timetable? This will replace your current courses.")) {
-    courses = buildInitialDatabase();
+  if(confirm("Are you sure you want to completely clear your timetable?")) {
+    courses = [];
     saveToDatabase();
     renderUI();
     closeModal();
@@ -530,7 +501,7 @@ function saveBuiltTimetable() {
         courses = initialCourses;
         markedDates = [];
         localStorage.removeItem('handled_live_classes');
-        localStorage.removeItem('daily_marks_v33'); 
+        localStorage.removeItem('daily_marks_v35'); 
 
         addHistory(`Created custom timetable via Builder`);
         saveToDatabase();
@@ -745,8 +716,8 @@ function loadCourseToEdit() {
   if (!course) return;
   
   const baseStats = getCalculatedAttendance();
-  const totalPresent = (baseStats[course.id]?.p || 0) + (course.present || 0);
-  const totalAbsent = (baseStats[course.id]?.a || 0) + (course.absent || 0);
+  const totalPresent = Math.max(0, (baseStats[course.id]?.p || 0) + (course.present || 0));
+  const totalAbsent = Math.max(0, (baseStats[course.id]?.a || 0) + (course.absent || 0));
   
   const total = totalPresent + totalAbsent;
   const percent = total === 0 ? 0 : Math.round((totalPresent / total) * 100);
@@ -789,8 +760,10 @@ function saveSingleCourseAttendance() {
 
   const baseStats = getCalculatedAttendance();
   
-  course.present = Math.max(0, p - (baseStats[course.id]?.p || 0));
-  course.absent = Math.max(0, (t - p) - (baseStats[course.id]?.a || 0));
+  // FIX: This calculation now correctly allows negative offsets 
+  // so the user can edit their attendance DOWNWARDS below the calendar math
+  course.present = p - (baseStats[course.id]?.p || 0);
+  course.absent = (t - p) - (baseStats[course.id]?.a || 0);
 
   addHistory(`Edited: ${course.name} (Now P:${p}, Total:${t})`);
   saveToDatabase();
@@ -835,7 +808,6 @@ function removeCourseById(id) {
   }
 }
 
-// Fixed Bunk Meter with Precision Floating Point Protection
 function getBunkStatus(present, absent) {
   present = Math.max(0, parseInt(present, 10) || 0);
   absent = Math.max(0, parseInt(absent, 10) || 0);
@@ -874,7 +846,7 @@ function checkAndAutoMarkDay() {
   const todayName = getTodayString();
   if (markedDates.includes(todayStr)) return; 
 
-  let dailyMarks = JSON.parse(localStorage.getItem('daily_marks_v33')) || {};
+  let dailyMarks = JSON.parse(localStorage.getItem('daily_marks_v35')) || {};
   let allPresent = true;
   let totalClassesToday = 0;
 
@@ -904,9 +876,9 @@ function handleLiveAttendance(courseId, status, slotKey) {
       localStorage.setItem('handled_live_classes', JSON.stringify(handledClasses));
   }
 
-  let dailyMarks = JSON.parse(localStorage.getItem('daily_marks_v33')) || {};
+  let dailyMarks = JSON.parse(localStorage.getItem('daily_marks_v35')) || {};
   dailyMarks[slotKey] = status;
-  localStorage.setItem('daily_marks_v33', JSON.stringify(dailyMarks));
+  localStorage.setItem('daily_marks_v35', JSON.stringify(dailyMarks));
 
   const course = courses.find(c => c.id === courseId);
   if (!academicCalendar || !academicCalendar.startDate) {

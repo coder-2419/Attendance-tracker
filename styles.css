@@ -44,7 +44,7 @@ body.dark-mode .dark-text { opacity: 1; }
 .modal-overlay { background: rgba(0,0,0,0.6); z-index: 1001; justify-content: center; align-items: center; padding: 20px; }
 .overlay.active, .modal-overlay.active { display: flex; }
 
-.modal-content { background: var(--card-bg); padding: 30px; border-radius: 16px; width: 100%; max-width: 420px; position: relative; color: var(--text-main); max-height: 85vh; overflow-y: auto; }
+.modal-content { background: var(--card-bg); padding: 30px; border-radius: 16px; width: 100%; max-width: 420px; position: relative; color: var(--text-main); max-height: 85vh; overflow-y: auto; overscroll-behavior: none; }
 .close-btn { position: absolute; top: 15px; right: 20px; background: none; border: none; font-size: 2rem; color: var(--text-sub); cursor: pointer; }
 .modal-input { width: 100%; padding: 14px; margin-bottom: 20px; border: 2px solid var(--border-color); border-radius: 10px; font-size: 1rem; background: var(--bg-color); color: var(--text-main); }
 
@@ -52,7 +52,7 @@ body.dark-mode .dark-text { opacity: 1; }
 .bunk-safe { color: #2ecc71; }
 .bunk-danger { color: #e74c3c; }
 
-.history-list { max-height: 300px; overflow-y: auto; text-align: left; margin-top: 15px; }
+.history-list { max-height: 300px; overflow-y: auto; text-align: left; margin-top: 15px; overscroll-behavior: none; }
 .history-item { padding: 12px 5px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem;}
 
 .month-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding: 0 10px; }
@@ -140,13 +140,15 @@ body.dark-mode .cal-day:hover:not(.empty):not(.holiday):not(.important) span { b
 .btn-present { background-color: #2ecc71; }
 .btn-absent { background-color: #e74c3c; }
 
+
 /* =========================================
-   SCROLL-CHAINING FIX FOR CALENDAR MODAL
+   BULLETPROOF SCROLL TRAP FOR SPLIT SCREEN 
    ========================================= */
 .split-screen-overlay { 
   position: fixed; top: 0; left: 0; right: 0; bottom: 0; 
   width: 100%; height: 100%; height: 100dvh; 
   background: var(--bg-color); z-index: 2000; display: none; flex-direction: column; 
+  overscroll-behavior: none; /* Traps all pull-to-refresh events inside the overlay */
 }
 .split-screen-overlay.active { display: flex; }
 
@@ -154,26 +156,28 @@ body.dark-mode .cal-day:hover:not(.empty):not(.holiday):not(.important) span { b
   flex: 1; 
   position: relative; background: #222; overflow: hidden; 
   display: flex; justify-content: center; align-items: center; border-bottom: 3px solid var(--border-color); 
+  overscroll-behavior: none;
 }
 .split-top iframe { width: 100%; height: 100%; border: none; background: white; }
 
 .split-bottom { 
   flex: 1; 
   background: var(--bg-color); display: flex; flex-direction: column; overflow: hidden;
+  overscroll-behavior: none;
 }
 
 .setup-header { 
   display: flex; justify-content: space-between; align-items: center; 
   padding: 12px 15px; background: var(--card-bg); border-bottom: 1px solid var(--border-color); 
   box-shadow: 0 4px 10px rgba(0,0,0,0.05); z-index: 5; 
+  overscroll-behavior: none;
 }
 
 .setup-container { 
   flex: 1; 
   overflow-y: scroll !important; 
   -webkit-overflow-scrolling: touch; 
-  overscroll-behavior: contain; 
-  touch-action: pan-y; 
+  overscroll-behavior-y: none; /* Physically blocks native refresh on the scrollable container */
   padding-bottom: 80px; 
 }
 

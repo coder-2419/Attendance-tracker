@@ -1,4 +1,4 @@
-const DB_KEY = 'attendance_tracker_v37'; // Kept safe!
+const DB_KEY = 'attendance_tracker_v37'; // Kept the same so you don't lose data!
 const HISTORY_KEY = 'attendance_history_v37';
 const CALENDAR_KEY = 'academic_calendar_v37';
 const MARKED_DATES_KEY = 'marked_dates_v37';
@@ -39,43 +39,14 @@ function getTodayDateString() {
   return `${now.getFullYear()}-${(now.getMonth()+1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
 }
 
-const masterScheduleMap = {
-  '25CIV104': { name: 'Environmental Science and Sustainability', schedule: { Monday: [{ start: '09:00', end: '09:55' }], Tuesday: [{ start: '13:30', end: '14:25' }] } },
-  '25ECE111': { name: 'Basic Electronics', schedule: { Monday: [{ start: '09:55', end: '10:50' }], Tuesday: [{ start: '11:55', end: '12:50' }], Thursday: [{ start: '09:55', end: '10:50' }], Saturday: [{ start: '09:00', end: '09:55' }] } },
-  '25PHY102': { name: 'Quantum Computing and Modern Physics', schedule: { Monday: [{ start: '11:00', end: '11:55' }], Tuesday: [{ start: '14:25', end: '15:20' }], Wednesday: [{ start: '09:55', end: '10:50' }, { start: '13:30', end: '14:25' }], Saturday: [{ start: '09:55', end: '10:50' }] } },
-  '25MAT103': { name: 'Advanced Calculus', schedule: { Monday: [{ start: '11:55', end: '12:50' }], Wednesday: [{ start: '11:55', end: '12:50' }], Thursday: [{ start: '09:00', end: '09:55' }], Friday: [{ start: '09:55', end: '10:50' }], Saturday: [{ start: '11:00', end: '11:55' }] } },
-  '25CSE103': { name: 'Problem Solving Through Programming', schedule: { Monday: [{ start: '13:30', end: '14:25' }], Thursday: [{ start: '11:55', end: '12:50' }], Friday: [{ start: '09:00', end: '09:55' }], Saturday: [{ start: '11:55', end: '12:50' }] } },
-  '25HSS131': { name: 'Communicative English', schedule: { Monday: [{ start: '14:25', end: '15:20' }], Tuesday: [{ start: '11:00', end: '11:55' }], Thursday: [{ start: '11:00', end: '11:55' }] } },
-  'PHYSICS_LAB': { name: 'Physics Lab', schedule: { Tuesday: [{ start: '09:00', end: '10:50' }] } },
-  '25BTY111': { name: 'Biology for Engineers', schedule: { Wednesday: [{ start: '09:00', end: '09:55' }] } },
-  '25HSS132': { name: 'Knowing Yourself', schedule: { Wednesday: [{ start: '11:00', end: '11:55' }] } },
-  '25MAT107': { name: 'MATLAB', schedule: { Wednesday: [{ start: '14:25', end: '16:15' }] } },
-  '25MEC122': { name: 'Engineering Visualization', schedule: { Thursday: [{ start: '14:25', end: '16:15' }] } },
-  'CSE_LAB': { name: 'CSE Lab', schedule: { Friday: [{ start: '11:00', end: '12:50' }] } },
-  '25HSS102': { name: 'UHV and Indian Constitution', schedule: { Friday: [{ start: '13:30', end: '16:15' }] } }
-};
-
 function buildInitialDatabase() {
-  const initialCourses = [];
-  Object.keys(masterScheduleMap).forEach((code, index) => {
-    initialCourses.push({ 
-      id: Date.now() + index, 
-      name: masterScheduleMap[code].name, 
-      code: code, 
-      present: 0, 
-      absent: 0, 
-      schedule: masterScheduleMap[code].schedule 
-    });
-  });
-  return initialCourses;
+  return []; 
 }
 
 function loadFromDatabase() {
   const storedData = localStorage.getItem(DB_KEY);
   if (storedData) return JSON.parse(storedData);
-  const defaultData = buildInitialDatabase();
-  localStorage.setItem(DB_KEY, JSON.stringify(defaultData));
-  return defaultData;
+  return [];
 }
 
 let courses = loadFromDatabase();
@@ -317,22 +288,31 @@ function buildSetupCalendar(startStr, endStr) {
   }
   container.innerHTML = html;
 
-  // --- THE ULTIMATE ACTIVE SCROLL INTERCEPTOR ---
-  let startY = 0;
-  container.addEventListener('touchstart', function(e) {
-      startY = e.touches[0].pageY;
-  }, { passive: true });
+  // --- THE 1-PIXEL SCROLL HACK ---
+  // If the container is exactly at 0px, Chrome triggers pull-to-refresh.
+  // This physically forces the scrollbar to stay between 1px and max-1px.
+  setTimeout(() => {
+    if (container.scrollHeight > container.clientHeight) {
+      container.scrollTop = 1;
+    }
+  }, 100);
 
-  container.addEventListener('touchmove', function(e) {
-      const y = e.touches[0].pageY;
-      const swipingDown = y > startY; // User pulling down to scroll UP
-      
-      // If we are at the absolute top of the container and swiping down, kill the scroll physics instantly to prevent pull-to-refresh
-      if (container.scrollTop <= 0 && swipingDown) {
-          e.preventDefault();
+  container.addEventListener('scroll', function() {
+      if (container.scrollTop <= 0) {
+          container.scrollTop = 1;
+      } else if (container.scrollTop + container.clientHeight >= container.scrollHeight) {
+          container.scrollTop = container.scrollHeight - container.clientHeight - 1;
       }
-  }, { passive: false });
+  }, { passive: true });
 }
+
+// Prevents dragging the top half (PDF) or empty space from bouncing the app
+document.getElementById('splitScreenOverlay').addEventListener('touchmove', function(e) {
+    if (!e.target.closest('#setupCalendarContainer')) {
+        e.preventDefault(); 
+    }
+}, { passive: false });
+
 
 function cyclePaintMode(dateStr, element) {
   if (element.classList.contains('holiday')) {
@@ -379,7 +359,7 @@ function closeSplitScreen() {
 
 function resetToDefaultTimetable() {
   if(confirm("Are you sure you want to completely clear your timetable?")) {
-    courses = buildInitialDatabase();
+    courses = [];
     saveToDatabase();
     renderUI();
     closeModal();

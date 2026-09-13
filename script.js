@@ -8,6 +8,7 @@ let targetPercentage = parseInt(localStorage.getItem('target_percentage'), 10) |
 let historyLog = JSON.parse(localStorage.getItem(HISTORY_KEY)) || [];
 let academicCalendar = JSON.parse(localStorage.getItem(CALENDAR_KEY)) || null;
 let markedDates = JSON.parse(localStorage.getItem(MARKED_DATES_KEY)) || [];
+let hasAutoScrolledToday = false; 
 
 function getTodayString() {
   const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -235,6 +236,10 @@ function startCalendarSetup() {
   const previewWrapper = document.getElementById('previewWrapper');
   const isImage = file.type.match(/image/i) || file.name.match(/\.(jpg|jpeg|png|gif|webp|heic)$/i);
   
+  if (!isImage && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+      alert("Note: PDFs may not scroll correctly on mobile devices. If you experience issues, please upload a screenshot image instead.");
+  }
+  
   previewWrapper.ontouchstart = null;
   previewWrapper.ontouchmove = null;
   previewWrapper.ontouchend = null;
@@ -256,8 +261,10 @@ function startCalendarSetup() {
     };
 
     previewWrapper.ontouchmove = (e) => {
-      e.stopPropagation();
-      e.preventDefault(); 
+      if (e.touches.length === 2 || (e.touches.length === 1 && scale > 1)) {
+        e.stopPropagation();
+        e.preventDefault(); 
+      }
       if (e.touches.length === 2) {
         const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
         scale = Math.min(Math.max(1, scale * (dist / initialDist)), 6); 
@@ -332,8 +339,10 @@ function buildSetupCalendar(startStr, endStr) {
 }
 
 const splitOverlay = document.getElementById('splitScreenOverlay');
+let lastTouchY = 0;
+
 splitOverlay.addEventListener('touchstart', function(e) {
-    this.startY = e.touches[0].clientY;
+    lastTouchY = e.touches[0].clientY;
 }, { passive: true });
 
 splitOverlay.addEventListener('touchmove', function(e) {
@@ -342,17 +351,20 @@ splitOverlay.addEventListener('touchmove', function(e) {
         e.preventDefault(); 
         return;
     }
-    const y = e.touches[0].clientY;
-    const swipingDown = y > this.startY; 
-    const swipingUp = y < this.startY;   
-    if (scrollable.scrollTop <= 0 && swipingDown) {
+    const currentY = e.touches[0].clientY;
+    const deltaY = currentY - lastTouchY;
+    lastTouchY = currentY;
+
+    const isAtTop = scrollable.scrollTop <= 0;
+    const isAtBottom = Math.ceil(scrollable.scrollTop + scrollable.clientHeight) >= scrollable.scrollHeight - 1;
+
+    if (isAtTop && deltaY > 0) {
         e.preventDefault();
     }
-    if (scrollable.scrollTop + scrollable.clientHeight >= scrollable.scrollHeight && swipingUp) {
+    if (isAtBottom && deltaY < 0) {
         e.preventDefault();
     }
 }, { passive: false });
-
 
 function cyclePaintMode(dateStr, element) {
   if (element.classList.contains('holiday')) {
@@ -407,7 +419,11 @@ function resetToDefaultTimetable() {
     addHistory("Reset to default timetable.");
     saveToDatabase();
     renderUI();
-    closeModal();
+    
+    document.getElementById('sidebar').classList.remove('open');
+    document.getElementById('menuOverlay').classList.remove('active');
+    document.body.classList.remove('scroll-locked');
+    
     alert("Default Timetable loaded successfully.");
   }
 }
@@ -462,13 +478,23 @@ function toggleFullDayPresent(dateString) {
 }
 
 function toggleMenu() { 
-  document.getElementById('sidebar').classList.toggle('open'); 
+  const sidebar = document.getElementById('sidebar');
+  const isOpening = !sidebar.classList.contains('open');
+  
+  sidebar.classList.toggle('open'); 
   document.getElementById('menuOverlay').classList.toggle('active'); 
+  
+  if (isOpening) {
+      document.body.classList.add('scroll-locked');
+  } else {
+      document.body.classList.remove('scroll-locked');
+  }
 }
 
 function closeModal(e) { 
   if (e && e.target !== document.getElementById('modalOverlay') && !e.target.classList.contains('close-btn')) return; 
   document.getElementById('modalOverlay').classList.remove('active'); 
+  document.body.classList.remove('scroll-locked');
 }
 
 function switchBuilderDay(day) {
@@ -604,6 +630,8 @@ function openModal(type) {
   const modalOverlay = document.getElementById('modalOverlay');
   const modalContent = document.getElementById('modalContent');
   modalOverlay.classList.add('active');
+  document.body.classList.add('scroll-locked');
+  
   let html = `<button class="close-btn" onclick="closeModal()">×</button>`;
 
   if (type === 'createTimetable') {
@@ -664,7 +692,7 @@ function openModal(type) {
     html += `
       <h2>Upload Academic Calendar</h2>
       <div style="text-align:left; margin-top:15px;">
-        <label style="font-size:0.85rem; color:var(--text-sub);">Select Calendar (Images work best on mobile)</label>
+        <label style="font-size:0.85rem; color:var(--text-sub);">Select Calendar (Image or PDF)</label>
         <input type="file" id="calFileInput" accept="image/*, application/pdf" class="modal-input" />
         
         <label style="font-size:0.85rem; color:var(--text-sub);">Term Start Date</label>
@@ -950,6 +978,8 @@ function getBunkStatus(present, absent) {
 
 function changeDay(dayName) { 
   currentSelectedDay = dayName; 
+  const timeContainer = document.getElementById('timetableContainer');
+  if (timeContainer) timeContainer.scrollLeft = 0;
   renderUI(); 
 }
 
@@ -1011,6 +1041,11 @@ function renderUI() {
     if (btn.innerText.startsWith(currentSelectedDay.substring(0, 3))) btn.classList.add('active-day');
   });
 
+  const activeBtn = document.querySelector('.day-selector button.active-day');
+  if (activeBtn) {
+    activeBtn.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+  }
+
   const timeContainer = document.getElementById('timetableContainer');
   const isToday = getTodayString() === currentSelectedDay;
   const isSunday = currentSelectedDay === 'Sunday';
@@ -1021,7 +1056,7 @@ function renderUI() {
 
   if (isSunday || isDeclaredHoliday) {
     const holidayMsg = isSunday ? 'SUNDAY IS A HOLIDAY' : 'TODAY IS A HOLIDAY';
-    timeContainer.innerHTML = `<div class="holiday-banner"><p>🏖️ ${holidayMsg}</p></div>`;
+    timeContainer.innerHTML = `<div class="holiday-banner"><p style="color:#e74c3c; font-size:1.15rem; font-weight:800;">🏖️ ${holidayMsg}</p></div>`;
   } else {
     let todaysClasses = [];
     courses.forEach(c => { 
@@ -1072,10 +1107,13 @@ function renderUI() {
       html += '<div class="timetable-spacer"></div>';
       timeContainer.innerHTML = html;
 
-      if (focusId && isToday) {
+      if (focusId && isToday && !hasAutoScrolledToday) {
         setTimeout(() => {
           const el = document.getElementById(focusId);
-          if (el) el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+            hasAutoScrolledToday = true;
+          }
         }, 300); 
       }
     }
@@ -1179,6 +1217,12 @@ function toggleActionBar(id) {
   bar.classList.toggle('slide-in');
 }
 
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.course-card-wrapper')) {
+    document.querySelectorAll('.action-bar').forEach(bar => bar.classList.remove('slide-in'));
+  }
+});
+
 startLiveClock(); 
 updateHolidayButton(); 
 renderUI(); 
@@ -1188,10 +1232,3 @@ if (!localStorage.getItem(MANUAL_SHOWN_KEY)) {
   localStorage.setItem(MANUAL_SHOWN_KEY, 'true'); 
   setTimeout(() => openModal('userManual'), 300);
 }
-
-// Global Click Listener to close action bars when tapping off a course card
-document.addEventListener('click', (e) => {
-  if (!e.target.closest('.course-card-wrapper')) {
-    document.querySelectorAll('.action-bar').forEach(bar => bar.classList.remove('slide-in'));
-  }
-});

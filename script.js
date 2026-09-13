@@ -664,7 +664,7 @@ function openModal(type) {
     html += `
       <h2>Upload Academic Calendar</h2>
       <div style="text-align:left; margin-top:15px;">
-        <label style="font-size:0.85rem; color:var(--text-sub);">Select Calendar (Image or PDF)</label>
+        <label style="font-size:0.85rem; color:var(--text-sub);">Select Calendar (Images work best on mobile)</label>
         <input type="file" id="calFileInput" accept="image/*, application/pdf" class="modal-input" />
         
         <label style="font-size:0.85rem; color:var(--text-sub);">Term Start Date</label>
@@ -1021,7 +1021,7 @@ function renderUI() {
 
   if (isSunday || isDeclaredHoliday) {
     const holidayMsg = isSunday ? 'SUNDAY IS A HOLIDAY' : 'TODAY IS A HOLIDAY';
-    timeContainer.innerHTML = `<div style="text-align:center; padding: 25px 20px; background: #fdf5f5; border-radius: 12px; border: 2px dashed #e74c3c; width:100%;"><p style="color:#e74c3c; font-size:1.15rem; font-weight:800;">🏖️ ${holidayMsg}</p></div>`;
+    timeContainer.innerHTML = `<div class="holiday-banner"><p>🏖️ ${holidayMsg}</p></div>`;
   } else {
     let todaysClasses = [];
     courses.forEach(c => { 
@@ -1188,3 +1188,10 @@ if (!localStorage.getItem(MANUAL_SHOWN_KEY)) {
   localStorage.setItem(MANUAL_SHOWN_KEY, 'true'); 
   setTimeout(() => openModal('userManual'), 300);
 }
+
+// Global Click Listener to close action bars when tapping off a course card
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.course-card-wrapper')) {
+    document.querySelectorAll('.action-bar').forEach(bar => bar.classList.remove('slide-in'));
+  }
+});

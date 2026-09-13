@@ -176,7 +176,9 @@ function getCalculatedAttendance() {
       const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
       const dayName = days[currDate.getDay()];
 
-      const isHoliday = (currDate.getDay() === 0) || (academicCalendar.holidays && academicCalendar.holidays.includes(dateStr));
+      const isHoliday = (currDate.getDay() === 0) || 
+                        (academicCalendar.holidays && academicCalendar.holidays.includes(dateStr)) || 
+                        (localStorage.getItem('holiday_' + dateStr) === 'true');
       const isFullDayMarked = markedDates.includes(dateStr);
       const isToday = (dateStr === todayStr);
 
@@ -196,7 +198,7 @@ function getCalculatedAttendance() {
               } else {
                 if (!isToday) {
                   calc[course.id].a += 1;
-                } else if (nowStr >= slot.start) {
+                } else if (nowStr > slot.end) { 
                   calc[course.id].a += 1;
                 }
               }
@@ -281,6 +283,11 @@ function startCalendarSetup() {
   }
   
   setupTempData = {}; 
+  if (academicCalendar) {
+    if (academicCalendar.holidays) academicCalendar.holidays.forEach(d => setupTempData[d] = 'holiday');
+    if (academicCalendar.importantDates) academicCalendar.importantDates.forEach(d => setupTempData[d] = 'important');
+  }
+
   buildSetupCalendar(setupStartDate, setupEndDate);
   
   closeModal();
@@ -306,11 +313,17 @@ function buildSetupCalendar(startStr, endStr) {
     
     html += `<div class="setup-month"><div class="setup-month-title">${monthNames[month]} ${year}</div><div class="cal-weekdays"><span>Su</span><span>M</span><span>Tu</span><span>W</span><span>Th</span><span>F</span><span>Sa</span></div><div class="cal-grid-month">`;
     for (let i = 0; i < firstDay; i++) { html += `<div class="cal-day empty"></div>`; }
+    
     for (let i = 1; i <= daysInMonth; i++) {
       const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
       const iterDate = new Date(year, month, i);
       const isSunday = iterDate.getDay() === 0 ? 'sunday' : '';
-      html += `<div class="cal-day ${isSunday}" id="setup-${dateStr}" onclick="cyclePaintMode('${dateStr}', this)"><span>${i}</span></div>`;
+      
+      let preStatus = '';
+      if (setupTempData[dateStr] === 'holiday') preStatus = 'holiday';
+      if (setupTempData[dateStr] === 'important') preStatus = 'important';
+
+      html += `<div class="cal-day ${isSunday} ${preStatus}" id="setup-${dateStr}" onclick="cyclePaintMode('${dateStr}', this)"><span>${i}</span></div>`;
     }
     html += `</div></div>`;
     curr.setMonth(curr.getMonth() + 1); 
@@ -318,9 +331,6 @@ function buildSetupCalendar(startStr, endStr) {
   container.innerHTML = html;
 }
 
-// --- BULLETPROOF MOBILE SCROLL INTERCEPTOR ---
-// This listens to touch events on the entire modal overlay. 
-// It selectively blocks dragging gestures that cause the native browser to bounce.
 const splitOverlay = document.getElementById('splitScreenOverlay');
 splitOverlay.addEventListener('touchstart', function(e) {
     this.startY = e.touches[0].clientY;
@@ -328,23 +338,16 @@ splitOverlay.addEventListener('touchstart', function(e) {
 
 splitOverlay.addEventListener('touchmove', function(e) {
     const scrollable = e.target.closest('#setupCalendarContainer');
-    
-    // If the user drags outside the specific scrollable area (like the PDF or header), kill the swipe to prevent bounce
     if (!scrollable) {
         e.preventDefault(); 
         return;
     }
-
     const y = e.touches[0].clientY;
-    const swipingDown = y > this.startY; // User pulling finger down (to scroll up)
-    const swipingUp = y < this.startY;   // User pulling finger up (to scroll down)
-
-    // If the user hits the exact top and pulls down, natively cancel it to prevent refresh
+    const swipingDown = y > this.startY; 
+    const swipingUp = y < this.startY;   
     if (scrollable.scrollTop <= 0 && swipingDown) {
         e.preventDefault();
     }
-    
-    // If the user hits the exact bottom and pulls up, natively cancel it to prevent bounce
     if (scrollable.scrollTop + scrollable.clientHeight >= scrollable.scrollHeight && swipingUp) {
         e.preventDefault();
     }
@@ -410,6 +413,7 @@ function resetToDefaultTimetable() {
 }
 
 function changeCalendarMonth(dir) {
+  currentCalDate.setDate(1); 
   currentCalDate.setMonth(currentCalDate.getMonth() + dir);
   openModal('calendarMode');
 }
@@ -445,13 +449,7 @@ function toggleFullDayPresent(dateString) {
        if (c.schedule && c.schedule[dayName]) {
           c.schedule[dayName].forEach(slot => {
              const slotKey = `${dateString}_${c.id}_${slot.start}`;
-             if (dailyMarks[slotKey] === 'present') {
-                 c.present -= 1;
-                 if (academicCalendar && academicCalendar.startDate) c.absent += 1;
-             } else if (dailyMarks[slotKey] === 'absent') {
-                 if (!academicCalendar || !academicCalendar.startDate) c.absent -= 1;
-             }
-             delete dailyMarks[slotKey];
+             delete dailyMarks[slotKey]; 
           });
        }
     });
@@ -555,6 +553,10 @@ function saveBuiltTimetable() {
                 alert(`Please completely fill out all fields for the period on ${day}.`);
                 return;
             }
+            if(p.start >= p.end) {
+                alert(`Invalid time slot on ${day}: Start time must be before end time.`);
+                return;
+            }
             uniqueCodes.add(p.code.trim().toUpperCase());
         }
     }
@@ -576,21 +578,18 @@ function saveBuiltTimetable() {
     if(confirm("This will replace your current timetable completely. Do you want to proceed?")) {
         const initialCourses = [];
         Object.keys(newMasterMap).forEach((code, index) => {
+            const existing = courses.find(c => c.code === code);
             initialCourses.push({ 
-                id: Date.now() + index, 
+                id: existing ? existing.id : Date.now() + index, 
                 name: newMasterMap[code].name, 
                 code: code, 
-                present: 0, 
-                absent: 0, 
+                present: existing ? existing.present : 0, 
+                absent: existing ? existing.absent : 0, 
                 schedule: newMasterMap[code].schedule 
             });
         });
 
         courses = initialCourses;
-        markedDates = [];
-        localStorage.removeItem('handled_live_classes');
-        localStorage.removeItem('daily_marks_v41'); 
-
         addHistory(`Created custom timetable via Builder`);
         saveToDatabase();
         renderUI();
@@ -741,6 +740,22 @@ function openModal(type) {
         <input type="text" id="newCourseName" class="modal-input" placeholder="e.g. Data Structures" />
         <label style="font-size:0.85rem; color:var(--text-sub);">Course Code (Optional)</label>
         <input type="text" id="newCourseCode" class="modal-input" placeholder="e.g. 25CSE201" />
+        <label style="font-size:0.85rem; color:var(--text-sub);">Day of Week</label>
+        <select id="newCourseDay" class="modal-input">
+          <option value="Monday">Monday</option><option value="Tuesday">Tuesday</option>
+          <option value="Wednesday">Wednesday</option><option value="Thursday">Thursday</option>
+          <option value="Friday">Friday</option><option value="Saturday">Saturday</option>
+        </select>
+        <div style="display:flex; gap:10px;">
+            <div style="flex:1;">
+                <label style="font-size:0.85rem; color:var(--text-sub);">Start Time</label>
+                <input type="time" id="newCourseStart" class="modal-input" />
+            </div>
+            <div style="flex:1;">
+                <label style="font-size:0.85rem; color:var(--text-sub);">End Time</label>
+                <input type="time" id="newCourseEnd" class="modal-input" />
+            </div>
+        </div>
         <button class="btn-present" style="width:100%; padding:12px;" onclick="handleAddCourse()">Add Course</button>
       </div>`;
   } else if (type === 'editAttendance') {
@@ -861,8 +876,19 @@ function saveSingleCourseAttendance() {
 function handleAddCourse() {
   const name = document.getElementById('newCourseName').value.trim();
   const code = document.getElementById('newCourseCode').value.trim();
+  const day = document.getElementById('newCourseDay').value;
+  const start = document.getElementById('newCourseStart').value;
+  const end = document.getElementById('newCourseEnd').value;
+
   if (!name) return alert("Please enter a course name.");
-  courses.push({ id: Date.now(), name: name, code: code || 'CUSTOM', present: 0, absent: 0, schedule: {} });
+  if (start && end && start >= end) return alert("Start time must be before end time.");
+
+  let schedule = {};
+  if (start && end) {
+      schedule[day] = [{ start: start, end: end }];
+  }
+
+  courses.push({ id: Date.now(), name: name, code: code || 'CUSTOM', present: 0, absent: 0, schedule: schedule });
   addHistory(`Added Course: ${name}`); 
   saveToDatabase(); 
   renderUI(); 

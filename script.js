@@ -243,18 +243,51 @@ function startCalendarSetup() {
   previewWrapper.ontouchstart = null;
   previewWrapper.ontouchmove = null;
   previewWrapper.ontouchend = null;
+  previewWrapper.onmousedown = null;
+  previewWrapper.onmousemove = null;
+  previewWrapper.onmouseup = null;
+  previewWrapper.onmouseleave = null;
 
   if (isImage) {
-    previewWrapper.innerHTML = `<img id="setupImagePreview" src="${setupBlobUrl}" style="position:absolute; top:0; left:0; width:100%; height:100%; object-fit:contain; display:block; transform-origin:center;" alt="Calendar Preview" />`;
+    previewWrapper.innerHTML = `
+      <img id="setupImagePreview" src="${setupBlobUrl}" style="position:absolute; top:0; left:0; width:100%; height:100%; object-fit:contain; display:block; transform-origin:center; will-change: transform;" alt="Calendar Preview" />
+      
+      <!-- Zoom Controls -->
+      <div style="position: absolute; bottom: 20px; right: 20px; display: flex; gap: 12px; z-index: 20;">
+        <button id="zoomOutBtn" style="width: 45px; height: 45px; border-radius: 50%; background: rgba(0,0,0,0.7); color: white; border: 2px solid rgba(255,255,255,0.2); font-size: 1.8rem; font-weight: bold; cursor: pointer; display: flex; justify-content: center; align-items: center; box-shadow: 0 4px 10px rgba(0,0,0,0.3); backdrop-filter: blur(4px); padding-bottom: 4px;">-</button>
+        <button id="zoomInBtn" style="width: 45px; height: 45px; border-radius: 50%; background: rgba(0,0,0,0.7); color: white; border: 2px solid rgba(255,255,255,0.2); font-size: 1.5rem; font-weight: bold; cursor: pointer; display: flex; justify-content: center; align-items: center; box-shadow: 0 4px 10px rgba(0,0,0,0.3); backdrop-filter: blur(4px);">+</button>
+      </div>
+    `;
     
     const img = document.getElementById('setupImagePreview');
     let scale = 1, posX = 0, posY = 0;
     let startX, startY, initialDist;
+    let isDraggingMouse = false;
+
+    const applyTransform = (smooth = false) => {
+      img.style.transition = smooth ? 'transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1)' : 'none';
+      img.style.transform = `translate(${posX}px, ${posY}px) scale(${scale})`;
+      if (smooth) setTimeout(() => img.style.transition = 'none', 250);
+      previewWrapper.style.cursor = scale > 1 ? 'grab' : 'default';
+    };
+
+    document.getElementById('zoomInBtn').onclick = (e) => {
+      e.stopPropagation();
+      scale = Math.min(scale + 0.5, 6);
+      applyTransform(true);
+    };
+
+    document.getElementById('zoomOutBtn').onclick = (e) => {
+      e.stopPropagation();
+      scale = Math.max(scale - 0.5, 1);
+      if (scale === 1) { posX = 0; posY = 0; } 
+      applyTransform(true);
+    };
 
     previewWrapper.ontouchstart = (e) => {
       if (e.touches.length === 2) {
         initialDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-      } else if (e.touches.length === 1) {
+      } else if (e.touches.length === 1 && scale > 1) {
         startX = e.touches[0].clientX - posX;
         startY = e.touches[0].clientY - posY;
       }
@@ -273,15 +306,39 @@ function startCalendarSetup() {
         posX = e.touches[0].clientX - startX;
         posY = e.touches[0].clientY - startY;
       }
-      img.style.transform = `translate(${posX}px, ${posY}px) scale(${scale})`;
+      applyTransform(false);
     };
 
     previewWrapper.ontouchend = () => {
       if (scale <= 1) {
         scale = 1; posX = 0; posY = 0;
-        img.style.transition = 'transform 0.2s ease';
-        img.style.transform = `translate(0px, 0px) scale(1)`;
-        setTimeout(() => img.style.transition = 'none', 200);
+        applyTransform(true);
+      }
+    };
+
+    previewWrapper.onmousedown = (e) => {
+      if (scale > 1 && e.target !== document.getElementById('zoomInBtn') && e.target !== document.getElementById('zoomOutBtn')) {
+        isDraggingMouse = true;
+        startX = e.clientX - posX;
+        startY = e.clientY - posY;
+        previewWrapper.style.cursor = 'grabbing';
+      }
+    };
+
+    previewWrapper.onmousemove = (e) => {
+      if (!isDraggingMouse || scale <= 1) return;
+      e.preventDefault();
+      posX = e.clientX - startX;
+      posY = e.clientY - startY;
+      applyTransform(false);
+    };
+
+    previewWrapper.onmouseup = previewWrapper.onmouseleave = () => {
+      isDraggingMouse = false;
+      previewWrapper.style.cursor = scale > 1 ? 'grab' : 'default';
+      if (scale <= 1) {
+        scale = 1; posX = 0; posY = 0;
+        applyTransform(true);
       }
     };
 
@@ -402,6 +459,10 @@ function closeSplitScreen() {
       previewWrapper.ontouchstart = null;
       previewWrapper.ontouchmove = null;
       previewWrapper.ontouchend = null;
+      previewWrapper.onmousedown = null;
+      previewWrapper.onmousemove = null;
+      previewWrapper.onmouseup = null;
+      previewWrapper.onmouseleave = null;
   }
   if (setupBlobUrl) {
     URL.revokeObjectURL(setupBlobUrl);

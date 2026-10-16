@@ -4,7 +4,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Attendance Tracker</title>
-  <link rel="stylesheet" href="styles.css?v=44">
+  
+  <!-- Firebase SDKs (Compat versions for vanilla JS) -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+
+  <link rel="stylesheet" href="styles.css?v=50">
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#ffffff">
 </head>
@@ -30,8 +36,8 @@
     </div>
 
     <ul>
+      <li id="authMenuItem" onclick="openModal('authModal')" style="font-weight: 800; color: #3498db;">🔑 Sign In / Account</li>
       <li onclick="openModal('userManual')">How to Use the App</li>
-      <li onclick="openModal('createTimetable')" style="color:#3498db; font-weight: 800;">+ Create Custom Timetable</li>
       <li onclick="openModal('historyLog')">View History Log</li>
       <li onclick="openModal('setupCalendar')">Sync Academic Calendar</li>
       <li onclick="openModal('setTarget')">Set Target Attendance</li>
@@ -42,7 +48,46 @@
     </ul>
   </nav>
 
+  <!-- Virtual In-App Pop-up Container -->
   <div class="modal-overlay" id="modalOverlay" onclick="closeModal(event)"><div class="modal-content" id="modalContent" onclick="event.stopPropagation()"></div></div>
+
+  <!-- Dedicated Clock Picker Modal -->
+  <div class="modal-overlay" id="clockModalOverlay">
+    <div class="modal-content clock-modal-card" onclick="event.stopPropagation()">
+      <div class="clock-modal-header">
+        <span id="clockPickerTitle">Set Time</span>
+        <button class="close-btn" onclick="closeClockPicker()">×</button>
+      </div>
+      
+      <!-- Digital Display & AM/PM Toggle -->
+      <div class="clock-display-row">
+        <div class="clock-digital-box">
+          <span id="clockHourDisplay" class="active-part" onclick="setClockView('hours')">09</span>
+          <span class="clock-colon">:</span>
+          <span id="clockMinuteDisplay" onclick="setClockView('minutes')">00</span>
+        </div>
+        <div class="clock-ampm-switch">
+          <button id="clockAmBtn" class="ampm-btn active" onclick="setClockAmPm('AM')">AM</button>
+          <button id="clockPmBtn" class="ampm-btn" onclick="setClockAmPm('PM')">PM</button>
+        </div>
+      </div>
+
+      <!-- Analog Clock Face -->
+      <div class="clock-dial-container">
+        <div class="clock-dial" id="clockDial">
+          <div class="clock-center-dot"></div>
+          <div class="clock-hand" id="clockHand"></div>
+          <div id="clockNumbers" class="clock-numbers"></div>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="vpopup-actions" style="margin-top: 20px;">
+        <button class="vpopup-btn vpopup-btn-cancel" onclick="closeClockPicker()">✖ Cancel</button>
+        <button class="vpopup-btn vpopup-btn-confirm" onclick="confirmClockTime()">✓ Set Time</button>
+      </div>
+    </div>
+  </div>
 
   <div class="split-screen-overlay" id="splitScreenOverlay">
     <div class="split-top" id="splitTopContainer">
@@ -59,10 +104,14 @@
   </div>
 
   <main class="main-content">
-    <div class="timetable-container">
+    <!-- Timetable Section (hidden on launch) -->
+    <div class="timetable-container" id="timetableSection" style="display:none;">
       <div class="schedule-header">
-        <h3>Weekly Schedule</h3>
-        <button id="holidayBtn" class="holiday-btn" onclick="toggleHoliday()">Mark Today Holiday</button>
+        <h3 id="timetableHeaderTitle">Daily Timetable</h3>
+        <div style="display:flex; gap:15px; align-items:center;">
+          <button id="editTimetableBtn" onclick="toggleTimetableEdit()" style="background:none; border:none; font-size:1.3rem; cursor:pointer;" title="Edit Timetable">✏️</button>
+          <button id="holidayBtn" class="holiday-btn" onclick="toggleHoliday()">Mark Today Holiday</button>
+        </div>
       </div>
       <div class="day-selector" id="daySelector">
         <button onclick="changeDay('Sunday')">Sun</button>
@@ -73,14 +122,54 @@
         <button onclick="changeDay('Friday')">Fri</button>
         <button onclick="changeDay('Saturday')">Sat</button>
       </div>
-      <div id="timetableContainer" class="timetable-bar"></div>
+      <div id="timetableContainer" class="timetable-list"></div>
     </div>
     
-    <div id="liveClassContainer"></div>
-    
+    <!-- Attendance % (Course Cards) Section (visible on launch) -->
     <div id="courseList" class="course-list-container"></div>
   </main>
 
-  <script src="script.js?v=44"></script>
+  <!-- Bottom Navigation Bar: Attendance % on Left (Active), Timetable on Right -->
+  <nav class="bottom-nav">
+    <button class="nav-btn active" id="nav-courses" onclick="switchTab('courses')">
+      <span style="font-size:1.35rem; margin-bottom:3px;">📊</span>Attendance %
+    </button>
+    <button class="nav-btn" id="nav-timetable" onclick="switchTab('timetable')">
+      <span style="font-size:1.35rem; margin-bottom:3px;">📅</span>Timetable
+    </button>
+  </nav>
+
+  <!-- Hard Launch Paywall Overlay -->
+  <div id="paywallOverlay" class="paywall-overlay" style="display: none;">
+    <div class="paywall-card">
+      <div class="paywall-badge">CAMPUS PASS</div>
+      <h2>Unlock Attendance Tracker</h2>
+      <p class="paywall-sub">Get lifetime semester access to live period tracking, safe bunk calculations, custom timetables, and academic calendar sync.</p>
+      
+      <div class="paywall-pricing">
+        <span class="currency">₹</span><span class="amount">49</span>
+        <span class="period">/ semester</span>
+      </div>
+
+      <ul class="paywall-features">
+        <li>✓ Live period attendance & bunk safety meter</li>
+        <li>✓ Full academic calendar holiday auto-sync</li>
+        <li>✓ Custom timetable builder with clock picker</li>
+        <li>✓ Cloud backup & multi-device sync</li>
+      </ul>
+
+      <button class="paywall-btn" onclick="initiatePayment()">
+        ⚡ Pay ₹49 & Unlock
+      </button>
+
+      <div class="paywall-key-section">
+        <input type="text" id="activationKeyInput" placeholder="Enter Access Code (CR / Admin)" />
+        <button onclick="redeemActivationKey()">Apply</button>
+      </div>
+      <div id="paywallError" class="paywall-error"></div>
+    </div>
+  </div>
+
+  <script src="script.js?v=50"></script>
 </body>
 </html>

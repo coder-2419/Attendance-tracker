@@ -1,14 +1,49 @@
-const DB_KEY = 'attendance_tracker_v41'; // Keeping data intact!
+// ==========================================
+// 1. FIREBASE INITIALIZATION & KEYS
+// ==========================================
+const firebaseConfig = {
+  apiKey: "AIzaSyDfzYCLN2b4SNsUPBL9CqPIWcSTH2WCt9c",
+  authDomain: "attendance-tracker-2fe63.firebaseapp.com",
+  projectId: "attendance-tracker-2fe63",
+  storageBucket: "attendance-tracker-2fe63.firebasestorage.app",
+  messagingSenderId: "266695080777",
+  appId: "1:266695080777:web:a84408e4b87b9e37f77898"
+};
+
+if (!firebase.apps.length) {
+  firebase.initializeApp(firebaseConfig);
+}
+const auth = firebase.auth();
+const db = firebase.firestore();
+
+let currentUser = null;
+let userRole = 'student'; // 'student', 'pro', or 'admin'
+
+const DB_KEY = 'attendance_tracker_v41'; 
 const HISTORY_KEY = 'attendance_history_v41';
 const CALENDAR_KEY = 'academic_calendar_v41';
 const MARKED_DATES_KEY = 'marked_dates_v41';
 const MANUAL_SHOWN_KEY = 'appManualShown_v41';
+const CUSTOM_DEFAULT_SCHEDULE_KEY = 'custom_default_timetable_v41';
+const PRO_STATUS_KEY = 'attendance_app_is_pro_v1';
+const VALID_ACCESS_KEYS = ['NMIT2026', 'CAMPUSPRO', 'ADMINFREE'];
+
+// Navigation & Clock State
+let currentTab = 'courses'; // Courses / Attendance % opens first
+let isEditingTimetable = false;
+let inlineEditSchedule = [];
+
+let clockTargetIndex = null;
+let clockTargetField = null;
+let clockCurrentHour = 9;
+let clockCurrentMinute = 0;
+let clockCurrentAmPm = 'AM';
+let clockCurrentView = 'hours'; // 'hours' or 'minutes'
 
 let targetPercentage = parseInt(localStorage.getItem('target_percentage'), 10) || 75;
 let historyLog = JSON.parse(localStorage.getItem(HISTORY_KEY)) || [];
 let academicCalendar = JSON.parse(localStorage.getItem(CALENDAR_KEY)) || null;
 let markedDates = JSON.parse(localStorage.getItem(MARKED_DATES_KEY)) || [];
-let hasAutoScrolledToday = false; 
 
 function getTodayString() {
   const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -17,16 +52,6 @@ function getTodayString() {
 
 let currentSelectedDay = getTodayString();
 let currentCalDate = new Date(); 
-
-let activeBuilderDay = 'Monday';
-let customScheduleMap = { Monday:[], Tuesday:[], Wednesday:[], Thursday:[], Friday:[], Saturday:[] };
-let customSubjectNames = {};
-
-function initBuilder() {
-    activeBuilderDay = 'Monday';
-    customScheduleMap = { Monday:[], Tuesday:[], Wednesday:[], Thursday:[], Friday:[], Saturday:[] };
-    customSubjectNames = {};
-}
 
 if(localStorage.getItem('darkMode') === 'true') document.body.classList.add('dark-mode');
 
@@ -56,16 +81,25 @@ const masterScheduleMap = {
   '25HSS102': { name: 'UHV AND INDIAN CONSTITUTION', schedule: { Friday: [{ start: '13:30', end: '14:25' }, { start: '14:25', end: '15:20' }, { start: '15:20', end: '16:15' }] } }
 };
 
+function getActiveDefaultSchedule() {
+  const custom = localStorage.getItem(CUSTOM_DEFAULT_SCHEDULE_KEY);
+  if (custom) {
+    try { return JSON.parse(custom); } catch(e){}
+  }
+  return masterScheduleMap;
+}
+
 function buildInitialDatabase() {
+  const activeMap = getActiveDefaultSchedule();
   const initialCourses = [];
-  Object.keys(masterScheduleMap).forEach((code, index) => {
+  Object.keys(activeMap).forEach((code, index) => {
     initialCourses.push({ 
       id: Date.now() + index, 
-      name: masterScheduleMap[code].name, 
+      name: activeMap[code].name, 
       code: code, 
       present: 0, 
       absent: 0, 
-      schedule: masterScheduleMap[code].schedule 
+      schedule: JSON.parse(JSON.stringify(activeMap[code].schedule || {})) 
     });
   });
   return initialCourses;
@@ -81,10 +115,27 @@ function loadFromDatabase() {
 
 let courses = loadFromDatabase();
 
+// ==========================================
+// 2. CLOUD FIRESTORE & OFFLINE PERSISTENCE
+// ==========================================
 function saveToDatabase() {
+  // Local storage cache
   localStorage.setItem(DB_KEY, JSON.stringify(courses));
   localStorage.setItem(HISTORY_KEY, JSON.stringify(historyLog));
   localStorage.setItem(MARKED_DATES_KEY, JSON.stringify(markedDates));
+
+  // Cloud Firestore sync
+  if (currentUser) {
+    db.collection('users').doc(currentUser.uid).set({
+      email: currentUser.email,
+      courses: courses,
+      historyLog: historyLog,
+      markedDates: markedDates,
+      academicCalendar: academicCalendar,
+      targetPercentage: targetPercentage,
+      lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true }).catch(err => console.error("Cloud save failed:", err));
+  }
 }
 
 function addHistory(action) {
@@ -95,13 +146,397 @@ function addHistory(action) {
   saveToDatabase();
 }
 
+auth.onAuthStateChanged(async (user) => {
+  const authMenuItem = document.getElementById('authMenuItem');
+  
+  if (user) {
+    currentUser = user;
+    if (authMenuItem) authMenuItem.innerHTML = `👤 ${user.displayName || user.email.split('@')[0]}`;
+    await loadUserDataFromFirestore(user.uid);
+  } else {
+    currentUser = null;
+    userRole = 'student';
+    if (authMenuItem) authMenuItem.innerHTML = `🔑 Sign In / Account`;
+  }
+  checkLaunchPaywall();
+  renderUI();
+});
+
+async function loadUserDataFromFirestore(uid) {
+  try {
+    const userDocRef = db.collection('users').doc(uid);
+    const doc = await userDocRef.get();
+
+    if (doc.exists) {
+      const data = doc.data();
+      userRole = data.role || (data.isPro ? 'pro' : 'student');
+      if (data.isPro) localStorage.setItem(PRO_STATUS_KEY, 'true');
+      if (data.courses) courses = data.courses;
+      if (data.historyLog) historyLog = data.historyLog;
+      if (data.markedDates) markedDates = data.markedDates;
+      if (data.academicCalendar) academicCalendar = data.academicCalendar;
+      if (data.targetPercentage) targetPercentage = data.targetPercentage;
+      
+      localStorage.setItem(DB_KEY, JSON.stringify(courses));
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(historyLog));
+      localStorage.setItem(MARKED_DATES_KEY, JSON.stringify(markedDates));
+      if (academicCalendar) localStorage.setItem(CALENDAR_KEY, JSON.stringify(academicCalendar));
+      localStorage.setItem('target_percentage', targetPercentage);
+    } else {
+      await userDocRef.set({
+        email: currentUser.email,
+        displayName: currentUser.displayName || '',
+        role: 'student',
+        isPro: localStorage.getItem(PRO_STATUS_KEY) === 'true',
+        courses: courses,
+        historyLog: historyLog,
+        markedDates: markedDates,
+        academicCalendar: academicCalendar,
+        targetPercentage: targetPercentage,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    }
+  } catch (err) {
+    console.error("Firestore sync error:", err);
+  }
+}
+
+// ==========================================
+// 3. HARD PAYWALL ON LAUNCH LOGIC
+// ==========================================
+function isUserUnlocked() {
+  if (localStorage.getItem(PRO_STATUS_KEY) === 'true') return true;
+  if (currentUser && (userRole === 'admin' || userRole === 'pro')) return true;
+  return false;
+}
+
+function checkLaunchPaywall() {
+  const paywallEl = document.getElementById('paywallOverlay');
+  if (!paywallEl) return;
+
+  if (isUserUnlocked()) {
+    paywallEl.style.display = 'none';
+    document.body.classList.remove('scroll-locked');
+  } else {
+    paywallEl.style.display = 'flex';
+    document.body.classList.add('scroll-locked');
+  }
+}
+
+function unlockApp() {
+  localStorage.setItem(PRO_STATUS_KEY, 'true');
+  
+  if (currentUser) {
+    db.collection('users').doc(currentUser.uid).set({
+      isPro: true,
+      role: userRole === 'admin' ? 'admin' : 'pro',
+      unlockedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true }).catch(err => console.error("Cloud pro update failed:", err));
+  }
+
+  const paywallEl = document.getElementById('paywallOverlay');
+  if (paywallEl) paywallEl.style.display = 'none';
+  document.body.classList.remove('scroll-locked');
+  alert("🎉 Access Unlocked! Welcome to Attendance Tracker.");
+  renderUI();
+}
+
+function redeemActivationKey() {
+  const input = document.getElementById('activationKeyInput');
+  const errorEl = document.getElementById('paywallError');
+  const code = (input.value || '').trim().toUpperCase();
+
+  if (VALID_ACCESS_KEYS.includes(code)) {
+    errorEl.innerText = '';
+    unlockApp();
+  } else {
+    errorEl.innerText = 'Invalid access code. Please try again or pay above.';
+  }
+}
+
+function initiatePayment() {
+  if (confirm("Proceed to complete UPI/Card payment of ₹49 for Semester Pro Access?")) {
+    unlockApp();
+  }
+}
+
+// ==========================================
+// 4. INTERACTIVE CLOCK PICKER LOGIC
+// ==========================================
+function openClockPicker(index, field) {
+  clockTargetIndex = index;
+  clockTargetField = field;
+  
+  const currentVal = inlineEditSchedule[index][field] || '09:00';
+  const [h24, m24] = currentVal.split(':').map(Number);
+  
+  clockCurrentAmPm = h24 >= 12 ? 'PM' : 'AM';
+  clockCurrentHour = h24 % 12 || 12;
+  clockCurrentMinute = Math.round(m24 / 5) * 5 % 60;
+  clockCurrentView = 'hours';
+
+  document.getElementById('clockPickerTitle').innerText = field === 'start' ? 'Set Start Time' : 'Set End Time';
+  document.getElementById('clockModalOverlay').classList.add('active');
+  document.body.classList.add('scroll-locked');
+
+  updateClockDisplay();
+  renderClockDial();
+}
+
+function closeClockPicker() {
+  document.getElementById('clockModalOverlay').classList.remove('active');
+  document.body.classList.remove('scroll-locked');
+}
+
+function setClockAmPm(ampm) {
+  clockCurrentAmPm = ampm;
+  document.getElementById('clockAmBtn').classList.toggle('active', ampm === 'AM');
+  document.getElementById('clockPmBtn').classList.toggle('active', ampm === 'PM');
+}
+
+function setClockView(view) {
+  clockCurrentView = view;
+  document.getElementById('clockHourDisplay').classList.toggle('active-part', view === 'hours');
+  document.getElementById('clockMinuteDisplay').classList.toggle('active-part', view === 'minutes');
+  renderClockDial();
+}
+
+function updateClockDisplay() {
+  document.getElementById('clockHourDisplay').innerText = String(clockCurrentHour).padStart(2, '0');
+  document.getElementById('clockMinuteDisplay').innerText = String(clockCurrentMinute).padStart(2, '0');
+  document.getElementById('clockAmBtn').classList.toggle('active', clockCurrentAmPm === 'AM');
+  document.getElementById('clockPmBtn').classList.toggle('active', clockCurrentAmPm === 'PM');
+}
+
+function renderClockDial() {
+  const container = document.getElementById('clockNumbers');
+  container.innerHTML = '';
+  const radius = 80;
+  const cx = 110, cy = 110;
+  const hand = document.getElementById('clockHand');
+
+  if (clockCurrentView === 'hours') {
+    const hours = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+    hours.forEach(h => {
+      const angle = (h * 30 - 90) * (Math.PI / 180);
+      const x = cx + radius * Math.cos(angle) - 15;
+      const y = cy + radius * Math.sin(angle) - 15;
+
+      const el = document.createElement('div');
+      el.className = `clock-number-item ${clockCurrentHour === h ? 'selected' : ''}`;
+      el.style.left = `${x}px`;
+      el.style.top = `${y}px`;
+      el.innerText = h;
+      el.onclick = () => {
+        clockCurrentHour = h;
+        updateClockDisplay();
+        renderClockDial();
+        setTimeout(() => setClockView('minutes'), 180);
+      };
+      container.appendChild(el);
+    });
+    hand.style.transform = `rotate(${clockCurrentHour * 30}deg)`;
+  } else {
+    const minutes = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
+    minutes.forEach(m => {
+      const angle = (m * 6 - 90) * (Math.PI / 180);
+      const x = cx + radius * Math.cos(angle) - 15;
+      const y = cy + radius * Math.sin(angle) - 15;
+
+      const el = document.createElement('div');
+      el.className = `clock-number-item ${clockCurrentMinute === m ? 'selected' : ''}`;
+      el.style.left = `${x}px`;
+      el.style.top = `${y}px`;
+      el.innerText = String(m).padStart(2, '0');
+      el.onclick = () => {
+        clockCurrentMinute = m;
+        updateClockDisplay();
+        renderClockDial();
+      };
+      container.appendChild(el);
+    });
+    hand.style.transform = `rotate(${clockCurrentMinute * 6}deg)`;
+  }
+}
+
+function confirmClockTime() {
+  let h = clockCurrentHour % 12;
+  if (clockCurrentAmPm === 'PM') h += 12;
+  const time24 = `${String(h).padStart(2, '0')}:${String(clockCurrentMinute).padStart(2, '0')}`;
+  
+  if (clockTargetIndex !== null && clockTargetField) {
+    inlineEditSchedule[clockTargetIndex][clockTargetField] = time24;
+  }
+  
+  closeClockPicker();
+  renderUI();
+}
+
+// ==========================================
+// 5. TIMETABLE EDITING & VIRTUAL POPUPS
+// ==========================================
+function showVirtualPopup({ icon = '📋', title, message, confirmText = '✓ Save', cancelText = '✖ No', onConfirm, onCancel }) {
+  const modalOverlay = document.getElementById('modalOverlay');
+  const modalContent = document.getElementById('modalContent');
+  modalOverlay.classList.add('active');
+  document.body.classList.add('scroll-locked');
+  
+  modalContent.innerHTML = `
+    <div class="vpopup-container">
+      <div class="vpopup-icon">${icon}</div>
+      <h3 class="vpopup-title">${title}</h3>
+      <p class="vpopup-msg">${message}</p>
+      <div class="vpopup-actions">
+        ${cancelText ? `<button id="vpopupCancel" class="vpopup-btn vpopup-btn-cancel">${cancelText}</button>` : ''}
+        <button id="vpopupConfirm" class="vpopup-btn vpopup-btn-confirm">${confirmText}</button>
+      </div>
+    </div>
+  `;
+  
+  if (cancelText) {
+    document.getElementById('vpopupCancel').onclick = () => {
+      document.getElementById('modalOverlay').classList.remove('active');
+      document.body.classList.remove('scroll-locked');
+      if (onCancel) onCancel();
+    };
+  }
+  document.getElementById('vpopupConfirm').onclick = () => {
+    document.getElementById('modalOverlay').classList.remove('active');
+    document.body.classList.remove('scroll-locked');
+    if (onConfirm) onConfirm();
+  };
+}
+
+function toggleTimetableEdit() {
+  if (isEditingTimetable) {
+    for (let p of inlineEditSchedule) {
+      if(!p.start || !p.end || !p.name.trim()) {
+        return alert("Please fill all time and course name fields completely before saving.");
+      }
+      if(p.start >= p.end) {
+        return alert("Start time must be before end time for " + (p.name || 'period') + ".");
+      }
+    }
+
+    // Virtual Pop-up 1: Confirm Saving Changes
+    showVirtualPopup({
+      icon: '💾',
+      title: 'Save Timetable Changes?',
+      message: `Do you want to save the updated schedule for <b>${currentSelectedDay}</b>?`,
+      confirmText: '✓ Save',
+      cancelText: '✖ No',
+      onConfirm: () => {
+        // Virtual Pop-up 2: Confirm Updating Default Timetable
+        setTimeout(() => {
+          showVirtualPopup({
+            icon: '⚙️',
+            title: 'Update Default Timetable?',
+            message: `Do you also want to save this as the <b>default timetable</b>? (This updated schedule will be restored if you click "Reset Default Timetable").`,
+            confirmText: '✓ Save',
+            cancelText: '✖ No',
+            onConfirm: () => saveInlineTimetable(true),
+            onCancel: () => saveInlineTimetable(false)
+          });
+        }, 200);
+      }
+    });
+
+  } else {
+    isEditingTimetable = true;
+    inlineEditSchedule = [];
+    courses.forEach(c => {
+        if(c.schedule && c.schedule[currentSelectedDay]) {
+            c.schedule[currentSelectedDay].forEach(slot => {
+                inlineEditSchedule.push({ start: slot.start, end: slot.end, code: c.code, name: c.name, id: c.id });
+            });
+        }
+    });
+    inlineEditSchedule.sort((a,b) => a.start.localeCompare(b.start));
+    renderUI();
+  }
+}
+
+function addInlinePeriod() {
+  inlineEditSchedule.push({ start: '09:00', end: '09:55', code: 'CUSTOM', name: '' });
+  renderUI();
+}
+
+function updateInlinePeriod(index, field, value) {
+  inlineEditSchedule[index][field] = value;
+}
+
+function removeInlinePeriod(index) {
+  inlineEditSchedule.splice(index, 1);
+  renderUI();
+}
+
+function saveInlineTimetable(setAsDefault) {
+  courses.forEach(c => {
+      if (c.schedule && c.schedule[currentSelectedDay]) {
+          delete c.schedule[currentSelectedDay];
+      }
+  });
+  
+  inlineEditSchedule.forEach(p => {
+      let course = courses.find(c => c.name.trim().toUpperCase() === p.name.trim().toUpperCase());
+      if (!course) {
+          course = { id: Date.now() + Math.random(), name: p.name.trim(), code: p.code || 'CUSTOM', present: 0, absent: 0, schedule: {} };
+          courses.push(course);
+      }
+      if (!course.schedule) course.schedule = {};
+      if (!course.schedule[currentSelectedDay]) course.schedule[currentSelectedDay] = [];
+      course.schedule[currentSelectedDay].push({ start: p.start, end: p.end });
+  });
+
+  if (setAsDefault) {
+    let currentMap = {};
+    courses.forEach(c => {
+      currentMap[c.code || c.name] = {
+        name: c.name,
+        schedule: JSON.parse(JSON.stringify(c.schedule || {}))
+      };
+    });
+    localStorage.setItem(CUSTOM_DEFAULT_SCHEDULE_KEY, JSON.stringify(currentMap));
+  }
+  
+  addHistory(`Updated timetable for ${currentSelectedDay}${setAsDefault ? ' (Set as default)' : ''}`);
+  saveToDatabase();
+  isEditingTimetable = false;
+  renderUI();
+}
+
+// Reset Default Timetable
+function resetToDefaultTimetable() {
+  showVirtualPopup({
+    icon: '⚠️',
+    title: 'Reset Default Timetable?',
+    message: 'Are you sure you want to completely clear your attendance logs and restore the default timetable schedule?',
+    confirmText: '✓ Save',
+    cancelText: '✖ No',
+    onConfirm: () => {
+      courses = buildInitialDatabase();
+      markedDates = [];
+      historyLog = [];
+      localStorage.removeItem('daily_marks_v41'); 
+      addHistory("Reset to default timetable.");
+      saveToDatabase();
+      renderUI();
+      document.getElementById('sidebar').classList.remove('open');
+      document.getElementById('menuOverlay').classList.remove('active');
+      document.body.classList.remove('scroll-locked');
+    }
+  });
+}
+
+// ==========================================
+// 6. ATTENDANCE MATH & LIVE LOGGING
+// ==========================================
 function format12Hour(time24) {
   if (!time24 || time24 === '--:--') return '--:--';
   let [hours, minutes] = time24.split(':');
   hours = parseInt(hours, 10);
   const ampm = hours >= 12 ? 'PM' : 'AM';
-  hours = hours % 12;
-  hours = hours ? hours : 12; 
+  hours = hours % 12 || 12;
   return `${hours}:${minutes} ${ampm}`;
 }
 
@@ -118,13 +553,16 @@ function startLiveClock() {
 }
 
 function isTodayHoliday() { 
-  return localStorage.getItem('holiday_' + getTodayDateString()) === 'true'; 
+  const todayStr = getTodayDateString();
+  const manualHoliday = localStorage.getItem('holiday_' + todayStr) === 'true';
+  const calendarHoliday = academicCalendar && academicCalendar.holidays && academicCalendar.holidays.includes(todayStr);
+  return manualHoliday || calendarHoliday; 
 }
 
 function toggleHoliday() {
   if (getTodayString() === 'Sunday') return; 
   const todayStr = getTodayDateString();
-  if (isTodayHoliday()) localStorage.removeItem('holiday_' + todayStr);
+  if (localStorage.getItem('holiday_' + todayStr) === 'true') localStorage.removeItem('holiday_' + todayStr);
   else localStorage.setItem('holiday_' + todayStr, 'true');
   updateHolidayButton(); 
   renderUI(); 
@@ -133,12 +571,13 @@ function toggleHoliday() {
 function updateHolidayButton() {
   const btn = document.getElementById('holidayBtn');
   if (!btn) return;
+  const todayStr = getTodayDateString();
   
   if (getTodayString() === 'Sunday') {
     btn.classList.add('active');
     btn.innerText = 'SUNDAY - HOLIDAY';
     btn.style.pointerEvents = 'none'; 
-  } else if (isTodayHoliday()) { 
+  } else if (localStorage.getItem('holiday_' + todayStr) === 'true' || (academicCalendar && academicCalendar.holidays && academicCalendar.holidays.includes(todayStr))) { 
     btn.classList.add('active'); 
     btn.innerText = 'HOLIDAY ACTIVE'; 
     btn.style.pointerEvents = 'auto';
@@ -152,7 +591,6 @@ function updateHolidayButton() {
 function getCalculatedAttendance() {
   let calc = {};
   courses.forEach(c => calc[c.id] = { p: 0, a: 0 });
-
   let dailyMarks = JSON.parse(localStorage.getItem('daily_marks_v41')) || {};
 
   if (academicCalendar && academicCalendar.startDate) {
@@ -213,6 +651,294 @@ function getCalculatedAttendance() {
   return calc;
 }
 
+function getBunkStatus(present, absent) {
+  present = Math.max(0, parseInt(present, 10) || 0);
+  absent = Math.max(0, parseInt(absent, 10) || 0);
+  const total = present + absent;
+  if (total === 0) return `<span class="bunk-meter" style="color:var(--text-sub);">No classes yet</span>`;
+
+  const target = targetPercentage / 100;
+  const currentPercent = (present / total) * 100;
+
+  if (currentPercent >= targetPercentage) {
+    const buffer = Math.floor(((present / target) - total) + 0.0001);
+    return buffer > 0 
+      ? `<span class="bunk-meter bunk-safe">Safe to bunk ${buffer} class${buffer > 1 ? 'es' : ''}</span>`
+      : `<span class="bunk-meter bunk-safe">On track (0 buffer)</span>`;
+  } else {
+    if (target >= 1) return `<span class="bunk-meter bunk-danger">Cannot reach 100%</span>`;
+    const required = Math.ceil((((target * total) - present) / (1 - target)) - 0.0001);
+    return `<span class="bunk-meter bunk-danger">Attend next ${required} class${required > 1 ? 'es' : ''}</span>`;
+  }
+}
+
+// Inline Timetable Class Attendance Toggle
+function toggleSlotAttendance(courseId, slotStart, clickedStatus) {
+  const todayStr = getTodayDateString();
+  const slotKey = `${todayStr}_${courseId}_${slotStart}`;
+  let dailyMarks = JSON.parse(localStorage.getItem('daily_marks_v41')) || {};
+  const currentStatus = dailyMarks[slotKey];
+  const course = courses.find(c => c.id === courseId);
+  
+  if (currentStatus === 'present') course.present--;
+  if (currentStatus === 'absent') course.absent--;
+  
+  if (currentStatus === clickedStatus) {
+      delete dailyMarks[slotKey];
+  } else {
+      if (clickedStatus === 'present') course.present++;
+      if (clickedStatus === 'absent') course.absent++;
+      dailyMarks[slotKey] = clickedStatus;
+  }
+  
+  localStorage.setItem('daily_marks_v41', JSON.stringify(dailyMarks));
+  saveToDatabase();
+  checkAndAutoMarkDay(); 
+  renderUI();
+}
+
+// Auto-mark day green in calendar when all classes attended
+function checkAndAutoMarkDay() {
+  const todayStr = getTodayDateString();
+  const todayName = getTodayString();
+  if (markedDates.includes(todayStr)) return; 
+
+  let dailyMarks = JSON.parse(localStorage.getItem('daily_marks_v41')) || {};
+  let allPresent = true;
+  let totalClassesToday = 0;
+
+  courses.forEach(c => {
+    if (c.schedule && c.schedule[todayName]) {
+      c.schedule[todayName].forEach(slot => {
+        totalClassesToday++;
+        const slotKey = `${todayStr}_${c.id}_${slot.start}`;
+        if (dailyMarks[slotKey] !== 'present') allPresent = false;
+      });
+    }
+  });
+
+  if (totalClassesToday > 0 && allPresent) {
+    markedDates.push(todayStr); 
+    addHistory(`All classes attended! Auto-marked calendar for ${todayStr}.`);
+    localStorage.setItem(MARKED_DATES_KEY, JSON.stringify(markedDates));
+    
+    // Clean up slot marks to avoid state duplication
+    courses.forEach(c => {
+      if (c.schedule && c.schedule[todayName]) {
+        c.schedule[todayName].forEach(slot => {
+          delete dailyMarks[`${todayStr}_${c.id}_${slot.start}`];
+        });
+      }
+    });
+    localStorage.setItem('daily_marks_v41', JSON.stringify(dailyMarks));
+  }
+}
+
+// ==========================================
+// 7. TAB ROUTING & CORE UI RENDERER
+// ==========================================
+function switchTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(`nav-${tab}`).classList.add('active');
+  if (tab === 'timetable') {
+     currentSelectedDay = getTodayString(); 
+     isEditingTimetable = false;
+  }
+  renderUI();
+}
+
+function changeDay(dayName) { 
+  currentSelectedDay = dayName; 
+  renderUI(); 
+}
+
+function renderUI() {
+  // 1. Strict Tab Isolation (No course cards inside timetable)
+  const ttSection = document.getElementById('timetableSection');
+  const courseSection = document.getElementById('courseList');
+  
+  if (currentTab === 'courses') {
+      ttSection.style.setProperty('display', 'none', 'important');
+      courseSection.style.setProperty('display', 'flex', 'important');
+  } else {
+      ttSection.style.setProperty('display', 'block', 'important');
+      courseSection.style.setProperty('display', 'none', 'important');
+  }
+
+  // 2. Day Selector Highlights
+  document.querySelectorAll('.day-selector button').forEach(btn => {
+    btn.classList.remove('active-day');
+    if (btn.innerText.startsWith(currentSelectedDay.substring(0, 3))) btn.classList.add('active-day');
+  });
+
+  // 3. Timetable List Rendering
+  const timeContainer = document.getElementById('timetableContainer');
+  const editBtn = document.getElementById('editTimetableBtn');
+  
+  if (isEditingTimetable) {
+      editBtn.innerText = '💾';
+      timeContainer.className = 'timetable-edit-mode';
+      
+      let editHtml = '';
+      inlineEditSchedule.forEach((p, idx) => {
+          editHtml += `
+          <div style="background:var(--card-bg); padding:16px; border-radius:12px; display:flex; flex-direction:column; gap:10px; border:1px solid var(--border-color); box-shadow: 0 2px 8px var(--header-shadow);">
+              <div style="display:flex; gap:10px; align-items:center;">
+                 <button type="button" class="time-picker-btn" onclick="openClockPicker(${idx}, 'start')">🕒 ${format12Hour(p.start) || 'Start'}</button>
+                 <span style="font-weight:800; color:var(--text-sub);">to</span>
+                 <button type="button" class="time-picker-btn" onclick="openClockPicker(${idx}, 'end')">🕒 ${format12Hour(p.end) || 'End'}</button>
+                 <button onclick="removeInlinePeriod(${idx})" style="background:#e74c3c; color:white; border:none; border-radius:8px; padding:12px 16px; font-weight:bold; cursor:pointer;">×</button>
+              </div>
+              <input type="text" class="modal-input" style="margin:0; padding:12px; font-size: 0.95rem; font-weight:700;" value="${p.name}" placeholder="Full Course Name" onchange="updateInlinePeriod(${idx}, 'name', this.value)">
+          </div>`;
+      });
+      editHtml += `<button onclick="addInlinePeriod()" style="padding:15px; background:var(--bg-color); color:#3498db; border:2px dashed #3498db; border-radius:12px; cursor:pointer; font-weight:800; font-size:1rem;">+ Add Class to ${currentSelectedDay}</button>`;
+      timeContainer.innerHTML = editHtml;
+
+  } else {
+      editBtn.innerText = '✏️';
+      timeContainer.className = 'timetable-list';
+
+      const isToday = getTodayString() === currentSelectedDay;
+      const isSunday = currentSelectedDay === 'Sunday';
+      const isDeclaredHoliday = isToday && isTodayHoliday();
+      
+      const now = new Date(); 
+      const currentTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+
+      if (isSunday || isDeclaredHoliday) {
+        const holidayMsg = isSunday ? 'SUNDAY IS A HOLIDAY' : 'TODAY IS A HOLIDAY';
+        timeContainer.innerHTML = `<div class="holiday-banner"><p style="color:#e74c3c; font-size:1.15rem; font-weight:800;">🏖️ ${holidayMsg}</p></div>`;
+      } else {
+        let todaysClasses = [];
+        courses.forEach(c => { 
+          if (c.schedule && c.schedule[currentSelectedDay]) {
+            c.schedule[currentSelectedDay].forEach(slot => { 
+              todaysClasses.push({ name: c.name, start: slot.start, end: slot.end, id: c.id }); 
+            });
+          }
+        });
+        
+        if (todaysClasses.length === 0) {
+          timeContainer.innerHTML = `<p style="color:var(--text-sub); text-align:center; padding:25px;">No classes scheduled for ${currentSelectedDay}.</p>`;
+        } else {
+          todaysClasses.sort((a, b) => a.start.localeCompare(b.start));
+          let html = '';
+
+          todaysClasses.forEach(cls => {
+            let status = '';
+            let indicator = '';
+            let inlineActions = '';
+
+            if (isToday) { 
+              if (currentTime >= cls.start && currentTime <= cls.end) {
+                status = 'active'; 
+                indicator = '<span class="live-dot-small"></span>';
+              } else if (currentTime > cls.end) {
+                status = 'past'; 
+              } else {
+                status = 'upcoming';
+              }
+              
+              let slotKey = `${getTodayDateString()}_${cls.id}_${cls.start}`;
+              let dailyMarks = JSON.parse(localStorage.getItem('daily_marks_v41')) || {};
+              let mark = dailyMarks[slotKey];
+              let presActive = mark === 'present' ? 'selected' : '';
+              let absActive = mark === 'absent' ? 'selected' : '';
+              
+              inlineActions = `
+              <div class="timeline-actions">
+                 <button class="btn-card-action ${presActive}" style="background:#2ecc71" onclick="toggleSlotAttendance(${cls.id}, '${cls.start}', 'present')">PRESENT</button>
+                 <button class="btn-card-action ${absActive}" style="background:#e74c3c" onclick="toggleSlotAttendance(${cls.id}, '${cls.start}', 'absent')">ABSENT</button>
+              </div>`;
+            }
+
+            html += `
+              <div class="timeline-card ${status}">
+                <div>
+                  <div class="timeline-time">${indicator}${format12Hour(cls.start)} - ${format12Hour(cls.end)}</div>
+                  <div class="timeline-course">${cls.name}</div>
+                </div>
+                ${inlineActions}
+              </div>`;
+          });
+          timeContainer.innerHTML = html;
+        }
+      }
+  }
+
+  // 4. Course Cards Vertical List Rendering (Attendance % View)
+  const listContainer = document.getElementById('courseList');
+  listContainer.innerHTML = '';
+  if (courses.length === 0) { 
+    listContainer.innerHTML = `<p style="color:var(--text-sub); text-align:center; padding: 40px 0;">No Courses Found. Add courses from the sidebar menu.</p>`; 
+    return; 
+  }
+
+  const holidayMode = isTodayHoliday() || getTodayString() === 'Sunday';
+  const baseStats = getCalculatedAttendance();
+
+  courses.forEach(course => {
+    const totalPresent = Math.max(0, (baseStats[course.id]?.p || 0) + (course.present || 0));
+    const totalAbsent = Math.max(0, (baseStats[course.id]?.a || 0) + (course.absent || 0));
+    const total = totalPresent + totalAbsent;
+    
+    const percentage = total === 0 ? 0 : Math.round((totalPresent / total) * 100);
+    const dashOffset = (2 * Math.PI * 34) - ((percentage / 100) * (2 * Math.PI * 34));
+    let actionHTML = holidayMode 
+      ? `<div class="action-bar" id="action-${course.id}"><span style="font-weight: 800; color: #e74c3c;">HOLIDAY</span></div>` 
+      : `<div class="action-bar" id="action-${course.id}"><button class="btn-present" onclick="markAttendance(${course.id}, 'present')">PRESENT</button><button class="btn-absent" onclick="markAttendance(${course.id}, 'absent')">ABSENT</button></div>`;
+
+    listContainer.innerHTML += `
+      <div class="course-card-wrapper">
+        <div class="course-card" onclick="toggleActionBar(${course.id})">
+          <div class="progress-circle">
+            <svg width="80" height="80">
+              <circle cx="40" cy="40" r="34" stroke="#e74c3c" stroke-width="7" fill="transparent" />
+              <circle cx="40" cy="40" r="34" stroke="#2ecc71" stroke-width="7" fill="transparent" stroke-dasharray="213.6" stroke-dashoffset="${dashOffset}" stroke-linecap="round" style="transition: stroke-dashoffset 0.8s ease-in-out;" />
+            </svg>
+            <div class="percentage-text" style="color:var(--text-main); font-size:1.15rem;">${percentage}%</div>
+          </div>
+          <div class="course-info">
+            <h2>${course.name}</h2>
+            <p>Total Classes: ${total}</p>
+            ${getBunkStatus(totalPresent, totalAbsent)}
+          </div>
+        </div>
+        ${actionHTML}
+      </div>`;
+  });
+}
+
+function markAttendance(id, status) {
+  const course = courses.find(c => c.id === id);
+  if (!course) return;
+  if (status === 'present') course.present = (course.present || 0) + 1;
+  if (status === 'absent') course.absent = (course.absent || 0) + 1;
+  addHistory(`Manual ${status.toUpperCase()}: ${course.name}`);
+  toggleActionBar(id); 
+  saveToDatabase(); 
+  renderUI();    
+}
+
+function toggleActionBar(id) {
+  const bar = document.getElementById(`action-${id}`);
+  document.querySelectorAll('.action-bar').forEach(el => { 
+    if (el.id !== `action-${id}`) el.classList.remove('slide-in'); 
+  });
+  bar.classList.toggle('slide-in');
+}
+
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.course-card-wrapper')) {
+    document.querySelectorAll('.action-bar').forEach(bar => bar.classList.remove('slide-in'));
+  }
+});
+
+// ==========================================
+// 8. CALENDAR SETUP & MODALS
+// ==========================================
 let setupBlobUrl = null;
 let setupTempData = {};
 let setupStartDate = null;
@@ -232,118 +958,13 @@ function startCalendarSetup() {
 
   const file = fileInput.files[0];
   setupBlobUrl = URL.createObjectURL(file);
-  
   const previewWrapper = document.getElementById('previewWrapper');
   const isImage = file.type.match(/image/i) || file.name.match(/\.(jpg|jpeg|png|gif|webp|heic)$/i);
   
-  if (!isImage && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
-      alert("Note: PDFs may not scroll correctly on mobile devices. If you experience issues, please upload a screenshot image instead.");
-  }
-  
-  previewWrapper.ontouchstart = null;
-  previewWrapper.ontouchmove = null;
-  previewWrapper.ontouchend = null;
-  previewWrapper.onmousedown = null;
-  previewWrapper.onmousemove = null;
-  previewWrapper.onmouseup = null;
-  previewWrapper.onmouseleave = null;
-
   if (isImage) {
-    previewWrapper.innerHTML = `
-      <img id="setupImagePreview" src="${setupBlobUrl}" style="position:absolute; top:0; left:0; width:100%; height:100%; object-fit:contain; display:block; transform-origin:center; will-change: transform;" alt="Calendar Preview" />
-      
-      <!-- Zoom Controls -->
-      <div style="position: absolute; bottom: 20px; right: 20px; display: flex; gap: 12px; z-index: 20;">
-        <button id="zoomOutBtn" style="width: 45px; height: 45px; border-radius: 50%; background: rgba(0,0,0,0.7); color: white; border: 2px solid rgba(255,255,255,0.2); font-size: 1.8rem; font-weight: bold; cursor: pointer; display: flex; justify-content: center; align-items: center; box-shadow: 0 4px 10px rgba(0,0,0,0.3); backdrop-filter: blur(4px); padding-bottom: 4px;">-</button>
-        <button id="zoomInBtn" style="width: 45px; height: 45px; border-radius: 50%; background: rgba(0,0,0,0.7); color: white; border: 2px solid rgba(255,255,255,0.2); font-size: 1.5rem; font-weight: bold; cursor: pointer; display: flex; justify-content: center; align-items: center; box-shadow: 0 4px 10px rgba(0,0,0,0.3); backdrop-filter: blur(4px);">+</button>
-      </div>
-    `;
-    
-    const img = document.getElementById('setupImagePreview');
-    let scale = 1, posX = 0, posY = 0;
-    let startX, startY, initialDist;
-    let isDraggingMouse = false;
-
-    const applyTransform = (smooth = false) => {
-      img.style.transition = smooth ? 'transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1)' : 'none';
-      img.style.transform = `translate(${posX}px, ${posY}px) scale(${scale})`;
-      if (smooth) setTimeout(() => img.style.transition = 'none', 250);
-      previewWrapper.style.cursor = scale > 1 ? 'grab' : 'default';
-    };
-
-    document.getElementById('zoomInBtn').onclick = (e) => {
-      e.stopPropagation();
-      scale = Math.min(scale + 0.5, 6);
-      applyTransform(true);
-    };
-
-    document.getElementById('zoomOutBtn').onclick = (e) => {
-      e.stopPropagation();
-      scale = Math.max(scale - 0.5, 1);
-      if (scale === 1) { posX = 0; posY = 0; } 
-      applyTransform(true);
-    };
-
-    previewWrapper.ontouchstart = (e) => {
-      if (e.touches.length === 2) {
-        initialDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-      } else if (e.touches.length === 1 && scale > 1) {
-        startX = e.touches[0].clientX - posX;
-        startY = e.touches[0].clientY - posY;
-      }
-    };
-
-    previewWrapper.ontouchmove = (e) => {
-      if (e.touches.length === 2 || (e.touches.length === 1 && scale > 1)) {
-        e.stopPropagation();
-        e.preventDefault(); 
-      }
-      if (e.touches.length === 2) {
-        const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-        scale = Math.min(Math.max(1, scale * (dist / initialDist)), 6); 
-        initialDist = dist;
-      } else if (e.touches.length === 1 && scale > 1) {
-        posX = e.touches[0].clientX - startX;
-        posY = e.touches[0].clientY - startY;
-      }
-      applyTransform(false);
-    };
-
-    previewWrapper.ontouchend = () => {
-      if (scale <= 1) {
-        scale = 1; posX = 0; posY = 0;
-        applyTransform(true);
-      }
-    };
-
-    previewWrapper.onmousedown = (e) => {
-      if (scale > 1 && e.target !== document.getElementById('zoomInBtn') && e.target !== document.getElementById('zoomOutBtn')) {
-        isDraggingMouse = true;
-        startX = e.clientX - posX;
-        startY = e.clientY - posY;
-        previewWrapper.style.cursor = 'grabbing';
-      }
-    };
-
-    previewWrapper.onmousemove = (e) => {
-      if (!isDraggingMouse || scale <= 1) return;
-      e.preventDefault();
-      posX = e.clientX - startX;
-      posY = e.clientY - startY;
-      applyTransform(false);
-    };
-
-    previewWrapper.onmouseup = previewWrapper.onmouseleave = () => {
-      isDraggingMouse = false;
-      previewWrapper.style.cursor = scale > 1 ? 'grab' : 'default';
-      if (scale <= 1) {
-        scale = 1; posX = 0; posY = 0;
-        applyTransform(true);
-      }
-    };
-
+    previewWrapper.innerHTML = `<img id="setupImagePreview" src="${setupBlobUrl}" style="position:absolute; top:0; left:0; width:100%; height:100%; object-fit:contain;" alt="Calendar Preview" />`;
   } else {
-    previewWrapper.innerHTML = `<iframe src="${setupBlobUrl}" style="position:absolute; top:0; left:0; width:100%; height:100%; border:none; background:white; pointer-events:auto;"></iframe>`;
+    previewWrapper.innerHTML = `<iframe src="${setupBlobUrl}" style="position:absolute; top:0; left:0; width:100%; height:100%; border:none; background:white;"></iframe>`;
   }
   
   setupTempData = {}; 
@@ -353,7 +974,6 @@ function startCalendarSetup() {
   }
 
   buildSetupCalendar(setupStartDate, setupEndDate);
-  
   closeModal();
   document.getElementById('splitScreenOverlay').classList.add('active');
 }
@@ -395,34 +1015,6 @@ function buildSetupCalendar(startStr, endStr) {
   container.innerHTML = html;
 }
 
-const splitOverlay = document.getElementById('splitScreenOverlay');
-let lastTouchY = 0;
-
-splitOverlay.addEventListener('touchstart', function(e) {
-    lastTouchY = e.touches[0].clientY;
-}, { passive: true });
-
-splitOverlay.addEventListener('touchmove', function(e) {
-    const scrollable = e.target.closest('#setupCalendarContainer');
-    if (!scrollable) {
-        e.preventDefault(); 
-        return;
-    }
-    const currentY = e.touches[0].clientY;
-    const deltaY = currentY - lastTouchY;
-    lastTouchY = currentY;
-
-    const isAtTop = scrollable.scrollTop <= 0;
-    const isAtBottom = Math.ceil(scrollable.scrollTop + scrollable.clientHeight) >= scrollable.scrollHeight - 1;
-
-    if (isAtTop && deltaY > 0) {
-        e.preventDefault();
-    }
-    if (isAtBottom && deltaY < 0) {
-        e.preventDefault();
-    }
-}, { passive: false });
-
 function cyclePaintMode(dateStr, element) {
   if (element.classList.contains('holiday')) {
     element.classList.remove('holiday');
@@ -454,38 +1046,10 @@ function saveSetupCalendar() {
 function closeSplitScreen() {
   document.getElementById('splitScreenOverlay').classList.remove('active');
   const previewWrapper = document.getElementById('previewWrapper');
-  if (previewWrapper) {
-      previewWrapper.innerHTML = '';
-      previewWrapper.ontouchstart = null;
-      previewWrapper.ontouchmove = null;
-      previewWrapper.ontouchend = null;
-      previewWrapper.onmousedown = null;
-      previewWrapper.onmousemove = null;
-      previewWrapper.onmouseup = null;
-      previewWrapper.onmouseleave = null;
-  }
+  if (previewWrapper) previewWrapper.innerHTML = '';
   if (setupBlobUrl) {
     URL.revokeObjectURL(setupBlobUrl);
     setupBlobUrl = null;
-  }
-}
-
-function resetToDefaultTimetable() {
-  if(confirm("Are you sure you want to completely clear your timetable and load the default schedule?")) {
-    courses = buildInitialDatabase();
-    markedDates = [];
-    historyLog = [];
-    localStorage.removeItem('handled_live_classes');
-    localStorage.removeItem('daily_marks_v41'); 
-    addHistory("Reset to default timetable.");
-    saveToDatabase();
-    renderUI();
-    
-    document.getElementById('sidebar').classList.remove('open');
-    document.getElementById('menuOverlay').classList.remove('active');
-    document.body.classList.remove('scroll-locked');
-    
-    alert("Default Timetable loaded successfully.");
   }
 }
 
@@ -502,7 +1066,6 @@ function toggleFullDayPresent(dateString) {
   if (dateString < academicCalendar.startDate) {
     alert("You cannot mark attendance for days before the term started."); return;
   }
-  
   const todayStr = getTodayDateString();
   if (dateString > todayStr) {
     alert("You cannot mark attendance for future dates."); return;
@@ -515,7 +1078,6 @@ function toggleFullDayPresent(dateString) {
   } else {
     markedDates.push(dateString);
     addHistory(`Marked Day Present: ${dateString}`);
-    
     let dailyMarks = JSON.parse(localStorage.getItem('daily_marks_v41')) || {};
     const [y, m, d] = dateString.split('-');
     const localDate = new Date(y, m-1, d);
@@ -525,8 +1087,7 @@ function toggleFullDayPresent(dateString) {
     courses.forEach(c => {
        if (c.schedule && c.schedule[dayName]) {
           c.schedule[dayName].forEach(slot => {
-             const slotKey = `${dateString}_${c.id}_${slot.start}`;
-             delete dailyMarks[slotKey]; 
+             delete dailyMarks[`${dateString}_${c.id}_${slot.start}`]; 
           });
        }
     });
@@ -540,16 +1101,9 @@ function toggleFullDayPresent(dateString) {
 
 function toggleMenu() { 
   const sidebar = document.getElementById('sidebar');
-  const isOpening = !sidebar.classList.contains('open');
-  
   sidebar.classList.toggle('open'); 
   document.getElementById('menuOverlay').classList.toggle('active'); 
-  
-  if (isOpening) {
-      document.body.classList.add('scroll-locked');
-  } else {
-      document.body.classList.remove('scroll-locked');
-  }
+  document.body.classList.toggle('scroll-locked', sidebar.classList.contains('open'));
 }
 
 function closeModal(e) { 
@@ -558,133 +1112,7 @@ function closeModal(e) {
   document.body.classList.remove('scroll-locked');
 }
 
-function switchBuilderDay(day) {
-    activeBuilderDay = day;
-    document.querySelectorAll('.builder-days button').forEach(b => b.classList.remove('active-day'));
-    const activeBtn = document.getElementById(`bDay-${day}`);
-    if(activeBtn) activeBtn.classList.add('active-day');
-    renderBuilderPeriods();
-}
-
-function addBuilderPeriod() {
-    customScheduleMap[activeBuilderDay].push({ start: '', end: '', code: '' });
-    renderBuilderPeriods();
-}
-
-function updateBuilderPeriod(index, field, value) {
-    customScheduleMap[activeBuilderDay][index][field] = value;
-    if(field === 'code') renderBuilderSubjects(); 
-}
-
-function removeBuilderPeriod(index) {
-    customScheduleMap[activeBuilderDay].splice(index, 1);
-    renderBuilderPeriods();
-    renderBuilderSubjects();
-}
-
-function renderBuilderPeriods() {
-    const container = document.getElementById('builderPeriods');
-    if(!container) return;
-    let html = '';
-    customScheduleMap[activeBuilderDay].forEach((period, idx) => {
-        html += `
-        <div style="display:flex; gap:6px; margin-bottom:10px; align-items:center;">
-            <input type="time" class="modal-input" style="flex:1; margin-bottom:0; padding:10px 4px; font-size:0.85rem;" value="${period.start}" onchange="updateBuilderPeriod(${idx}, 'start', this.value)">
-            <input type="time" class="modal-input" style="flex:1; margin-bottom:0; padding:10px 4px; font-size:0.85rem;" value="${period.end}" onchange="updateBuilderPeriod(${idx}, 'end', this.value)">
-            <input type="text" class="modal-input" style="flex:1.2; margin-bottom:0; padding:10px; font-size:0.85rem;" placeholder="Code (e.g. CSE101)" value="${period.code}" oninput="updateBuilderPeriod(${idx}, 'code', this.value.toUpperCase())">
-            <button onclick="removeBuilderPeriod(${idx})" style="flex:none; background:#e74c3c; color:white; border:none; width:32px; height:32px; border-radius:50%; font-weight:bold; cursor:pointer;">×</button>
-        </div>
-        `;
-    });
-    if(customScheduleMap[activeBuilderDay].length === 0) {
-        html = `<p style="color:var(--text-sub); font-size:0.9rem; text-align:center; margin-top:10px;">No periods added for ${activeBuilderDay}.</p>`;
-    }
-    container.innerHTML = html;
-}
-
-function renderBuilderSubjects() {
-    const container = document.getElementById('builderSubjects');
-    if(!container) return;
-
-    let uniqueCodes = new Set();
-    for(let day in customScheduleMap) {
-        customScheduleMap[day].forEach(p => {
-            if(p.code.trim()) uniqueCodes.add(p.code.trim().toUpperCase());
-        });
-    }
-
-    let html = '';
-    uniqueCodes.forEach(code => {
-        const existingName = customSubjectNames[code] || '';
-        html += `
-        <div style="display:flex; gap:10px; margin-bottom:10px; align-items:center;">
-            <span style="font-weight:800; min-width:85px; color:#3498db; font-size:0.9rem;">${code}</span>
-            <input type="text" class="modal-input" style="flex:1; margin-bottom:0; padding:10px; font-size:0.9rem;" placeholder="Full Subject Name" value="${existingName}" oninput="customSubjectNames['${code}'] = this.value">
-        </div>
-        `;
-    });
-    if(uniqueCodes.size === 0) {
-        html = `<p style="color:var(--text-sub); font-size:0.9rem; text-align:center;">Add a period above with a subject code first.</p>`;
-    }
-    container.innerHTML = html;
-}
-
-function saveBuiltTimetable() {
-    let newMasterMap = {};
-    let uniqueCodes = new Set();
-    
-    for(let day in customScheduleMap) {
-        for (let i = 0; i < customScheduleMap[day].length; i++) {
-            const p = customScheduleMap[day][i];
-            if(!p.start || !p.end || !p.code.trim()) {
-                alert(`Please completely fill out all fields for the period on ${day}.`);
-                return;
-            }
-            if(p.start >= p.end) {
-                alert(`Invalid time slot on ${day}: Start time must be before end time.`);
-                return;
-            }
-            uniqueCodes.add(p.code.trim().toUpperCase());
-        }
-    }
-
-    if (uniqueCodes.size === 0) return alert("Please add at least one period before saving.");
-
-    uniqueCodes.forEach(code => {
-        newMasterMap[code] = { name: customSubjectNames[code] || code, schedule: {} };
-    });
-
-    for(let day in customScheduleMap) {
-        customScheduleMap[day].forEach(p => {
-            const code = p.code.trim().toUpperCase();
-            if(!newMasterMap[code].schedule[day]) newMasterMap[code].schedule[day] = [];
-            newMasterMap[code].schedule[day].push({ start: p.start, end: p.end });
-        });
-    }
-
-    if(confirm("This will replace your current timetable completely. Do you want to proceed?")) {
-        const initialCourses = [];
-        Object.keys(newMasterMap).forEach((code, index) => {
-            const existing = courses.find(c => c.code === code);
-            initialCourses.push({ 
-                id: existing ? existing.id : Date.now() + index, 
-                name: newMasterMap[code].name, 
-                code: code, 
-                present: existing ? existing.present : 0, 
-                absent: existing ? existing.absent : 0, 
-                schedule: newMasterMap[code].schedule 
-            });
-        });
-
-        courses = initialCourses;
-        addHistory(`Created custom timetable via Builder`);
-        saveToDatabase();
-        renderUI();
-        closeModal();
-        alert("New Timetable Created and Applied Successfully!");
-    }
-}
-
+// Global Modal Handler
 function openModal(type) {
   document.getElementById('sidebar').classList.remove('open');
   document.getElementById('menuOverlay').classList.remove('active');
@@ -692,55 +1120,52 @@ function openModal(type) {
   const modalContent = document.getElementById('modalContent');
   modalOverlay.classList.add('active');
   document.body.classList.add('scroll-locked');
-  
   let html = `<button class="close-btn" onclick="closeModal()">×</button>`;
 
-  if (type === 'createTimetable') {
-    initBuilder();
-    html += `
-      <h2>Timetable Builder</h2>
-      <div class="day-selector builder-days" style="margin-top:15px; margin-bottom:15px; padding-bottom: 5px;">
-        <button id="bDay-Monday" onclick="switchBuilderDay('Monday')">Mon</button>
-        <button id="bDay-Tuesday" onclick="switchBuilderDay('Tuesday')">Tue</button>
-        <button id="bDay-Wednesday" onclick="switchBuilderDay('Wednesday')">Wed</button>
-        <button id="bDay-Thursday" onclick="switchBuilderDay('Thursday')">Thu</button>
-        <button id="bDay-Friday" onclick="switchBuilderDay('Friday')">Fri</button>
-        <button id="bDay-Saturday" onclick="switchBuilderDay('Saturday')">Sat</button>
-      </div>
-      
-      <div id="builderPeriods" style="margin-bottom:15px; min-height:60px;"></div>
-      <button class="btn-present" onclick="addBuilderPeriod()" style="width:100%; margin-bottom: 25px; background:var(--bg-color); color:#3498db; border:2px dashed #3498db;">+ Add Period</button>
-
-      <hr style="border:0; border-top:1px solid var(--border-color); margin-bottom:20px;" />
-
-      <h3>Define Subjects</h3>
-      <p style="font-size:0.8rem; color:var(--text-sub); margin-bottom:15px;">Unique codes from your schedule will appear below automatically.</p>
-      <div id="builderSubjects" style="margin-bottom:25px; min-height:40px;"></div>
-
-      <button class="btn-present" style="width:100%; background:#3498db; font-size:1.1rem; padding:15px;" onclick="saveBuiltTimetable()">Save & Apply Timetable</button>
-    `;
-    setTimeout(() => { switchBuilderDay('Monday'); renderBuilderSubjects(); }, 0);
-  }
-  else if (type === 'userManual') {
+  if (type === 'authModal') {
+    if (currentUser) {
+      html += `
+        <h2>Student Account</h2>
+        <div style="text-align:center; padding:15px 0;">
+          <p style="font-size:1.15rem; font-weight:800; color:var(--text-main);">${currentUser.displayName || 'Student'}</p>
+          <p style="font-size:0.85rem; color:var(--text-sub); margin-bottom:15px;">${currentUser.email}</p>
+          <div style="display:inline-block; padding:5px 12px; border-radius:20px; font-size:0.8rem; font-weight:800; background:${userRole === 'admin' ? '#e74c3c' : '#2ecc71'}; color:white; margin-bottom:20px;">
+            ${userRole === 'admin' ? '🛡️ Administrator' : '🎓 Student Pass Active'}
+          </div>
+          <p style="font-size:0.85rem; color:var(--text-sub); margin-bottom:20px;">Your attendance data is backed up to Cloud Firestore.</p>
+          <button class="vpopup-btn vpopup-btn-cancel" style="width:100%;" onclick="logoutUser()">Sign Out</button>
+        </div>
+      `;
+    } else {
+      html += `
+        <h2>Sign In / Backup</h2>
+        <p style="font-size:0.85rem; color:var(--text-sub); margin:10px 0 20px 0;">Sign in to back up your attendance across devices.</p>
+        
+        <button class="btn-present" style="width:100%; padding:14px; background:#4285F4; margin-bottom:15px; display:flex; align-items:center; justify-content:center; gap:10px;" onclick="loginWithGoogle()">
+          <span style="font-weight:900;">G</span> Continue with Google
+        </button>
+        
+        <div style="text-align:center; margin:15px 0; color:var(--text-sub); font-size:0.8rem; font-weight:700;">OR USE EMAIL</div>
+        
+        <input type="email" id="authEmail" class="modal-input" placeholder="College Email (e.g. name@nmit.ac.in)" />
+        <input type="password" id="authPassword" class="modal-input" placeholder="Password" />
+        
+        <div style="display:flex; gap:10px;">
+          <button class="btn-present" style="flex:1; padding:12px;" onclick="loginWithEmail()">Sign In</button>
+          <button class="btn-present" style="flex:1; padding:12px; background:var(--bg-color); color:var(--text-main); border:1px solid var(--border-color);" onclick="registerWithEmail(document.getElementById('authEmail').value, document.getElementById('authPassword').value)">Register</button>
+        </div>
+      `;
+    }
+  } else if (type === 'userManual') {
     html += `
       <h2>How to Use This App</h2>
-      <div style="max-height: 60vh; overflow-y: auto; padding-right: 10px; text-align: left;">
-        <div class="manual-section" style="margin-bottom:15px;">
-          <h3 style="font-size:1rem; margin-bottom:4px;">1. Getting Started</h3>
-          <p style="font-size:0.85rem; color:var(--text-sub);">Your schedule is pre-loaded! If you ever need to restore it, click "Reset Default Timetable" in the menu.</p>
-        </div>
-        <div class="manual-section" style="margin-bottom:15px;">
-          <h3 style="font-size:1rem; margin-bottom:4px;">2. Set Term & Calendar</h3>
-          <p style="font-size:0.85rem; color:var(--text-sub);"><b>CRITICAL:</b> Upload your calendar to set the <b>Term Start Date</b>. The app will automatically mark you absent for every scheduled class between the start date and today unless marked green.</p>
-        </div>
-        <div class="manual-section" style="margin-bottom:15px;">
-          <h3 style="font-size:1rem; margin-bottom:4px;">3. Live Daily Tracking</h3>
-          <p style="font-size:0.85rem; color:var(--text-sub);">When a class is happening, a glowing <b>LIVE NOW</b> card will appear. Tap Present or Absent to log it instantly!</p>
-        </div>
-        <div class="manual-section" style="margin-bottom:15px;">
-          <h3 style="font-size:1rem; margin-bottom:4px;">4. Bunk Meter</h3>
-          <p style="font-size:0.85rem; color:var(--text-sub);">Set your target percentage in the menu. Each card displays safe bunks remaining or the exact number of classes you must attend.</p>
-        </div>
+      <div style="max-height: 60vh; overflow-y: auto; text-align: left; margin-top:10px;">
+        <h3 style="font-size:1rem; margin-top:10px;">1. Navigation</h3>
+        <p style="font-size:0.85rem; color:var(--text-sub);">Use the bottom bar to switch between <b>Attendance %</b> (course cards) and the <b>Timetable</b>.</p>
+        <h3 style="font-size:1rem; margin-top:10px;">2. Mark Live Attendance</h3>
+        <p style="font-size:0.85rem; color:var(--text-sub);">Tap Present or Absent directly on today's classes in the Timetable tab.</p>
+        <h3 style="font-size:1rem; margin-top:10px;">3. Edit Timetable</h3>
+        <p style="font-size:0.85rem; color:var(--text-sub);">Tap ✏️ to customize today's schedule with the interactive clock picker, then set it as your default schedule.</p>
       </div>`;
   } else if (type === 'historyLog') {
     html += `<h2>History Log</h2><div class="history-list">`;
@@ -755,13 +1180,10 @@ function openModal(type) {
       <div style="text-align:left; margin-top:15px;">
         <label style="font-size:0.85rem; color:var(--text-sub);">Select Calendar (Image or PDF)</label>
         <input type="file" id="calFileInput" accept="image/*, application/pdf" class="modal-input" />
-        
         <label style="font-size:0.85rem; color:var(--text-sub);">Term Start Date</label>
         <input type="date" id="termStart" class="modal-input" />
-        
         <label style="font-size:0.85rem; color:var(--text-sub);">Term End Date</label>
         <input type="date" id="termEnd" class="modal-input" />
-        
         <button class="btn-present" style="width:100%; padding:12px;" onclick="startCalendarSetup()">Start Setup Mode</button>
       </div>`;
   } else if (type === 'calendarMode') {
@@ -784,23 +1206,18 @@ function openModal(type) {
         <div class="cal-weekdays"><span>Su</span><span>M</span><span>Tu</span><span>W</span><span>Th</span><span>F</span><span>Sa</span></div>
         <div class="cal-grid-month">`;
 
-      for (let i = 0; i < firstDay; i++) {
-        html += `<div class="cal-day empty"></div>`;
-      }
+      for (let i = 0; i < firstDay; i++) { html += `<div class="cal-day empty"></div>`; }
 
       for (let i = 1; i <= daysInMonth; i++) {
         const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
-        
         let statusClass = '';
         if (academicCalendar.holidays && academicCalendar.holidays.includes(dateStr)) statusClass = 'holiday';
         else if (academicCalendar.importantDates && academicCalendar.importantDates.includes(dateStr)) statusClass = 'important';
 
         const isSunday = new Date(year, month, i).getDay() === 0 ? 'sunday' : '';
         const isFuture = dateStr > todayStr ? 'future' : '';
-        const isBeforeStart = dateStr < academicCalendar.startDate ? 'future' : ''; 
         const isMarked = markedDates.includes(dateStr) ? 'present' : '';
-        
-        html += `<div class="cal-day ${statusClass} ${isSunday} ${isFuture} ${isBeforeStart} ${isMarked}" onclick="toggleFullDayPresent('${dateStr}')"><span>${i}</span></div>`;
+        html += `<div class="cal-day ${statusClass} ${isSunday} ${isFuture} ${isMarked}" onclick="toggleFullDayPresent('${dateStr}')"><span>${i}</span></div>`;
       }
       
       html += `</div>
@@ -814,7 +1231,6 @@ function openModal(type) {
     html += `
       <h2>Set Target Attendance</h2>
       <div style="text-align:left; margin-top:15px;">
-        <p style="font-size:0.85rem; color:var(--text-sub); margin-bottom:10px;">Enter the minimum attendance percentage required by your institution.</p>
         <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px;">
           <input type="number" id="targetInput" class="modal-input" style="margin-bottom: 0;" value="${targetPercentage}" min="1" max="100" />
           <span style="font-size:1.2rem; font-weight:800;">%</span>
@@ -825,58 +1241,32 @@ function openModal(type) {
     html += `
       <h2>Add Custom Course</h2>
       <div style="text-align:left; margin-top:15px;">
-        <label style="font-size:0.85rem; color:var(--text-sub);">Course Name</label>
-        <input type="text" id="newCourseName" class="modal-input" placeholder="e.g. Data Structures" />
-        <label style="font-size:0.85rem; color:var(--text-sub);">Course Code (Optional)</label>
-        <input type="text" id="newCourseCode" class="modal-input" placeholder="e.g. 25CSE201" />
-        <label style="font-size:0.85rem; color:var(--text-sub);">Day of Week</label>
+        <input type="text" id="newCourseName" class="modal-input" placeholder="Course Name" />
+        <input type="text" id="newCourseCode" class="modal-input" placeholder="Course Code (Optional)" />
         <select id="newCourseDay" class="modal-input">
           <option value="Monday">Monday</option><option value="Tuesday">Tuesday</option>
           <option value="Wednesday">Wednesday</option><option value="Thursday">Thursday</option>
           <option value="Friday">Friday</option><option value="Saturday">Saturday</option>
         </select>
         <div style="display:flex; gap:10px;">
-            <div style="flex:1;">
-                <label style="font-size:0.85rem; color:var(--text-sub);">Start Time</label>
-                <input type="time" id="newCourseStart" class="modal-input" />
-            </div>
-            <div style="flex:1;">
-                <label style="font-size:0.85rem; color:var(--text-sub);">End Time</label>
-                <input type="time" id="newCourseEnd" class="modal-input" />
-            </div>
+            <input type="time" id="newCourseStart" class="modal-input" />
+            <input type="time" id="newCourseEnd" class="modal-input" />
         </div>
         <button class="btn-present" style="width:100%; padding:12px;" onclick="handleAddCourse()">Add Course</button>
       </div>`;
   } else if (type === 'editAttendance') {
     if (courses.length === 0) {
-      html += `<h2>Edit Attendance</h2><p style="color:var(--text-sub); margin-top:15px;">No courses available to edit.</p>`;
+      html += `<h2>Edit Attendance</h2><p style="color:var(--text-sub); margin-top:15px;">No courses available.</p>`;
     } else {
       let options = courses.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
       html += `
         <h2>Edit Attendance</h2>
         <div style="margin-top:15px; text-align: left;">
-          <label style="font-size:0.85rem; color:var(--text-sub);">Select Course</label>
-          <select id="editCourseSelect" class="modal-input" onchange="loadCourseToEdit()" style="margin-bottom: 25px;">
-            ${options}
-          </select>
-          <div style="display:flex; gap:15px; align-items:stretch; margin-bottom:25px;">
-            <div style="display:flex; flex-direction:column; gap:15px; flex:1;">
-              <div>
-                <label style="font-size:0.85rem; color:var(--text-sub);">Present</label>
-                <input type="number" id="editPresent" class="modal-input" style="margin-bottom:0; padding:10px;" min="0" oninput="syncEditFields('present')" />
-              </div>
-              <div>
-                <label style="font-size:0.85rem; color:var(--text-sub);">Total Classes</label>
-                <input type="number" id="editTotal" class="modal-input" style="margin-bottom:0; padding:10px;" min="0" oninput="syncEditFields('total')" />
-              </div>
-            </div>
-            <div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; background:var(--bg-color); padding:15px; border-radius:12px; border:1px solid var(--border-color); box-shadow: inset 0 2px 5px rgba(0,0,0,0.05);">
-              <label style="font-size:0.85rem; color:var(--text-sub); margin-bottom:8px;">Percentage</label>
-              <div style="display:flex; align-items:center; gap:5px;">
-                <input type="number" id="editPercent" class="modal-input" style="margin-bottom:0; width:70px; text-align:center; font-size:1.2rem; font-weight:800; padding:8px;" min="0" max="100" oninput="syncEditFields('percent')" />
-                <span style="font-size:1.2rem; font-weight:800;">%</span>
-              </div>
-            </div>
+          <select id="editCourseSelect" class="modal-input" onchange="loadCourseToEdit()">${options}</select>
+          <div style="display:flex; gap:15px; margin-bottom:20px;">
+            <input type="number" id="editPresent" class="modal-input" placeholder="Present" oninput="syncEditFields('present')" />
+            <input type="number" id="editTotal" class="modal-input" placeholder="Total" oninput="syncEditFields('total')" />
+            <input type="number" id="editPercent" class="modal-input" placeholder="%" oninput="syncEditFields('percent')" />
           </div>
           <button class="btn-present" style="width:100%; padding:14px;" onclick="saveSingleCourseAttendance()">Save Changes</button>
         </div>`;
@@ -884,17 +1274,13 @@ function openModal(type) {
     }
   } else if (type === 'removeCourse') {
     html += `<h2>Remove Course</h2><div style="max-height: 55vh; overflow-y: auto; margin-top: 15px;">`;
-    if (courses.length === 0) {
-      html += `<p style="color:var(--text-sub);">No courses to remove.</p>`;
-    } else {
-      courses.forEach(c => {
-        html += `
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; border-bottom:1px solid var(--border-color); padding-bottom:8px;">
-            <span style="font-size:0.9rem; font-weight:700; max-width:250px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${c.name}</span>
-            <button onclick="removeCourseById(${c.id})" style="background:#e74c3c; color:white; border:none; width:32px; height:32px; border-radius:50%; font-size:1.2rem; font-weight:bold; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0;">-</button>
-          </div>`;
-      });
-    }
+    courses.forEach(c => {
+      html += `
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; border-bottom:1px solid var(--border-color); padding-bottom:8px;">
+          <span style="font-size:0.9rem; font-weight:700;">${c.name}</span>
+          <button onclick="removeCourseById(${c.id})" style="background:#e74c3c; color:white; border:none; width:30px; height:30px; border-radius:50%; font-weight:bold; cursor:pointer;">×</button>
+        </div>`;
+    });
     html += `</div>`;
   }
   
@@ -906,59 +1292,39 @@ function loadCourseToEdit() {
   if (!select) return;
   const course = courses.find(c => c.id === parseInt(select.value, 10));
   if (!course) return;
-  
   const baseStats = getCalculatedAttendance();
   const totalPresent = Math.max(0, (baseStats[course.id]?.p || 0) + (course.present || 0));
   const totalAbsent = Math.max(0, (baseStats[course.id]?.a || 0) + (course.absent || 0));
-  
   const total = totalPresent + totalAbsent;
-  const percent = total === 0 ? 0 : Math.round((totalPresent / total) * 100);
-  
   document.getElementById('editPresent').value = totalPresent;
   document.getElementById('editTotal').value = total;
-  document.getElementById('editPercent').value = percent;
+  document.getElementById('editPercent').value = total === 0 ? 0 : Math.round((totalPresent / total) * 100);
 }
 
 function syncEditFields(source) {
-  const pEl = document.getElementById('editPresent');
-  const tEl = document.getElementById('editTotal');
-  const pctEl = document.getElementById('editPercent');
-  
-  let p = parseFloat(pEl.value) || 0;
-  let t = parseFloat(tEl.value) || 0;
-  let pct = parseFloat(pctEl.value) || 0;
-
+  let p = parseFloat(document.getElementById('editPresent').value) || 0;
+  let t = parseFloat(document.getElementById('editTotal').value) || 0;
+  let pct = parseFloat(document.getElementById('editPercent').value) || 0;
   if (source === 'present' || source === 'total') {
-    pctEl.value = t > 0 ? Math.round((p / t) * 100) : 0;
-  } else if (source === 'percent') {
-    if (t > 0) {
-      pEl.value = Math.round((pct / 100) * t);
-    }
+    document.getElementById('editPercent').value = t > 0 ? Math.round((p / t) * 100) : 0;
+  } else if (source === 'percent' && t > 0) {
+    document.getElementById('editPresent').value = Math.round((pct / 100) * t);
   }
 }
 
 function saveSingleCourseAttendance() {
   const select = document.getElementById('editCourseSelect');
-  if (!select) return;
-  
-  const courseId = parseInt(select.value, 10);
-  const course = courses.find(c => c.id === courseId);
+  const course = courses.find(c => c.id === parseInt(select.value, 10));
   if (!course) return;
-
   let p = parseInt(document.getElementById('editPresent').value, 10) || 0;
   let t = parseInt(document.getElementById('editTotal').value, 10) || 0;
-  
   if (p > t) t = p;
-
   const baseStats = getCalculatedAttendance();
-  
   course.present = p - (baseStats[course.id]?.p || 0);
   course.absent = (t - p) - (baseStats[course.id]?.a || 0);
-
-  addHistory(`Edited: ${course.name} (Now P:${p}, Total:${t})`);
+  addHistory(`Edited: ${course.name}`);
   saveToDatabase();
   renderUI();
-  alert(`Attendance updated for ${course.name}`);
   closeModal();
 }
 
@@ -968,15 +1334,9 @@ function handleAddCourse() {
   const day = document.getElementById('newCourseDay').value;
   const start = document.getElementById('newCourseStart').value;
   const end = document.getElementById('newCourseEnd').value;
-
   if (!name) return alert("Please enter a course name.");
-  if (start && end && start >= end) return alert("Start time must be before end time.");
-
   let schedule = {};
-  if (start && end) {
-      schedule[day] = [{ start: start, end: end }];
-  }
-
+  if (start && end) schedule[day] = [{ start: start, end: end }];
   courses.push({ id: Date.now(), name: name, code: code || 'CUSTOM', present: 0, absent: 0, schedule: schedule });
   addHistory(`Added Course: ${name}`); 
   saveToDatabase(); 
@@ -985,12 +1345,8 @@ function handleAddCourse() {
 }
 
 function saveTargetPercentage() {
-  const inputVal = document.getElementById('targetInput').value;
-  const newTarget = parseInt(inputVal, 10);
-  if (isNaN(newTarget) || newTarget < 1 || newTarget > 100) {
-    alert("Please enter a valid percentage between 1 and 100.");
-    return;
-  }
+  const newTarget = parseInt(document.getElementById('targetInput').value, 10);
+  if (isNaN(newTarget) || newTarget < 1 || newTarget > 100) return alert("Enter valid % (1-100)");
   targetPercentage = newTarget;
   localStorage.setItem('target_percentage', targetPercentage);
   renderUI();
@@ -1000,7 +1356,7 @@ function saveTargetPercentage() {
 function removeCourseById(id) {
   const course = courses.find(c => c.id === id);
   if (!course) return;
-  if (confirm(`Are you sure you want to remove ${course.name}?`)) {
+  if (confirm(`Remove ${course.name}?`)) {
     courses = courses.filter(c => c.id !== id);
     addHistory(`Removed Course: ${course.name}`);
     saveToDatabase(); 
@@ -1009,283 +1365,64 @@ function removeCourseById(id) {
   }
 }
 
-function getBunkStatus(present, absent) {
-  present = Math.max(0, parseInt(present, 10) || 0);
-  absent = Math.max(0, parseInt(absent, 10) || 0);
-  const total = present + absent;
-
-  if (total === 0) {
-    return `<span class="bunk-meter" style="color:var(--text-sub);">No classes yet</span>`;
+// Authentication Helpers
+async function loginWithGoogle() {
+  const provider = new firebase.auth.GoogleAuthProvider();
+  try {
+    const result = await auth.signInWithPopup(provider);
+    closeModal();
+    alert(`Welcome, ${result.user.displayName || result.user.email}!`);
+  } catch (error) {
+    alert(error.message);
   }
+}
 
-  const target = targetPercentage / 100;
-  const currentPercent = (present / total) * 100;
+async function loginWithEmail() {
+  const email = document.getElementById('authEmail').value.trim();
+  const pass = document.getElementById('authPassword').value;
+  if (!email || !pass) return alert("Please enter both email and password.");
 
-  if (currentPercent >= targetPercentage) {
-    const buffer = Math.floor(((present / target) - total) + 0.0001);
-    if (buffer > 0) {
-      return `<span class="bunk-meter bunk-safe">Safe to bunk ${buffer} class${buffer > 1 ? 'es' : ''}</span>`;
+  try {
+    await auth.signInWithEmailAndPassword(email, pass);
+    closeModal();
+    alert("Signed in successfully!");
+  } catch (error) {
+    if (error.code === 'auth/user-not-found') {
+      if (confirm("Account not found. Create a new account with this email?")) {
+        registerWithEmail(email, pass);
+      }
     } else {
-      return `<span class="bunk-meter bunk-safe">On track (0 buffer)</span>`;
-    }
-  } else {
-    if (target >= 1) {
-      return `<span class="bunk-meter bunk-danger">Cannot reach 100%</span>`;
-    }
-    const required = Math.ceil((((target * total) - present) / (1 - target)) - 0.0001);
-    return `<span class="bunk-meter bunk-danger">Attend next ${required} class${required > 1 ? 'es' : ''}</span>`;
-  }
-}
-
-function changeDay(dayName) { 
-  currentSelectedDay = dayName; 
-  const timeContainer = document.getElementById('timetableContainer');
-  if (timeContainer) timeContainer.scrollLeft = 0;
-  renderUI(); 
-}
-
-function checkAndAutoMarkDay() {
-  const todayStr = getTodayDateString();
-  const todayName = getTodayString();
-  if (markedDates.includes(todayStr)) return; 
-
-  let dailyMarks = JSON.parse(localStorage.getItem('daily_marks_v41')) || {};
-  let allPresent = true;
-  let totalClassesToday = 0;
-
-  courses.forEach(c => {
-    if (c.schedule && c.schedule[todayName]) {
-      c.schedule[todayName].forEach(slot => {
-        totalClassesToday++;
-        const slotKey = `${todayStr}_${c.id}_${slot.start}`;
-        if (dailyMarks[slotKey] !== 'present') {
-          allPresent = false;
-        }
-      });
-    }
-  });
-
-  if (totalClassesToday > 0 && allPresent) {
-    markedDates.push(todayStr); 
-    addHistory(`All classes attended! Auto-marked calendar for ${todayStr}.`);
-    localStorage.setItem(MARKED_DATES_KEY, JSON.stringify(markedDates));
-  }
-}
-
-function handleLiveAttendance(courseId, status, slotKey) {
-  let handledClasses = JSON.parse(localStorage.getItem('handled_live_classes')) || [];
-  if (!handledClasses.includes(slotKey)) {
-      handledClasses.push(slotKey);
-      localStorage.setItem('handled_live_classes', JSON.stringify(handledClasses));
-  }
-
-  let dailyMarks = JSON.parse(localStorage.getItem('daily_marks_v41')) || {};
-  dailyMarks[slotKey] = status;
-  localStorage.setItem('daily_marks_v41', JSON.stringify(dailyMarks));
-
-  const course = courses.find(c => c.id === courseId);
-  if (!academicCalendar || !academicCalendar.startDate) {
-    if (status === 'present') course.present += 1;
-    if (status === 'absent') course.absent += 1;
-  }
-  
-  addHistory(`Live ${status.toUpperCase()}: ${course.name}`);
-  checkAndAutoMarkDay();
-  
-  saveToDatabase();
-  renderUI();
-}
-
-function renderUI() {
-  document.querySelectorAll('.day-selector button').forEach(btn => {
-    btn.classList.remove('active-day');
-    if (btn.innerText.startsWith(currentSelectedDay.substring(0, 3))) btn.classList.add('active-day');
-  });
-
-  const activeBtn = document.querySelector('.day-selector button.active-day');
-  if (activeBtn) {
-    activeBtn.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-  }
-
-  const timeContainer = document.getElementById('timetableContainer');
-  const isToday = getTodayString() === currentSelectedDay;
-  const isSunday = currentSelectedDay === 'Sunday';
-  const isDeclaredHoliday = isToday && isTodayHoliday();
-  
-  const now = new Date(); 
-  const currentTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-
-  if (isSunday || isDeclaredHoliday) {
-    const holidayMsg = isSunday ? 'SUNDAY IS A HOLIDAY' : 'TODAY IS A HOLIDAY';
-    timeContainer.innerHTML = `<div class="holiday-banner"><p style="color:#e74c3c; font-size:1.15rem; font-weight:800;">🏖️ ${holidayMsg}</p></div>`;
-  } else {
-    let todaysClasses = [];
-    courses.forEach(c => { 
-      if (c.schedule && c.schedule[currentSelectedDay]) {
-        c.schedule[currentSelectedDay].forEach(slot => { 
-          todaysClasses.push({ name: c.name, start: slot.start, end: slot.end, id: c.id }); 
-        });
-      }
-    });
-    
-    if (todaysClasses.length === 0) {
-      timeContainer.innerHTML = `<p style="color:var(--text-sub);">No classes scheduled.</p>`;
-    } else {
-      todaysClasses.sort((a, b) => a.start.localeCompare(b.start));
-      
-      let html = '<div class="timetable-spacer"></div>';
-      let focusId = null;
-      let foundFocus = false;
-
-      todaysClasses.forEach((cls, idx) => {
-        let status = '';
-        let indicator = '';
-        const cardId = `timeline-card-${idx}`;
-        const cascadeDelay = idx * 0.08; 
-
-        if (isToday) { 
-          if (currentTime >= cls.start && currentTime <= cls.end) {
-            status = 'active'; 
-            indicator = '<span class="live-dot-small"></span>';
-            if (!foundFocus) { focusId = cardId; foundFocus = true; }
-          } 
-          else if (currentTime > cls.end) {
-            status = 'past'; 
-          }
-          else {
-            status = 'upcoming';
-            if (!foundFocus) { focusId = cardId; foundFocus = true; }
-          }
-        }
-
-        html += `
-          <div class="timeline-card ${status}" id="${cardId}" style="animation-delay: ${cascadeDelay}s">
-            <div class="timeline-time">${indicator}${format12Hour(cls.start)} - ${format12Hour(cls.end)}</div>
-            <div class="timeline-course">${cls.name}</div>
-          </div>`;
-      });
-      
-      html += '<div class="timetable-spacer"></div>';
-      timeContainer.innerHTML = html;
-
-      if (focusId && isToday && !hasAutoScrolledToday) {
-        setTimeout(() => {
-          const el = document.getElementById(focusId);
-          if (el) {
-            el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-            hasAutoScrolledToday = true;
-          }
-        }, 300); 
-      }
+      alert(error.message);
     }
   }
-
-  let liveClassHTML = '';
-  if (isToday && !isTodayHoliday() && getTodayString() !== 'Sunday') {
-    const todayStr = getTodayDateString();
-    courses.forEach(c => {
-      if (c.schedule && c.schedule[currentSelectedDay]) {
-        c.schedule[currentSelectedDay].forEach(slot => {
-          if (currentTime >= slot.start && currentTime <= slot.end) {
-            const slotKey = `${todayStr}_${c.id}_${slot.start}`;
-            let handledClasses = JSON.parse(localStorage.getItem('handled_live_classes')) || [];
-            if (!handledClasses.includes(slotKey)) {
-              liveClassHTML += `
-                <div class="live-prompt-card">
-                  <div class="live-info-header">
-                    <div class="live-status"><div class="live-dot"></div><span>LIVE NOW</span></div>
-                    <div class="live-time">${format12Hour(slot.start)} - ${format12Hour(slot.end)}</div>
-                  </div>
-                  <div class="live-course-details">
-                    <h4>${c.name}</h4>
-                  </div>
-                  <div class="live-actions-row">
-                    <button class="btn-present-large" onclick="handleLiveAttendance(${c.id}, 'present', '${slotKey}')">✓ PRESENT</button>
-                    <button class="btn-absent-large" onclick="handleLiveAttendance(${c.id}, 'absent', '${slotKey}')">✖ ABSENT</button>
-                  </div>
-                </div>`;
-            }
-          }
-        });
-      }
-    });
-  }
-  const liveContainer = document.getElementById('liveClassContainer');
-  if (liveContainer) liveContainer.innerHTML = liveClassHTML;
-
-  const listContainer = document.getElementById('courseList');
-  listContainer.innerHTML = '';
-  if (courses.length === 0) { 
-    listContainer.innerHTML = `<p style="color:var(--text-sub); text-align:center; grid-column: 1/-1; padding: 40px 0;">No Courses Found. Add courses from the sidebar.</p>`; 
-    return; 
-  }
-
-  const holidayMode = isTodayHoliday() || getTodayString() === 'Sunday';
-  const baseStats = getCalculatedAttendance();
-
-  courses.forEach(course => {
-    const totalPresent = Math.max(0, (baseStats[course.id]?.p || 0) + (course.present || 0));
-    const totalAbsent = Math.max(0, (baseStats[course.id]?.a || 0) + (course.absent || 0));
-    const total = totalPresent + totalAbsent;
-    
-    const percentage = total === 0 ? 0 : Math.round((totalPresent / total) * 100);
-    const dashOffset = (2 * Math.PI * 38) - ((percentage / 100) * (2 * Math.PI * 38));
-    let actionHTML = holidayMode 
-      ? `<div class="action-bar" id="action-${course.id}"><span style="font-weight: 800; color: #e74c3c;">HOLIDAY</span></div>` 
-      : `<div class="action-bar" id="action-${course.id}"><button class="btn-present" onclick="markAttendance(${course.id}, 'present')">PRESENT</button><button class="btn-absent" onclick="markAttendance(${course.id}, 'absent')">ABSENT</button></div>`;
-
-    listContainer.innerHTML += `
-      <div class="course-card-wrapper">
-        <div class="course-card" onclick="toggleActionBar(${course.id})">
-          <div class="progress-circle">
-            <svg width="90" height="90">
-              <circle cx="45" cy="45" r="38" stroke="#e74c3c" stroke-width="8" fill="transparent" />
-              <circle cx="45" cy="45" r="38" stroke="#2ecc71" stroke-width="8" fill="transparent" stroke-dasharray="238.7" stroke-dashoffset="${dashOffset}" stroke-linecap="round" style="transition: stroke-dashoffset 1s ease-in-out;" />
-            </svg>
-            <div class="percentage-text" style="color:var(--text-main);">${percentage}%</div>
-          </div>
-          <div class="course-info">
-            <h2>${course.name}</h2>
-            <p>Total Classes: ${total}</p>
-            ${getBunkStatus(totalPresent, totalAbsent)}
-          </div>
-        </div>
-        ${actionHTML}
-      </div>`;
-  });
 }
 
-function markAttendance(id, status) {
-  const course = courses.find(c => c.id === id);
-  if (!course) return;
-  if (status === 'present') {
-      course.present = (course.present || 0) + 1;
+async function registerWithEmail(email, pass) {
+  try {
+    await auth.createUserWithEmailAndPassword(email, pass);
+    closeModal();
+    alert("Account created and signed in!");
+  } catch (error) {
+    alert(error.message);
   }
-  if (status === 'absent') {
-      course.absent = (course.absent || 0) + 1;
-  }
-  addHistory(`Manual ${status.toUpperCase()}: ${course.name}`);
-  toggleActionBar(id); 
-  saveToDatabase(); 
-  renderUI();    
 }
 
-function toggleActionBar(id) {
-  const bar = document.getElementById(`action-${id}`);
-  document.querySelectorAll('.action-bar').forEach(el => { 
-    if (el.id !== `action-${id}`) el.classList.remove('slide-in'); 
-  });
-  bar.classList.toggle('slide-in');
+async function logoutUser() {
+  try {
+    await auth.signOut();
+    closeModal();
+    alert("Signed out. Operating in offline/guest mode.");
+  } catch (error) {
+    alert(error.message);
+  }
 }
 
-document.addEventListener('click', (e) => {
-  if (!e.target.closest('.course-card-wrapper')) {
-    document.querySelectorAll('.action-bar').forEach(bar => bar.classList.remove('slide-in'));
-  }
-});
-
+// ==========================================
+// 9. APP INITIALIZATION & STARTUP
+// ==========================================
 startLiveClock(); 
 updateHolidayButton(); 
+checkLaunchPaywall();
 renderUI(); 
 setInterval(renderUI, 60000); 
 

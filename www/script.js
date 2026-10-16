@@ -1253,3 +1253,4 @@ if (!localStorage.getItem(MANUAL_SHOWN_KEY)) {
   localStorage.setItem(MANUAL_SHOWN_KEY, 'true'); 
   setTimeout(() => openModal('userManual'), 300);
 }
+// End of script.js

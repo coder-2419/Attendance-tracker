@@ -162,5 +162,5 @@ body.dark-mode .holiday-banner { background: rgba(231, 76, 60, 0.1); border-colo
 .btn-card-action { flex: 1; padding: 10px 0; border: none; border-radius: 8px; font-weight: 800; font-size: 0.85rem; cursor: pointer; color: white; opacity: 0.3; transition: opacity 0.2s, transform 0.2s; }
 .btn-card-action.selected { opacity: 1; box-shadow: 0 4px 10px rgba(0,0,0,0.15); transform: scale(1.02); }
 
-/* Edit mode overrides */
+
 .timetable-edit-mode { display: flex; flex-direction: column; gap: 12px; width: 100%; min-width: 100%; padding-bottom: 30px; }

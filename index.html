@@ -42,6 +42,8 @@
 
     <ul>
       <li id="authMenuItem" onclick="openModal('authModal')" style="font-weight: 800; color: #3498db;">🔑 Sign In / Account</li>
+      <!-- Admin Only Tool (hidden by default, toggled visible in script.js for admin role) -->
+      <li id="adminVerifyMenuItem" onclick="openModal('adminVerifyModal')" style="display:none; font-weight:800; color:#e67e22;">🛡️ Verify Payments</li>
       <li onclick="openModal('userManual')">How to Use the App</li>
       <li onclick="openModal('historyLog')">View History Log</li>
       <li onclick="openModal('setupCalendar')">Sync Academic Calendar</li>

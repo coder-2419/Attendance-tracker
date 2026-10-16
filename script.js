@@ -17,14 +17,15 @@ const auth = firebase.auth();
 const db = firebase.firestore();
 
 let currentUser = null;
-let userRole = 'student'; // 'student', 'pro', or 'admin'
+let userRole = 'student'; 
+let userDocUnsubscribe = null
 
-const DB_KEY = 'attendance_tracker_v41'; 
-const HISTORY_KEY = 'attendance_history_v41';
-const CALENDAR_KEY = 'academic_calendar_v41';
-const MARKED_DATES_KEY = 'marked_dates_v41';
-const MANUAL_SHOWN_KEY = 'appManualShown_v41';
-const CUSTOM_DEFAULT_SCHEDULE_KEY = 'custom_default_timetable_v41';
+const DB_KEY = 'attendance_tracker_v43'; 
+const HISTORY_KEY = 'attendance_history_v43';
+const CALENDAR_KEY = 'academic_calendar_v43';
+const MARKED_DATES_KEY = 'marked_dates_v43';
+const MANUAL_SHOWN_KEY = 'appManualShown_v43';
+const CUSTOM_DEFAULT_SCHEDULE_KEY = 'custom_default_timetable_v43';
 const PRO_STATUS_KEY = 'attendance_app_is_pro_v1';
 const VALID_ACCESS_KEYS = ['NMIT2026', 'CAMPUSPRO', 'ADMINFREE'];
 
@@ -40,7 +41,7 @@ let clockCurrentMinute = 0;
 let clockCurrentAmPm = 'AM';
 let clockCurrentView = 'hours';
 
-let targetPercentage = parseInt(localStorage.getItem('target_percentage'), 10) || 75;
+let targetPercentage = parseInt(localStorage.getItem('target_percentage'), 10) || null;
 let historyLog = JSON.parse(localStorage.getItem(HISTORY_KEY)) || [];
 let academicCalendar = JSON.parse(localStorage.getItem(CALENDAR_KEY)) || null;
 let markedDates = JSON.parse(localStorage.getItem(MARKED_DATES_KEY)) || [];
@@ -53,7 +54,7 @@ function getTodayString() {
 let currentSelectedDay = getTodayString();
 let currentCalDate = new Date(); 
 
-if(localStorage.getItem('darkMode') === 'true') document.body.classList.add('dark-mode');
+if (localStorage.getItem('darkMode') === 'true') document.body.classList.add('dark-mode');
 
 function toggleDarkMode() {
   document.body.classList.toggle('dark-mode');
@@ -65,21 +66,7 @@ function getTodayDateString() {
   return `${now.getFullYear()}-${(now.getMonth()+1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
 }
 
-const masterScheduleMap = {
-  '25CIV104': { name: 'ENVIRONMENTAL SCIENCE AND SUSTAINABILITY', schedule: { Monday: [{ start: '09:00', end: '09:55' }], Tuesday: [{ start: '13:30', end: '14:25' }] } },
-  '25ECE111': { name: 'BASIC ELECTRONICS', schedule: { Monday: [{ start: '09:55', end: '10:50' }], Tuesday: [{ start: '11:55', end: '12:50' }], Thursday: [{ start: '09:55', end: '10:50' }], Saturday: [{ start: '09:00', end: '09:55' }] } },
-  '25PHY102': { name: 'QUANTUM COMPUTING AND MODERN PHYSICS', schedule: { Monday: [{ start: '11:00', end: '11:55' }], Tuesday: [{ start: '14:25', end: '15:20' }], Wednesday: [{ start: '09:55', end: '10:50' }, { start: '13:30', end: '14:25' }], Saturday: [{ start: '09:55', end: '10:50' }] } },
-  '25MAT103': { name: 'ADVANCED CALCULUS', schedule: { Monday: [{ start: '11:55', end: '12:50' }], Wednesday: [{ start: '11:55', end: '12:50' }], Thursday: [{ start: '09:00', end: '09:55' }], Friday: [{ start: '09:55', end: '10:50' }], Saturday: [{ start: '11:00', end: '11:55' }] } },
-  '25CSE103': { name: 'PROBLEM SOLVING THROUGH PROGRAMMING', schedule: { Monday: [{ start: '13:30', end: '14:25' }], Thursday: [{ start: '11:55', end: '12:50' }], Friday: [{ start: '09:00', end: '09:55' }], Saturday: [{ start: '11:55', end: '12:50' }] } },
-  '25HSS131': { name: 'COMMUNICATIVE ENGLISH', schedule: { Monday: [{ start: '14:25', end: '15:20' }], Tuesday: [{ start: '11:00', end: '11:55' }], Thursday: [{ start: '11:00', end: '11:55' }] } },
-  'PHYSICS_LAB': { name: 'PHYSICS LAB', schedule: { Tuesday: [{ start: '09:00', end: '09:55' }, { start: '09:55', end: '10:50' }] } },
-  '25BTY111': { name: 'BIOLOGY FOR ENGINEERS', schedule: { Wednesday: [{ start: '09:00', end: '09:55' }] } },
-  '25HSS132': { name: 'KNOWING YOURSELF', schedule: { Wednesday: [{ start: '11:00', end: '11:55' }] } },
-  '25MAT107': { name: 'MATLAB', schedule: { Wednesday: [{ start: '14:25', end: '15:20' }, { start: '15:20', end: '16:15' }] } },
-  '25MEC122': { name: 'ENGINEERING VISUALIZATION', schedule: { Thursday: [{ start: '14:25', end: '15:20' }, { start: '15:20', end: '16:15' }] } },
-  'CSE_LAB': { name: 'CSE LAB', schedule: { Friday: [{ start: '11:00', end: '11:55' }, { start: '11:55', end: '12:50' }] } },
-  '25HSS102': { name: 'UHV AND INDIAN CONSTITUTION', schedule: { Friday: [{ start: '13:30', end: '14:25' }, { start: '14:25', end: '15:20' }, { start: '15:20', end: '16:15' }] } }
-};
+const masterScheduleMap = {};
 
 function getActiveDefaultSchedule() {
   const custom = localStorage.getItem(CUSTOM_DEFAULT_SCHEDULE_KEY);
@@ -90,19 +77,7 @@ function getActiveDefaultSchedule() {
 }
 
 function buildInitialDatabase() {
-  const activeMap = getActiveDefaultSchedule();
-  const initialCourses = [];
-  Object.keys(activeMap).forEach((code, index) => {
-    initialCourses.push({ 
-      id: Date.now() + index, 
-      name: activeMap[code].name, 
-      code: code, 
-      present: 0, 
-      absent: 0, 
-      schedule: JSON.parse(JSON.stringify(activeMap[code].schedule || {})) 
-    });
-  });
-  return initialCourses;
+  return [];
 }
 
 function loadFromDatabase() {
@@ -144,16 +119,22 @@ function addHistory(action) {
   saveToDatabase();
 }
 
-// Auth State Observer: Pops up login modal if user is not signed in
+// Auth State Observer
 auth.onAuthStateChanged(async (user) => {
   const authMenuItem = document.getElementById('authMenuItem');
+  const adminMenuItem = document.getElementById('adminVerifyMenuItem');
   
+  if (userDocUnsubscribe) {
+    userDocUnsubscribe();
+    userDocUnsubscribe = null;
+  }
+
   if (user) {
     currentUser = user;
     if (authMenuItem) authMenuItem.innerHTML = `👤 ${user.displayName || user.email.split('@')[0]}`;
     await loadUserDataFromFirestore(user.uid);
+    listenToUserDocRealtime(user.uid);
     
-    // Automatically dismiss the login modal on successful sign-in
     const modalContent = document.getElementById('modalContent');
     const modalOverlay = document.getElementById('modalOverlay');
     if (modalOverlay && modalOverlay.classList.contains('active') && modalContent && modalContent.classList.contains('auth-modal-card')) {
@@ -162,9 +143,10 @@ auth.onAuthStateChanged(async (user) => {
   } else {
     currentUser = null;
     userRole = 'student';
+    localStorage.removeItem(PRO_STATUS_KEY);
     if (authMenuItem) authMenuItem.innerHTML = `🔑 Sign In / Account`;
+    if (adminMenuItem) adminMenuItem.style.display = 'none';
     
-    // Automatically trigger login popup for unauthenticated visitors
     setTimeout(() => {
       openModal('authModal');
     }, 300);
@@ -174,6 +156,31 @@ auth.onAuthStateChanged(async (user) => {
   renderUI();
 });
 
+// Real-time listener: Unlocks the student immediately when Admin approves the payment
+function listenToUserDocRealtime(uid) {
+  userDocUnsubscribe = db.collection('users').doc(uid).onSnapshot(doc => {
+    if (doc.exists) {
+      const data = doc.data();
+      const adminMenuItem = document.getElementById('adminVerifyMenuItem');
+
+      if (data.role === 'admin') {
+        userRole = 'admin';
+        localStorage.setItem(PRO_STATUS_KEY, 'true');
+        if (adminMenuItem) adminMenuItem.style.display = 'block';
+      } else if (data.isPro || data.role === 'pro') {
+        userRole = 'pro';
+        localStorage.setItem(PRO_STATUS_KEY, 'true');
+        if (adminMenuItem) adminMenuItem.style.display = 'none';
+      } else {
+        userRole = 'student';
+        localStorage.removeItem(PRO_STATUS_KEY);
+        if (adminMenuItem) adminMenuItem.style.display = 'none';
+      }
+      checkLaunchPaywall();
+    }
+  });
+}
+
 async function loadUserDataFromFirestore(uid) {
   try {
     const userDocRef = db.collection('users').doc(uid);
@@ -182,7 +189,9 @@ async function loadUserDataFromFirestore(uid) {
     if (doc.exists) {
       const data = doc.data();
       userRole = data.role || (data.isPro ? 'pro' : 'student');
-      if (data.isPro) localStorage.setItem(PRO_STATUS_KEY, 'true');
+      if (data.isPro || userRole === 'admin' || userRole === 'pro') {
+        localStorage.setItem(PRO_STATUS_KEY, 'true');
+      }
       if (data.courses) courses = data.courses;
       if (data.historyLog) historyLog = data.historyLog;
       if (data.markedDates) markedDates = data.markedDates;
@@ -193,13 +202,13 @@ async function loadUserDataFromFirestore(uid) {
       localStorage.setItem(HISTORY_KEY, JSON.stringify(historyLog));
       localStorage.setItem(MARKED_DATES_KEY, JSON.stringify(markedDates));
       if (academicCalendar) localStorage.setItem(CALENDAR_KEY, JSON.stringify(academicCalendar));
-      localStorage.setItem('target_percentage', targetPercentage);
+      if (targetPercentage) localStorage.setItem('target_percentage', targetPercentage);
     } else {
       await userDocRef.set({
         email: currentUser.email,
         displayName: currentUser.displayName || '',
         role: 'student',
-        isPro: localStorage.getItem(PRO_STATUS_KEY) === 'true',
+        isPro: false,
         courses: courses,
         historyLog: historyLog,
         markedDates: markedDates,
@@ -214,14 +223,13 @@ async function loadUserDataFromFirestore(uid) {
 }
 
 // ==========================================
-// 3. HARD PAYWALL ON LAUNCH LOGIC
+// 3. HARD PAYWALL & SECURE UTR VERIFICATION
 // ==========================================
 function isUserUnlocked() {
   if (currentUser) {
-    if (userRole === 'admin' || userRole === 'pro') return true;
-    return false;
+    return userRole === 'admin' || userRole === 'pro';
   }
-  return localStorage.getItem(PRO_STATUS_KEY) === 'true';
+  return false; // Require login and verification
 }
 
 function checkLaunchPaywall() {
@@ -230,9 +238,8 @@ function checkLaunchPaywall() {
 
   if (isUserUnlocked()) {
     paywallEl.classList.remove('active');
-    paywallEl.style.display = 'none';
+    paywallEl.style.setProperty('display', 'none', 'important');
     
-    // Unlock scrolling only if no modal dialog is currently open
     const modalOverlay = document.getElementById('modalOverlay');
     const clockModal = document.getElementById('clockModalOverlay');
     const isModalOpen = (modalOverlay && modalOverlay.classList.contains('active')) || 
@@ -242,8 +249,125 @@ function checkLaunchPaywall() {
     }
   } else {
     paywallEl.classList.add('active');
-    paywallEl.style.display = 'flex';
+    paywallEl.style.setProperty('display', 'flex', 'important');
     document.body.classList.add('scroll-locked');
+  }
+}
+
+function initiatePayment() {
+  if (!currentUser) {
+    alert("Please sign in with your email first so your semester pass can be linked to your account.");
+    openModal('authModal');
+    return;
+  }
+
+  const upiId = "8073510268@fam"; 
+  const payeeName = "Attendance Tracker";
+  const amount = "19.00";
+  const note = `PASS_${currentUser.uid.substring(0, 5)}`;
+  const upiUrl = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(payeeName)}&am=${amount}&cu=INR&tn=${encodeURIComponent(note)}`;
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(upiUrl)}`;
+
+  const modalOverlay = document.getElementById('modalOverlay');
+  const modalContent = document.getElementById('modalContent');
+  modalContent.className = 'modal-content';
+  modalOverlay.classList.add('active');
+  document.body.classList.add('scroll-locked');
+
+  modalContent.innerHTML = `
+    <button class="close-btn" onclick="closeModal()">×</button>
+    <div style="text-align:center; padding: 5px;">
+      <h2 style="font-size:1.3rem; margin-bottom:6px;">Step 1: Pay ₹9 via UPI</h2>
+      <p style="font-size:0.85rem; color:var(--text-sub); margin-bottom:15px;">Tap the app button below or scan the QR code.</p>
+      
+      <div style="margin-bottom:15px;">
+        <a href="${upiUrl}" style="display:inline-block; width:100%; padding:13px; background:#3498db; color:white; text-decoration:none; border-radius:12px; font-weight:800; font-size:0.95rem; box-shadow: 0 4px 12px rgba(52, 152, 219, 0.3);">
+          📲 Open Installed UPI App
+        </a>
+      </div>
+
+      <div style="margin: 12px 0;">
+        <img src="${qrUrl}" alt="UPI QR" style="width:160px; height:160px; border-radius:10px; border:1px solid var(--border-color);" />
+        <div style="font-size:0.75rem; color:var(--text-sub); margin-top:4px;">UPI ID: <b>${upiId}</b></div>
+      </div>
+
+      <hr style="border:none; border-top:1px dashed var(--border-color); margin: 15px 0;" />
+
+      <h3 style="font-size:1.05rem; margin-bottom:6px;">Step 2: Submit 12-Digit UTR</h3>
+      <p style="font-size:0.8rem; color:var(--text-sub); margin-bottom:12px;">Copy the <b>UPI Ref No. / UTR</b> from your GPay, PhonePe, or Paytm receipt:</p>
+      
+      <input type="text" id="paymentUtrInput" class="modal-input" placeholder="e.g. 428901234567" maxlength="12" style="text-align:center; font-weight:800; font-size:1.05rem; letter-spacing:1px; margin-bottom:10px;" />
+      
+      <div id="utrStatusMsg" style="font-size:0.8rem; font-weight:700; color:var(--absent-btn); margin-bottom:10px;"></div>
+
+      <button class="vpopup-btn vpopup-btn-confirm" style="width:100%;" onclick="submitUtrForVerification()">
+        ✓ Submit for Verification
+      </button>
+    </div>
+  `;
+}
+
+// Submits UTR to Firestore instead of immediately granting access
+async function submitUtrForVerification() {
+  const utrInput = document.getElementById('paymentUtrInput');
+  const statusMsg = document.getElementById('utrStatusMsg');
+  const utr = (utrInput.value || '').trim();
+
+  if (!/^\d{12}$/.test(utr)) {
+    statusMsg.style.color = 'var(--absent-btn)';
+    statusMsg.innerText = 'Please enter a valid 12-digit numeric UTR number.';
+    return;
+  }
+
+  statusMsg.style.color = '#3498db';
+  statusMsg.innerText = 'Submitting to database...';
+
+  try {
+    // Check if UTR was already submitted by someone else
+    const existing = await db.collection('payment_verifications').doc(utr).get();
+    if (existing.exists && existing.data().status === 'approved') {
+      statusMsg.style.color = 'var(--absent-btn)';
+      statusMsg.innerText = 'This UTR has already been used by an account.';
+      return;
+    }
+
+    await db.collection('payment_verifications').doc(utr).set({
+      utr: utr,
+      uid: currentUser.uid,
+      email: currentUser.email,
+      name: currentUser.displayName || 'Student',
+      amount: 19,
+      status: 'pending',
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+
+    closeModal();
+    showVirtualPopup({
+      icon: '⏳',
+      title: 'Payment Under Review',
+      message: `Your UTR <b>${utr}</b> was received! Your app will unlock automatically as soon as the admin confirms the credit.`,
+      confirmText: 'OK',
+      cancelText: '',
+      onConfirm: () => {}
+    });
+
+  } catch (err) {
+    statusMsg.style.color = 'var(--absent-btn)';
+    statusMsg.innerText = 'Submission error: ' + err.message;
+  }
+}
+
+// Redeem custom promotion / activation keys
+function redeemActivationKey() {
+  const input = document.getElementById('activationKeyInput');
+  const errorEl = document.getElementById('paywallError');
+  const code = (input.value || '').trim().toUpperCase();
+
+  if (VALID_ACCESS_KEYS.includes(code)) {
+    errorEl.innerText = '';
+    unlockApp();
+  } else {
+    errorEl.innerText = 'Invalid access code. Please try again.';
   }
 }
 
@@ -262,7 +386,7 @@ function unlockApp() {
   const paywallEl = document.getElementById('paywallOverlay');
   if (paywallEl) {
     paywallEl.classList.remove('active');
-    paywallEl.style.display = 'none';
+    paywallEl.style.setProperty('display', 'none', 'important');
   }
   document.body.classList.remove('scroll-locked');
   alert("🎉 Access Unlocked! Welcome to Attendance Tracker.");
@@ -282,26 +406,6 @@ function relockPaywallForTesting() {
   checkLaunchPaywall();
 }
 window.relockPaywall = relockPaywallForTesting;
-window.unlockApp = unlockApp;
-
-function redeemActivationKey() {
-  const input = document.getElementById('activationKeyInput');
-  const errorEl = document.getElementById('paywallError');
-  const code = (input.value || '').trim().toUpperCase();
-
-  if (VALID_ACCESS_KEYS.includes(code)) {
-    errorEl.innerText = '';
-    unlockApp();
-  } else {
-    errorEl.innerText = 'Invalid access code. Please try again.';
-  }
-}
-
-function initiatePayment() {
-  if (confirm("Proceed to simulate UPI/Card payment of ₹49 for Semester Pro Access?")) {
-    unlockApp();
-  }
-}
 
 // ==========================================
 // 4. INTERACTIVE CLOCK PICKER
@@ -315,7 +419,7 @@ function openClockPicker(index, field) {
   
   clockCurrentAmPm = h24 >= 12 ? 'PM' : 'AM';
   clockCurrentHour = h24 % 12 || 12;
-  clockCurrentMinute = Math.round(m24 / 5) * 5 % 60;
+  clockCurrentMinute = Math.round((m24 || 0) / 5) * 5 % 60;
   clockCurrentView = 'hours';
 
   document.getElementById('clockPickerTitle').innerText = field === 'start' ? 'Set Start Time' : 'Set End Time';
@@ -503,7 +607,7 @@ function toggleTimetableEdit() {
 }
 
 function addInlinePeriod() {
-  inlineEditSchedule.push({ start: '09:00', end: '09:55', code: 'CUSTOM', name: '' });
+  inlineEditSchedule.push({ start: '', end: '', code: '', name: '' });
   renderUI();
 }
 
@@ -702,6 +806,10 @@ function getBunkStatus(present, absent) {
   const total = present + absent;
   if (total === 0) return `<span class="bunk-meter" style="color:var(--text-sub);">No classes yet</span>`;
 
+  if (!targetPercentage) {
+    return `<span class="bunk-meter" style="color:var(--text-sub);">Set target % in menu</span>`;
+  }
+
   const target = targetPercentage / 100;
   const currentPercent = (present / total) * 100;
 
@@ -827,7 +935,7 @@ function renderUI() {
                  <button type="button" class="time-picker-btn" onclick="openClockPicker(${idx}, 'start')">🕒 ${format12Hour(p.start) || 'Start'}</button>
                  <span style="font-weight:800; color:var(--text-sub);">to</span>
                  <button type="button" class="time-picker-btn" onclick="openClockPicker(${idx}, 'end')">🕒 ${format12Hour(p.end) || 'End'}</button>
-                 <button onclick="removeInlinePeriod(${idx})" style="background:#e74c3c; color:white; border:none; border-radius:8px; padding:12px 16px; font-weight:bold; cursor:pointer;">×</button>
+                 <button onclick="removeInlinePeriod(${idx})" style="background:var(--absent-btn); color:white; border:none; border-radius:8px; padding:12px 16px; font-weight:bold; cursor:pointer;">×</button>
               </div>
               <input type="text" class="modal-input" style="margin:0; padding:12px; font-size: 0.95rem; font-weight:700;" value="${p.name}" placeholder="Full Course Name" onchange="updateInlinePeriod(${idx}, 'name', this.value)">
           </div>`;
@@ -848,7 +956,7 @@ function renderUI() {
 
       if (isSunday || isDeclaredHoliday) {
         const holidayMsg = isSunday ? 'SUNDAY IS A HOLIDAY' : 'TODAY IS A HOLIDAY';
-        timeContainer.innerHTML = `<div class="holiday-banner"><p style="color:#e74c3c; font-size:1.15rem; font-weight:800;">🏖️ ${holidayMsg}</p></div>`;
+        timeContainer.innerHTML = `<div class="holiday-banner"><p style="color:var(--absent-btn); font-size:1.15rem; font-weight:800;">🏖️ ${holidayMsg}</p></div>`;
       } else {
         let todaysClasses = [];
         courses.forEach(c => { 
@@ -888,8 +996,8 @@ function renderUI() {
               
               inlineActions = `
               <div class="timeline-actions">
-                 <button class="btn-card-action ${presActive}" style="background:#2ecc71" onclick="toggleSlotAttendance(${cls.id}, '${cls.start}', 'present')">PRESENT</button>
-                 <button class="btn-card-action ${absActive}" style="background:#e74c3c" onclick="toggleSlotAttendance(${cls.id}, '${cls.start}', 'absent')">ABSENT</button>
+                 <button class="btn-card-action btn-present-slot ${presActive}" onclick="toggleSlotAttendance(${cls.id}, '${cls.start}', 'present')">PRESENT</button>
+                 <button class="btn-card-action btn-absent-slot ${absActive}" onclick="toggleSlotAttendance(${cls.id}, '${cls.start}', 'absent')">ABSENT</button>
               </div>`;
             }
 
@@ -925,7 +1033,7 @@ function renderUI() {
     const percentage = total === 0 ? 0 : Math.round((totalPresent / total) * 100);
     const dashOffset = (2 * Math.PI * 34) - ((percentage / 100) * (2 * Math.PI * 34));
     let actionHTML = holidayMode 
-      ? `<div class="action-bar" id="action-${course.id}"><span style="font-weight: 800; color: #e74c3c;">HOLIDAY</span></div>` 
+      ? `<div class="action-bar" id="action-${course.id}"><span style="font-weight: 800; color: var(--absent-btn);">HOLIDAY</span></div>` 
       : `<div class="action-bar" id="action-${course.id}"><button class="btn-present" onclick="markAttendance(${course.id}, 'present')">PRESENT</button><button class="btn-absent" onclick="markAttendance(${course.id}, 'absent')">ABSENT</button></div>`;
 
     listContainer.innerHTML += `
@@ -933,8 +1041,8 @@ function renderUI() {
         <div class="course-card" onclick="toggleActionBar(${course.id})">
           <div class="progress-circle">
             <svg width="80" height="80">
-              <circle cx="40" cy="40" r="34" stroke="#e74c3c" stroke-width="7" fill="transparent" />
-              <circle cx="40" cy="40" r="34" stroke="#2ecc71" stroke-width="7" fill="transparent" stroke-dasharray="213.6" stroke-dashoffset="${dashOffset}" stroke-linecap="round" style="transition: stroke-dashoffset 0.8s ease-in-out;" />
+              <circle cx="40" cy="40" r="34" stroke="var(--absent-btn)" stroke-width="7" fill="transparent" />
+              <circle cx="40" cy="40" r="34" stroke="var(--present-btn)" stroke-width="7" fill="transparent" stroke-dasharray="213.6" stroke-dashoffset="${dashOffset}" stroke-linecap="round" style="transition: stroke-dashoffset 0.8s ease-in-out;" />
             </svg>
             <div class="percentage-text" style="color:var(--text-main); font-size:1.15rem;">${percentage}%</div>
           </div>
@@ -975,7 +1083,7 @@ document.addEventListener('click', (e) => {
 });
 
 // ==========================================
-// 8. MODALS & AUTH MODAL (LIBRE BASKERVILLE)
+// 8. MODALS & ADMIN APPROVAL DASHBOARD
 // ==========================================
 let setupBlobUrl = null;
 let setupTempData = {};
@@ -1150,11 +1258,88 @@ function closeModal(e) {
   const modalContent = document.getElementById('modalContent');
   if (modalContent) modalContent.className = 'modal-content';
   
-  // Maintain scroll lock ONLY if the paywall is currently displayed
   const paywallEl = document.getElementById('paywallOverlay');
   const isPaywallShowing = paywallEl && (paywallEl.classList.contains('active') || paywallEl.style.display === 'flex');
   if (!isPaywallShowing) {
     document.body.classList.remove('scroll-locked');
+  }
+}
+
+// Admin Verification Modal Handler
+async function openAdminVerifyModal() {
+  const modalContent = document.getElementById('modalContent');
+  modalContent.className = 'modal-content';
+  modalContent.innerHTML = `
+    <button class="close-btn" onclick="closeModal()">×</button>
+    <h2>Pending UPI Payments</h2>
+    <p style="font-size:0.85rem; color:var(--text-sub); margin-bottom:15px;">Check incoming ₹19 credits in your GPay/PhonePe and match the 12-digit UTR:</p>
+    <div id="adminRequestsList" style="max-height: 50vh; overflow-y:auto;">Loading requests...</div>
+  `;
+
+  try {
+    const snapshot = await db.collection('payment_verifications')
+      .where('status', '==', 'pending')
+      .get();
+
+    const listEl = document.getElementById('adminRequestsList');
+    if (snapshot.empty) {
+      listEl.innerHTML = `<p style="color:var(--text-sub); text-align:center; padding: 25px 0;">No pending payments to review.</p>`;
+      return;
+    }
+
+    let html = '';
+    snapshot.forEach(docSnap => {
+      const data = docSnap.data();
+      html += `
+        <div style="background:var(--bg-color); border:1px solid var(--border-color); border-radius:12px; padding:12px; margin-bottom:10px; text-align:left;">
+          <div style="font-weight:800; font-size:0.95rem; color:var(--text-main);">${data.email}</div>
+          <div style="font-size:0.8rem; color:var(--text-sub); margin: 3px 0;">UTR: <b style="letter-spacing:1px; color:#3498db;">${data.utr}</b></div>
+          <div style="display:flex; gap:8px; margin-top:8px;">
+            <button class="vpopup-btn vpopup-btn-confirm" style="padding:6px 12px; font-size:0.8rem;" onclick="adminApprovePayment('${docSnap.id}', '${data.uid}')">✓ Approve</button>
+            <button class="vpopup-btn vpopup-btn-cancel" style="padding:6px 12px; font-size:0.8rem;" onclick="adminRejectPayment('${docSnap.id}')">✖ Reject</button>
+          </div>
+        </div>
+      `;
+    });
+    listEl.innerHTML = html;
+  } catch (err) {
+    document.getElementById('adminRequestsList').innerHTML = `<p style="color:var(--absent-btn); font-size:0.85rem;">Error loading: ${err.message}</p>`;
+  }
+}
+
+async function adminApprovePayment(utr, studentUid) {
+  try {
+    // 1. Mark verification document approved
+    await db.collection('payment_verifications').doc(utr).update({
+      status: 'approved',
+      approvedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+
+    // 2. Unlock the student's cloud profile (triggers real-time unlock on their phone)
+    await db.collection('users').doc(studentUid).set({
+      isPro: true,
+      role: 'pro',
+      unlockedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+
+    alert(`UTR ${utr} approved! Student account unlocked.`);
+    openAdminVerifyModal();
+  } catch (err) {
+    alert("Approval failed: " + err.message);
+  }
+}
+
+async function adminRejectPayment(utr) {
+  if (!confirm(`Reject UTR ${utr}?`)) return;
+  try {
+    await db.collection('payment_verifications').doc(utr).update({
+      status: 'rejected',
+      rejectedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    alert("Payment rejected.");
+    openAdminVerifyModal();
+  } catch (err) {
+    alert("Rejection failed: " + err.message);
   }
 }
 
@@ -1166,11 +1351,15 @@ function openModal(type) {
   modalOverlay.classList.add('active');
   document.body.classList.add('scroll-locked');
   
-  // Assign Libre Baskerville typography class specifically to the login/account modal
   if (type === 'authModal') {
     modalContent.className = 'modal-content auth-modal-card';
   } else {
     modalContent.className = 'modal-content';
+  }
+
+  if (type === 'adminVerifyModal') {
+    openAdminVerifyModal();
+    return;
   }
 
   let html = `<button class="close-btn" onclick="closeModal()">×</button>`;
@@ -1182,7 +1371,7 @@ function openModal(type) {
         <div style="text-align:center; padding:15px 0;">
           <p style="font-size:1.15rem; font-weight:700; color:var(--text-main);">${currentUser.displayName || 'Student'}</p>
           <p style="font-size:0.9rem; color:var(--text-sub); margin-bottom:15px;">${currentUser.email}</p>
-          <div style="display:inline-block; padding:6px 14px; border-radius:20px; font-size:0.8rem; font-weight:700; background:${userRole === 'admin' ? '#e74c3c' : (userRole === 'pro' ? '#2ecc71' : '#3498db')}; color:white; margin-bottom:20px;">
+          <div style="display:inline-block; padding:6px 14px; border-radius:20px; font-size:0.8rem; font-weight:700; background:${userRole === 'admin' ? 'var(--absent-btn)' : (userRole === 'pro' ? 'var(--present-btn)' : '#3498db')}; color:white; margin-bottom:20px;">
             ${userRole === 'admin' ? '🛡️ Administrator' : (userRole === 'pro' ? '🎓 Pro Pass Active' : 'Basic Account')}
           </div>
           <p style="font-size:0.85rem; color:var(--text-sub); margin-bottom:20px;">Your attendance data is synced with Cloud Firestore.</p>
@@ -1280,7 +1469,7 @@ function openModal(type) {
         <div style="margin-top:20px; display:flex; justify-content:center; gap:15px; font-size:0.85rem; font-weight:700;">
           <span style="color:#9b2226">■ Holiday</span> 
           <span style="color:#005f73">■ Important</span>
-          <span style="color:#2ecc71">■ Present</span>
+          <span style="color:var(--present-btn)">■ Present</span>
         </div>`;
     }
   } else if (type === 'setTarget') {
@@ -1288,7 +1477,7 @@ function openModal(type) {
       <h2>Set Target Attendance</h2>
       <div style="text-align:left; margin-top:15px;">
         <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px;">
-          <input type="number" id="targetInput" class="modal-input" style="margin-bottom: 0;" value="${targetPercentage}" min="1" max="100" />
+          <input type="number" id="targetInput" class="modal-input" style="margin-bottom: 0;" placeholder="e.g. 75" value="${targetPercentage || ''}" min="1" max="100" />
           <span style="font-size:1.2rem; font-weight:800;">%</span>
         </div>
         <button class="btn-present" style="width:100%; padding:12px;" onclick="saveTargetPercentage()">Save Target</button>
@@ -1334,7 +1523,7 @@ function openModal(type) {
       html += `
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; border-bottom:1px solid var(--border-color); padding-bottom:8px;">
           <span style="font-size:0.9rem; font-weight:700;">${c.name}</span>
-          <button onclick="removeCourseById(${c.id})" style="background:#e74c3c; color:white; border:none; width:30px; height:30px; border-radius:50%; font-weight:bold; cursor:pointer;">×</button>
+          <button onclick="removeCourseById(${c.id})" style="background:var(--absent-btn); color:white; border:none; width:30px; height:30px; border-radius:50%; font-weight:bold; cursor:pointer;">×</button>
         </div>`;
     });
     html += `</div>`;
@@ -1421,7 +1610,7 @@ function removeCourseById(id) {
   }
 }
 
-// Authentication Helpers
+// Authentication Handlers
 async function loginWithGoogle() {
   const provider = new firebase.auth.GoogleAuthProvider();
   try {

@@ -1,8 +1,13 @@
-const DB_KEY = 'attendance_tracker_v41'; // Keeping data intact!
+const DB_KEY = 'attendance_tracker_v41'; 
 const HISTORY_KEY = 'attendance_history_v41';
 const CALENDAR_KEY = 'academic_calendar_v41';
 const MARKED_DATES_KEY = 'marked_dates_v41';
 const MANUAL_SHOWN_KEY = 'appManualShown_v41';
+
+// Tab & Edit State Variables
+let currentTab = 'timetable';
+let isEditingTimetable = false;
+let inlineEditSchedule = [];
 
 let targetPercentage = parseInt(localStorage.getItem('target_percentage'), 10) || 75;
 let historyLog = JSON.parse(localStorage.getItem(HISTORY_KEY)) || [];
@@ -17,16 +22,6 @@ function getTodayString() {
 
 let currentSelectedDay = getTodayString();
 let currentCalDate = new Date(); 
-
-let activeBuilderDay = 'Monday';
-let customScheduleMap = { Monday:[], Tuesday:[], Wednesday:[], Thursday:[], Friday:[], Saturday:[] };
-let customSubjectNames = {};
-
-function initBuilder() {
-    activeBuilderDay = 'Monday';
-    customScheduleMap = { Monday:[], Tuesday:[], Wednesday:[], Thursday:[], Friday:[], Saturday:[] };
-    customSubjectNames = {};
-}
 
 if(localStorage.getItem('darkMode') === 'true') document.body.classList.add('dark-mode');
 
@@ -118,13 +113,17 @@ function startLiveClock() {
 }
 
 function isTodayHoliday() { 
-  return localStorage.getItem('holiday_' + getTodayDateString()) === 'true'; 
+  const todayStr = getTodayDateString();
+  const manualHoliday = localStorage.getItem('holiday_' + todayStr) === 'true';
+  const calendarHoliday = academicCalendar && academicCalendar.holidays && academicCalendar.holidays.includes(todayStr);
+  
+  return manualHoliday || calendarHoliday; 
 }
 
 function toggleHoliday() {
   if (getTodayString() === 'Sunday') return; 
   const todayStr = getTodayDateString();
-  if (isTodayHoliday()) localStorage.removeItem('holiday_' + todayStr);
+  if (localStorage.getItem('holiday_' + todayStr) === 'true') localStorage.removeItem('holiday_' + todayStr);
   else localStorage.setItem('holiday_' + todayStr, 'true');
   updateHolidayButton(); 
   renderUI(); 
@@ -134,11 +133,13 @@ function updateHolidayButton() {
   const btn = document.getElementById('holidayBtn');
   if (!btn) return;
   
+  const todayStr = getTodayDateString();
+  
   if (getTodayString() === 'Sunday') {
     btn.classList.add('active');
     btn.innerText = 'SUNDAY - HOLIDAY';
     btn.style.pointerEvents = 'none'; 
-  } else if (isTodayHoliday()) { 
+  } else if (localStorage.getItem('holiday_' + todayStr) === 'true' || (academicCalendar && academicCalendar.holidays && academicCalendar.holidays.includes(todayStr))) { 
     btn.classList.add('active'); 
     btn.innerText = 'HOLIDAY ACTIVE'; 
     btn.style.pointerEvents = 'auto';
@@ -475,7 +476,6 @@ function resetToDefaultTimetable() {
     courses = buildInitialDatabase();
     markedDates = [];
     historyLog = [];
-    localStorage.removeItem('handled_live_classes');
     localStorage.removeItem('daily_marks_v41'); 
     addHistory("Reset to default timetable.");
     saveToDatabase();
@@ -558,131 +558,108 @@ function closeModal(e) {
   document.body.classList.remove('scroll-locked');
 }
 
-function switchBuilderDay(day) {
-    activeBuilderDay = day;
-    document.querySelectorAll('.builder-days button').forEach(b => b.classList.remove('active-day'));
-    const activeBtn = document.getElementById(`bDay-${day}`);
-    if(activeBtn) activeBtn.classList.add('active-day');
-    renderBuilderPeriods();
+// Inline Tab Switching Logic
+function switchTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(`nav-${tab}`).classList.add('active');
+  if (tab === 'timetable') {
+     currentSelectedDay = getTodayString(); 
+     isEditingTimetable = false;
+  }
+  renderUI();
 }
 
-function addBuilderPeriod() {
-    customScheduleMap[activeBuilderDay].push({ start: '', end: '', code: '' });
-    renderBuilderPeriods();
-}
-
-function updateBuilderPeriod(index, field, value) {
-    customScheduleMap[activeBuilderDay][index][field] = value;
-    if(field === 'code') renderBuilderSubjects(); 
-}
-
-function removeBuilderPeriod(index) {
-    customScheduleMap[activeBuilderDay].splice(index, 1);
-    renderBuilderPeriods();
-    renderBuilderSubjects();
-}
-
-function renderBuilderPeriods() {
-    const container = document.getElementById('builderPeriods');
-    if(!container) return;
-    let html = '';
-    customScheduleMap[activeBuilderDay].forEach((period, idx) => {
-        html += `
-        <div style="display:flex; gap:6px; margin-bottom:10px; align-items:center;">
-            <input type="time" class="modal-input" style="flex:1; margin-bottom:0; padding:10px 4px; font-size:0.85rem;" value="${period.start}" onchange="updateBuilderPeriod(${idx}, 'start', this.value)">
-            <input type="time" class="modal-input" style="flex:1; margin-bottom:0; padding:10px 4px; font-size:0.85rem;" value="${period.end}" onchange="updateBuilderPeriod(${idx}, 'end', this.value)">
-            <input type="text" class="modal-input" style="flex:1.2; margin-bottom:0; padding:10px; font-size:0.85rem;" placeholder="Code (e.g. CSE101)" value="${period.code}" oninput="updateBuilderPeriod(${idx}, 'code', this.value.toUpperCase())">
-            <button onclick="removeBuilderPeriod(${idx})" style="flex:none; background:#e74c3c; color:white; border:none; width:32px; height:32px; border-radius:50%; font-weight:bold; cursor:pointer;">×</button>
-        </div>
-        `;
-    });
-    if(customScheduleMap[activeBuilderDay].length === 0) {
-        html = `<p style="color:var(--text-sub); font-size:0.9rem; text-align:center; margin-top:10px;">No periods added for ${activeBuilderDay}.</p>`;
+// Inline Edit Timetable Logic
+function toggleTimetableEdit() {
+  if (isEditingTimetable) {
+    if(confirm("Set the current timetable as the default timetable?")) {
+        saveInlineTimetable();
     }
-    container.innerHTML = html;
-}
-
-function renderBuilderSubjects() {
-    const container = document.getElementById('builderSubjects');
-    if(!container) return;
-
-    let uniqueCodes = new Set();
-    for(let day in customScheduleMap) {
-        customScheduleMap[day].forEach(p => {
-            if(p.code.trim()) uniqueCodes.add(p.code.trim().toUpperCase());
-        });
-    }
-
-    let html = '';
-    uniqueCodes.forEach(code => {
-        const existingName = customSubjectNames[code] || '';
-        html += `
-        <div style="display:flex; gap:10px; margin-bottom:10px; align-items:center;">
-            <span style="font-weight:800; min-width:85px; color:#3498db; font-size:0.9rem;">${code}</span>
-            <input type="text" class="modal-input" style="flex:1; margin-bottom:0; padding:10px; font-size:0.9rem;" placeholder="Full Subject Name" value="${existingName}" oninput="customSubjectNames['${code}'] = this.value">
-        </div>
-        `;
-    });
-    if(uniqueCodes.size === 0) {
-        html = `<p style="color:var(--text-sub); font-size:0.9rem; text-align:center;">Add a period above with a subject code first.</p>`;
-    }
-    container.innerHTML = html;
-}
-
-function saveBuiltTimetable() {
-    let newMasterMap = {};
-    let uniqueCodes = new Set();
-    
-    for(let day in customScheduleMap) {
-        for (let i = 0; i < customScheduleMap[day].length; i++) {
-            const p = customScheduleMap[day][i];
-            if(!p.start || !p.end || !p.code.trim()) {
-                alert(`Please completely fill out all fields for the period on ${day}.`);
-                return;
-            }
-            if(p.start >= p.end) {
-                alert(`Invalid time slot on ${day}: Start time must be before end time.`);
-                return;
-            }
-            uniqueCodes.add(p.code.trim().toUpperCase());
-        }
-    }
-
-    if (uniqueCodes.size === 0) return alert("Please add at least one period before saving.");
-
-    uniqueCodes.forEach(code => {
-        newMasterMap[code] = { name: customSubjectNames[code] || code, schedule: {} };
-    });
-
-    for(let day in customScheduleMap) {
-        customScheduleMap[day].forEach(p => {
-            const code = p.code.trim().toUpperCase();
-            if(!newMasterMap[code].schedule[day]) newMasterMap[code].schedule[day] = [];
-            newMasterMap[code].schedule[day].push({ start: p.start, end: p.end });
-        });
-    }
-
-    if(confirm("This will replace your current timetable completely. Do you want to proceed?")) {
-        const initialCourses = [];
-        Object.keys(newMasterMap).forEach((code, index) => {
-            const existing = courses.find(c => c.code === code);
-            initialCourses.push({ 
-                id: existing ? existing.id : Date.now() + index, 
-                name: newMasterMap[code].name, 
-                code: code, 
-                present: existing ? existing.present : 0, 
-                absent: existing ? existing.absent : 0, 
-                schedule: newMasterMap[code].schedule 
+  } else {
+    isEditingTimetable = true;
+    inlineEditSchedule = [];
+    courses.forEach(c => {
+        if(c.schedule && c.schedule[currentSelectedDay]) {
+            c.schedule[currentSelectedDay].forEach(slot => {
+                inlineEditSchedule.push({ start: slot.start, end: slot.end, code: c.code, name: c.name, id: c.id });
             });
-        });
+        }
+    });
+    inlineEditSchedule.sort((a,b) => a.start.localeCompare(b.start));
+    renderUI();
+  }
+}
 
-        courses = initialCourses;
-        addHistory(`Created custom timetable via Builder`);
-        saveToDatabase();
-        renderUI();
-        closeModal();
-        alert("New Timetable Created and Applied Successfully!");
-    }
+function addInlinePeriod() {
+  inlineEditSchedule.push({ start: '', end: '', code: 'CUSTOM', name: '' });
+  renderUI();
+}
+
+function updateInlinePeriod(index, field, value) {
+  inlineEditSchedule[index][field] = value;
+}
+
+function removeInlinePeriod(index) {
+  inlineEditSchedule.splice(index, 1);
+  renderUI();
+}
+
+function saveInlineTimetable() {
+  for (let p of inlineEditSchedule) {
+      if(!p.start || !p.end || !p.name) return alert("Please fill all time and course name fields completely before saving.");
+  }
+  
+  // Clear old schedule for this day
+  courses.forEach(c => {
+      if (c.schedule && c.schedule[currentSelectedDay]) {
+          delete c.schedule[currentSelectedDay];
+      }
+  });
+  
+  // Apply new schedule
+  inlineEditSchedule.forEach(p => {
+      let course = courses.find(c => c.name.toUpperCase() === p.name.toUpperCase());
+      if (!course) {
+          course = { id: Date.now() + Math.random(), name: p.name, code: p.code || 'CUSTOM', present: 0, absent: 0, schedule: {} };
+          courses.push(course);
+      }
+      if (!course.schedule) course.schedule = {};
+      if (!course.schedule[currentSelectedDay]) course.schedule[currentSelectedDay] = [];
+      course.schedule[currentSelectedDay].push({ start: p.start, end: p.end });
+  });
+  
+  addHistory("Updated timetable for " + currentSelectedDay);
+  saveToDatabase();
+  isEditingTimetable = false;
+  alert("Timetable set as default successfully!");
+  renderUI();
+}
+
+// Inline Class Card Check Logic
+function toggleSlotAttendance(courseId, slotStart, clickedStatus) {
+  const todayStr = getTodayDateString();
+  const slotKey = `${todayStr}_${courseId}_${slotStart}`;
+  let dailyMarks = JSON.parse(localStorage.getItem('daily_marks_v41')) || {};
+  const currentStatus = dailyMarks[slotKey];
+  const course = courses.find(c => c.id === courseId);
+  
+  // Untoggle existing
+  if (currentStatus === 'present') course.present--;
+  if (currentStatus === 'absent') course.absent--;
+  
+  if (currentStatus === clickedStatus) {
+      delete dailyMarks[slotKey];
+  } else {
+      if (clickedStatus === 'present') course.present++;
+      if (clickedStatus === 'absent') course.absent++;
+      dailyMarks[slotKey] = clickedStatus;
+  }
+  
+  localStorage.setItem('daily_marks_v41', JSON.stringify(dailyMarks));
+  saveToDatabase();
+  checkAndAutoMarkDay(); 
+  renderUI();
 }
 
 function openModal(type) {
@@ -695,51 +672,21 @@ function openModal(type) {
   
   let html = `<button class="close-btn" onclick="closeModal()">×</button>`;
 
-  if (type === 'createTimetable') {
-    initBuilder();
-    html += `
-      <h2>Timetable Builder</h2>
-      <div class="day-selector builder-days" style="margin-top:15px; margin-bottom:15px; padding-bottom: 5px;">
-        <button id="bDay-Monday" onclick="switchBuilderDay('Monday')">Mon</button>
-        <button id="bDay-Tuesday" onclick="switchBuilderDay('Tuesday')">Tue</button>
-        <button id="bDay-Wednesday" onclick="switchBuilderDay('Wednesday')">Wed</button>
-        <button id="bDay-Thursday" onclick="switchBuilderDay('Thursday')">Thu</button>
-        <button id="bDay-Friday" onclick="switchBuilderDay('Friday')">Fri</button>
-        <button id="bDay-Saturday" onclick="switchBuilderDay('Saturday')">Sat</button>
-      </div>
-      
-      <div id="builderPeriods" style="margin-bottom:15px; min-height:60px;"></div>
-      <button class="btn-present" onclick="addBuilderPeriod()" style="width:100%; margin-bottom: 25px; background:var(--bg-color); color:#3498db; border:2px dashed #3498db;">+ Add Period</button>
-
-      <hr style="border:0; border-top:1px solid var(--border-color); margin-bottom:20px;" />
-
-      <h3>Define Subjects</h3>
-      <p style="font-size:0.8rem; color:var(--text-sub); margin-bottom:15px;">Unique codes from your schedule will appear below automatically.</p>
-      <div id="builderSubjects" style="margin-bottom:25px; min-height:40px;"></div>
-
-      <button class="btn-present" style="width:100%; background:#3498db; font-size:1.1rem; padding:15px;" onclick="saveBuiltTimetable()">Save & Apply Timetable</button>
-    `;
-    setTimeout(() => { switchBuilderDay('Monday'); renderBuilderSubjects(); }, 0);
-  }
-  else if (type === 'userManual') {
+  if (type === 'userManual') {
     html += `
       <h2>How to Use This App</h2>
       <div style="max-height: 60vh; overflow-y: auto; padding-right: 10px; text-align: left;">
         <div class="manual-section" style="margin-bottom:15px;">
-          <h3 style="font-size:1rem; margin-bottom:4px;">1. Getting Started</h3>
-          <p style="font-size:0.85rem; color:var(--text-sub);">Your schedule is pre-loaded! If you ever need to restore it, click "Reset Default Timetable" in the menu.</p>
+          <h3 style="font-size:1rem; margin-bottom:4px;">1. Timetable Tab</h3>
+          <p style="font-size:0.85rem; color:var(--text-sub);">Displays your schedule for the day. You can instantly mark yourself present or absent for individual classes using the buttons inside each class card.</p>
         </div>
         <div class="manual-section" style="margin-bottom:15px;">
-          <h3 style="font-size:1rem; margin-bottom:4px;">2. Set Term & Calendar</h3>
-          <p style="font-size:0.85rem; color:var(--text-sub);"><b>CRITICAL:</b> Upload your calendar to set the <b>Term Start Date</b>. The app will automatically mark you absent for every scheduled class between the start date and today unless marked green.</p>
+          <h3 style="font-size:1rem; margin-bottom:4px;">2. Edit Timetable</h3>
+          <p style="font-size:0.85rem; color:var(--text-sub);">Click the pencil icon ✏️ on the timetable tab to build or modify your daily schedule inline.</p>
         </div>
         <div class="manual-section" style="margin-bottom:15px;">
-          <h3 style="font-size:1rem; margin-bottom:4px;">3. Live Daily Tracking</h3>
-          <p style="font-size:0.85rem; color:var(--text-sub);">When a class is happening, a glowing <b>LIVE NOW</b> card will appear. Tap Present or Absent to log it instantly!</p>
-        </div>
-        <div class="manual-section" style="margin-bottom:15px;">
-          <h3 style="font-size:1rem; margin-bottom:4px;">4. Bunk Meter</h3>
-          <p style="font-size:0.85rem; color:var(--text-sub);">Set your target percentage in the menu. Each card displays safe bunks remaining or the exact number of classes you must attend.</p>
+          <h3 style="font-size:1rem; margin-bottom:4px;">3. Set Term & Calendar</h3>
+          <p style="font-size:0.85rem; color:var(--text-sub);"><b>CRITICAL:</b> Upload your calendar to set the <b>Term Start Date</b>. The app will automatically calculate attendance stats correctly.</p>
         </div>
       </div>`;
   } else if (type === 'historyLog') {
@@ -1047,6 +994,7 @@ function changeDay(dayName) {
 function checkAndAutoMarkDay() {
   const todayStr = getTodayDateString();
   const todayName = getTodayString();
+  
   if (markedDates.includes(todayStr)) return; 
 
   let dailyMarks = JSON.parse(localStorage.getItem('daily_marks_v41')) || {};
@@ -1069,150 +1017,162 @@ function checkAndAutoMarkDay() {
     markedDates.push(todayStr); 
     addHistory(`All classes attended! Auto-marked calendar for ${todayStr}.`);
     localStorage.setItem(MARKED_DATES_KEY, JSON.stringify(markedDates));
+    
+    courses.forEach(c => {
+      if (c.schedule && c.schedule[todayName]) {
+        c.schedule[todayName].forEach(slot => {
+          const slotKey = `${todayStr}_${c.id}_${slot.start}`;
+          delete dailyMarks[slotKey];
+        });
+      }
+    });
+    localStorage.setItem('daily_marks_v41', JSON.stringify(dailyMarks));
   }
-}
-
-function handleLiveAttendance(courseId, status, slotKey) {
-  let handledClasses = JSON.parse(localStorage.getItem('handled_live_classes')) || [];
-  if (!handledClasses.includes(slotKey)) {
-      handledClasses.push(slotKey);
-      localStorage.setItem('handled_live_classes', JSON.stringify(handledClasses));
-  }
-
-  let dailyMarks = JSON.parse(localStorage.getItem('daily_marks_v41')) || {};
-  dailyMarks[slotKey] = status;
-  localStorage.setItem('daily_marks_v41', JSON.stringify(dailyMarks));
-
-  const course = courses.find(c => c.id === courseId);
-  if (!academicCalendar || !academicCalendar.startDate) {
-    if (status === 'present') course.present += 1;
-    if (status === 'absent') course.absent += 1;
-  }
-  
-  addHistory(`Live ${status.toUpperCase()}: ${course.name}`);
-  checkAndAutoMarkDay();
-  
-  saveToDatabase();
-  renderUI();
 }
 
 function renderUI() {
+  // 1. Manage Tab Visibility
+  const ttSection = document.getElementById('timetableSection');
+  const courseSection = document.getElementById('courseList');
+  if (currentTab === 'courses') {
+      ttSection.style.display = 'none';
+      courseSection.style.display = 'grid';
+  } else {
+      ttSection.style.display = 'block';
+      courseSection.style.display = 'none';
+  }
+
+  // 2. Day Selector Highlights
   document.querySelectorAll('.day-selector button').forEach(btn => {
     btn.classList.remove('active-day');
     if (btn.innerText.startsWith(currentSelectedDay.substring(0, 3))) btn.classList.add('active-day');
   });
 
   const activeBtn = document.querySelector('.day-selector button.active-day');
-  if (activeBtn) {
+  if (activeBtn && currentTab === 'timetable') {
     activeBtn.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
   }
 
+  // 3. Render Timetable Logic
   const timeContainer = document.getElementById('timetableContainer');
-  const isToday = getTodayString() === currentSelectedDay;
-  const isSunday = currentSelectedDay === 'Sunday';
-  const isDeclaredHoliday = isToday && isTodayHoliday();
+  const editBtn = document.getElementById('editTimetableBtn');
   
-  const now = new Date(); 
-  const currentTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-
-  if (isSunday || isDeclaredHoliday) {
-    const holidayMsg = isSunday ? 'SUNDAY IS A HOLIDAY' : 'TODAY IS A HOLIDAY';
-    timeContainer.innerHTML = `<div class="holiday-banner"><p style="color:#e74c3c; font-size:1.15rem; font-weight:800;">🏖️ ${holidayMsg}</p></div>`;
-  } else {
-    let todaysClasses = [];
-    courses.forEach(c => { 
-      if (c.schedule && c.schedule[currentSelectedDay]) {
-        c.schedule[currentSelectedDay].forEach(slot => { 
-          todaysClasses.push({ name: c.name, start: slot.start, end: slot.end, id: c.id }); 
-        });
-      }
-    });
-    
-    if (todaysClasses.length === 0) {
-      timeContainer.innerHTML = `<p style="color:var(--text-sub);">No classes scheduled.</p>`;
-    } else {
-      todaysClasses.sort((a, b) => a.start.localeCompare(b.start));
+  if (isEditingTimetable) {
+      editBtn.innerText = '💾';
+      timeContainer.classList.remove('timetable-bar');
+      timeContainer.classList.add('timetable-edit-mode');
       
-      let html = '<div class="timetable-spacer"></div>';
-      let focusId = null;
-      let foundFocus = false;
-
-      todaysClasses.forEach((cls, idx) => {
-        let status = '';
-        let indicator = '';
-        const cardId = `timeline-card-${idx}`;
-        const cascadeDelay = idx * 0.08; 
-
-        if (isToday) { 
-          if (currentTime >= cls.start && currentTime <= cls.end) {
-            status = 'active'; 
-            indicator = '<span class="live-dot-small"></span>';
-            if (!foundFocus) { focusId = cardId; foundFocus = true; }
-          } 
-          else if (currentTime > cls.end) {
-            status = 'past'; 
-          }
-          else {
-            status = 'upcoming';
-            if (!foundFocus) { focusId = cardId; foundFocus = true; }
-          }
-        }
-
-        html += `
-          <div class="timeline-card ${status}" id="${cardId}" style="animation-delay: ${cascadeDelay}s">
-            <div class="timeline-time">${indicator}${format12Hour(cls.start)} - ${format12Hour(cls.end)}</div>
-            <div class="timeline-course">${cls.name}</div>
+      let editHtml = '';
+      inlineEditSchedule.forEach((p, idx) => {
+          editHtml += `
+          <div style="background:var(--card-bg); padding:15px; border-radius:12px; display:flex; flex-direction:column; gap:10px; border:1px solid var(--border-color); box-shadow: 0 2px 10px rgba(0,0,0,0.05);">
+              <div style="display:flex; gap:10px;">
+                 <input type="time" class="modal-input" style="margin:0; padding:10px; flex:1;" value="${p.start}" onchange="updateInlinePeriod(${idx}, 'start', this.value)">
+                 <input type="time" class="modal-input" style="margin:0; padding:10px; flex:1;" value="${p.end}" onchange="updateInlinePeriod(${idx}, 'end', this.value)">
+                 <button onclick="removeInlinePeriod(${idx})" style="background:#e74c3c; color:white; border:none; border-radius:8px; padding:0 15px; font-weight:bold;">×</button>
+              </div>
+              <input type="text" class="modal-input" style="margin:0; padding:12px; font-size: 0.95rem; font-weight:700;" value="${p.name}" placeholder="Full Course Name" onchange="updateInlinePeriod(${idx}, 'name', this.value)">
           </div>`;
       });
+      editHtml += `<button onclick="addInlinePeriod()" style="padding:15px; background:var(--bg-color); color:#3498db; border:2px dashed #3498db; border-radius:12px; cursor:pointer; font-weight:800; font-size:1rem; margin-top: 5px;">+ Add Class to ${currentSelectedDay}</button>`;
+      timeContainer.innerHTML = editHtml;
+
+  } else {
+      editBtn.innerText = '✏️';
+      timeContainer.classList.remove('timetable-edit-mode');
+      timeContainer.classList.add('timetable-bar');
+
+      const isToday = getTodayString() === currentSelectedDay;
+      const isSunday = currentSelectedDay === 'Sunday';
+      const isDeclaredHoliday = isToday && isTodayHoliday();
       
-      html += '<div class="timetable-spacer"></div>';
-      timeContainer.innerHTML = html;
+      const now = new Date(); 
+      const currentTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
 
-      if (focusId && isToday && !hasAutoScrolledToday) {
-        setTimeout(() => {
-          const el = document.getElementById(focusId);
-          if (el) {
-            el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-            hasAutoScrolledToday = true;
-          }
-        }, 300); 
-      }
-    }
-  }
-
-  let liveClassHTML = '';
-  if (isToday && !isTodayHoliday() && getTodayString() !== 'Sunday') {
-    const todayStr = getTodayDateString();
-    courses.forEach(c => {
-      if (c.schedule && c.schedule[currentSelectedDay]) {
-        c.schedule[currentSelectedDay].forEach(slot => {
-          if (currentTime >= slot.start && currentTime <= slot.end) {
-            const slotKey = `${todayStr}_${c.id}_${slot.start}`;
-            let handledClasses = JSON.parse(localStorage.getItem('handled_live_classes')) || [];
-            if (!handledClasses.includes(slotKey)) {
-              liveClassHTML += `
-                <div class="live-prompt-card">
-                  <div class="live-info-header">
-                    <div class="live-status"><div class="live-dot"></div><span>LIVE NOW</span></div>
-                    <div class="live-time">${format12Hour(slot.start)} - ${format12Hour(slot.end)}</div>
-                  </div>
-                  <div class="live-course-details">
-                    <h4>${c.name}</h4>
-                  </div>
-                  <div class="live-actions-row">
-                    <button class="btn-present-large" onclick="handleLiveAttendance(${c.id}, 'present', '${slotKey}')">✓ PRESENT</button>
-                    <button class="btn-absent-large" onclick="handleLiveAttendance(${c.id}, 'absent', '${slotKey}')">✖ ABSENT</button>
-                  </div>
-                </div>`;
-            }
+      if (isSunday || isDeclaredHoliday) {
+        const holidayMsg = isSunday ? 'SUNDAY IS A HOLIDAY' : 'TODAY IS A HOLIDAY';
+        timeContainer.innerHTML = `<div class="holiday-banner"><p style="color:#e74c3c; font-size:1.15rem; font-weight:800;">🏖️ ${holidayMsg}</p></div>`;
+      } else {
+        let todaysClasses = [];
+        courses.forEach(c => { 
+          if (c.schedule && c.schedule[currentSelectedDay]) {
+            c.schedule[currentSelectedDay].forEach(slot => { 
+              todaysClasses.push({ name: c.name, start: slot.start, end: slot.end, id: c.id }); 
+            });
           }
         });
-      }
-    });
-  }
-  const liveContainer = document.getElementById('liveClassContainer');
-  if (liveContainer) liveContainer.innerHTML = liveClassHTML;
+        
+        if (todaysClasses.length === 0) {
+          timeContainer.innerHTML = `<p style="color:var(--text-sub);">No classes scheduled.</p>`;
+        } else {
+          todaysClasses.sort((a, b) => a.start.localeCompare(b.start));
+          
+          let html = '<div class="timetable-spacer"></div>';
+          let focusId = null;
+          let foundFocus = false;
 
+          todaysClasses.forEach((cls, idx) => {
+            let status = '';
+            let indicator = '';
+            let inlineActions = '';
+            const cardId = `timeline-card-${idx}`;
+            const cascadeDelay = idx * 0.08; 
+
+            if (isToday) { 
+              if (currentTime >= cls.start && currentTime <= cls.end) {
+                status = 'active'; 
+                indicator = '<span class="live-dot-small"></span>';
+                if (!foundFocus) { focusId = cardId; foundFocus = true; }
+              } 
+              else if (currentTime > cls.end) {
+                status = 'past'; 
+              }
+              else {
+                status = 'upcoming';
+                if (!foundFocus) { focusId = cardId; foundFocus = true; }
+              }
+              
+              // INLINE ATTENDANCE BUTTONS
+              let slotKey = `${getTodayDateString()}_${cls.id}_${cls.start}`;
+              let dailyMarks = JSON.parse(localStorage.getItem('daily_marks_v41')) || {};
+              let mark = dailyMarks[slotKey];
+              let presActive = mark === 'present' ? 'selected' : '';
+              let absActive = mark === 'absent' ? 'selected' : '';
+              
+              inlineActions = `
+              <div class="timeline-actions">
+                 <button class="btn-card-action ${presActive}" style="background:#2ecc71" onclick="toggleSlotAttendance(${cls.id}, '${cls.start}', 'present')">PRESENT</button>
+                 <button class="btn-card-action ${absActive}" style="background:#e74c3c" onclick="toggleSlotAttendance(${cls.id}, '${cls.start}', 'absent')">ABSENT</button>
+              </div>`;
+            }
+
+            html += `
+              <div class="timeline-card ${status}" id="${cardId}" style="animation-delay: ${cascadeDelay}s">
+                <div>
+                  <div class="timeline-time">${indicator}${format12Hour(cls.start)} - ${format12Hour(cls.end)}</div>
+                  <div class="timeline-course">${cls.name}</div>
+                </div>
+                ${inlineActions}
+              </div>`;
+          });
+          
+          html += '<div class="timetable-spacer"></div>';
+          timeContainer.innerHTML = html;
+
+          if (focusId && isToday && !hasAutoScrolledToday && currentTab === 'timetable') {
+            setTimeout(() => {
+              const el = document.getElementById(focusId);
+              if (el) {
+                el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+                hasAutoScrolledToday = true;
+              }
+            }, 300); 
+          }
+        }
+      }
+  }
+
+  // 4. Render Global Course List
   const listContainer = document.getElementById('courseList');
   listContainer.innerHTML = '';
   if (courses.length === 0) { 

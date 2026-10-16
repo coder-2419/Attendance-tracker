@@ -1,5 +1,5 @@
 // ==========================================
-// 1. FIREBASE INITIALIZATION & KEYS
+// 1. FIREBASE INITIALIZATION & CONFIGURATION
 // ==========================================
 const firebaseConfig = {
   apiKey: "AIzaSyDfzYCLN2b4SNsUPBL9CqPIWcSTH2WCt9c",
@@ -29,7 +29,7 @@ const PRO_STATUS_KEY = 'attendance_app_is_pro_v1';
 const VALID_ACCESS_KEYS = ['NMIT2026', 'CAMPUSPRO', 'ADMINFREE'];
 
 // Navigation & Clock State
-let currentTab = 'courses'; // Courses / Attendance % opens first
+let currentTab = 'courses';
 let isEditingTimetable = false;
 let inlineEditSchedule = [];
 
@@ -38,7 +38,7 @@ let clockTargetField = null;
 let clockCurrentHour = 9;
 let clockCurrentMinute = 0;
 let clockCurrentAmPm = 'AM';
-let clockCurrentView = 'hours'; // 'hours' or 'minutes'
+let clockCurrentView = 'hours';
 
 let targetPercentage = parseInt(localStorage.getItem('target_percentage'), 10) || 75;
 let historyLog = JSON.parse(localStorage.getItem(HISTORY_KEY)) || [];
@@ -116,15 +116,13 @@ function loadFromDatabase() {
 let courses = loadFromDatabase();
 
 // ==========================================
-// 2. CLOUD FIRESTORE & OFFLINE PERSISTENCE
+// 2. CLOUD FIRESTORE & AUTH STATE
 // ==========================================
 function saveToDatabase() {
-  // Local storage cache
   localStorage.setItem(DB_KEY, JSON.stringify(courses));
   localStorage.setItem(HISTORY_KEY, JSON.stringify(historyLog));
   localStorage.setItem(MARKED_DATES_KEY, JSON.stringify(markedDates));
 
-  // Cloud Firestore sync
   if (currentUser) {
     db.collection('users').doc(currentUser.uid).set({
       email: currentUser.email,
@@ -146,6 +144,7 @@ function addHistory(action) {
   saveToDatabase();
 }
 
+// Auth State Observer: Pops up login modal if user is not signed in
 auth.onAuthStateChanged(async (user) => {
   const authMenuItem = document.getElementById('authMenuItem');
   
@@ -153,11 +152,24 @@ auth.onAuthStateChanged(async (user) => {
     currentUser = user;
     if (authMenuItem) authMenuItem.innerHTML = `👤 ${user.displayName || user.email.split('@')[0]}`;
     await loadUserDataFromFirestore(user.uid);
+    
+    // Automatically dismiss the login modal on successful sign-in
+    const modalContent = document.getElementById('modalContent');
+    const modalOverlay = document.getElementById('modalOverlay');
+    if (modalOverlay && modalOverlay.classList.contains('active') && modalContent && modalContent.classList.contains('auth-modal-card')) {
+      closeModal();
+    }
   } else {
     currentUser = null;
     userRole = 'student';
     if (authMenuItem) authMenuItem.innerHTML = `🔑 Sign In / Account`;
+    
+    // Automatically trigger login popup for unauthenticated visitors
+    setTimeout(() => {
+      openModal('authModal');
+    }, 300);
   }
+  
   checkLaunchPaywall();
   renderUI();
 });
@@ -205,9 +217,11 @@ async function loadUserDataFromFirestore(uid) {
 // 3. HARD PAYWALL ON LAUNCH LOGIC
 // ==========================================
 function isUserUnlocked() {
-  if (localStorage.getItem(PRO_STATUS_KEY) === 'true') return true;
-  if (currentUser && (userRole === 'admin' || userRole === 'pro')) return true;
-  return false;
+  if (currentUser) {
+    if (userRole === 'admin' || userRole === 'pro') return true;
+    return false;
+  }
+  return localStorage.getItem(PRO_STATUS_KEY) === 'true';
 }
 
 function checkLaunchPaywall() {
@@ -215,9 +229,19 @@ function checkLaunchPaywall() {
   if (!paywallEl) return;
 
   if (isUserUnlocked()) {
+    paywallEl.classList.remove('active');
     paywallEl.style.display = 'none';
-    document.body.classList.remove('scroll-locked');
+    
+    // Unlock scrolling only if no modal dialog is currently open
+    const modalOverlay = document.getElementById('modalOverlay');
+    const clockModal = document.getElementById('clockModalOverlay');
+    const isModalOpen = (modalOverlay && modalOverlay.classList.contains('active')) || 
+                        (clockModal && clockModal.classList.contains('active'));
+    if (!isModalOpen) {
+      document.body.classList.remove('scroll-locked');
+    }
   } else {
+    paywallEl.classList.add('active');
     paywallEl.style.display = 'flex';
     document.body.classList.add('scroll-locked');
   }
@@ -225,21 +249,40 @@ function checkLaunchPaywall() {
 
 function unlockApp() {
   localStorage.setItem(PRO_STATUS_KEY, 'true');
+  userRole = (userRole === 'admin') ? 'admin' : 'pro';
   
   if (currentUser) {
     db.collection('users').doc(currentUser.uid).set({
       isPro: true,
-      role: userRole === 'admin' ? 'admin' : 'pro',
+      role: userRole,
       unlockedAt: firebase.firestore.FieldValue.serverTimestamp()
     }, { merge: true }).catch(err => console.error("Cloud pro update failed:", err));
   }
 
   const paywallEl = document.getElementById('paywallOverlay');
-  if (paywallEl) paywallEl.style.display = 'none';
+  if (paywallEl) {
+    paywallEl.classList.remove('active');
+    paywallEl.style.display = 'none';
+  }
   document.body.classList.remove('scroll-locked');
   alert("🎉 Access Unlocked! Welcome to Attendance Tracker.");
   renderUI();
 }
+
+function relockPaywallForTesting() {
+  localStorage.removeItem(PRO_STATUS_KEY);
+  if (currentUser) {
+    userRole = 'student';
+    db.collection('users').doc(currentUser.uid).set({
+      isPro: false,
+      role: 'student'
+    }, { merge: true });
+  }
+  closeModal();
+  checkLaunchPaywall();
+}
+window.relockPaywall = relockPaywallForTesting;
+window.unlockApp = unlockApp;
 
 function redeemActivationKey() {
   const input = document.getElementById('activationKeyInput');
@@ -250,18 +293,18 @@ function redeemActivationKey() {
     errorEl.innerText = '';
     unlockApp();
   } else {
-    errorEl.innerText = 'Invalid access code. Please try again or pay above.';
+    errorEl.innerText = 'Invalid access code. Please try again.';
   }
 }
 
 function initiatePayment() {
-  if (confirm("Proceed to complete UPI/Card payment of ₹49 for Semester Pro Access?")) {
+  if (confirm("Proceed to simulate UPI/Card payment of ₹49 for Semester Pro Access?")) {
     unlockApp();
   }
 }
 
 // ==========================================
-// 4. INTERACTIVE CLOCK PICKER LOGIC
+// 4. INTERACTIVE CLOCK PICKER
 // ==========================================
 function openClockPicker(index, field) {
   clockTargetIndex = index;
@@ -284,8 +327,14 @@ function openClockPicker(index, field) {
 }
 
 function closeClockPicker() {
-  document.getElementById('clockModalOverlay').classList.remove('active');
-  document.body.classList.remove('scroll-locked');
+  const clockModal = document.getElementById('clockModalOverlay');
+  if (clockModal) clockModal.classList.remove('active');
+  
+  const paywallEl = document.getElementById('paywallOverlay');
+  const isPaywallShowing = paywallEl && (paywallEl.classList.contains('active') || paywallEl.style.display === 'flex');
+  if (!isPaywallShowing) {
+    document.body.classList.remove('scroll-locked');
+  }
 }
 
 function setClockAmPm(ampm) {
@@ -378,6 +427,7 @@ function confirmClockTime() {
 function showVirtualPopup({ icon = '📋', title, message, confirmText = '✓ Save', cancelText = '✖ No', onConfirm, onCancel }) {
   const modalOverlay = document.getElementById('modalOverlay');
   const modalContent = document.getElementById('modalContent');
+  modalContent.className = 'modal-content';
   modalOverlay.classList.add('active');
   document.body.classList.add('scroll-locked');
   
@@ -395,14 +445,12 @@ function showVirtualPopup({ icon = '📋', title, message, confirmText = '✓ Sa
   
   if (cancelText) {
     document.getElementById('vpopupCancel').onclick = () => {
-      document.getElementById('modalOverlay').classList.remove('active');
-      document.body.classList.remove('scroll-locked');
+      closeModal();
       if (onCancel) onCancel();
     };
   }
   document.getElementById('vpopupConfirm').onclick = () => {
-    document.getElementById('modalOverlay').classList.remove('active');
-    document.body.classList.remove('scroll-locked');
+    closeModal();
     if (onConfirm) onConfirm();
   };
 }
@@ -418,7 +466,6 @@ function toggleTimetableEdit() {
       }
     }
 
-    // Virtual Pop-up 1: Confirm Saving Changes
     showVirtualPopup({
       icon: '💾',
       title: 'Save Timetable Changes?',
@@ -426,12 +473,11 @@ function toggleTimetableEdit() {
       confirmText: '✓ Save',
       cancelText: '✖ No',
       onConfirm: () => {
-        // Virtual Pop-up 2: Confirm Updating Default Timetable
         setTimeout(() => {
           showVirtualPopup({
             icon: '⚙️',
             title: 'Update Default Timetable?',
-            message: `Do you also want to save this as the <b>default timetable</b>? (This updated schedule will be restored if you click "Reset Default Timetable").`,
+            message: `Do you also want to save this as the <b>default timetable</b>? (This will be restored if you click "Reset Default Timetable").`,
             confirmText: '✓ Save',
             cancelText: '✖ No',
             onConfirm: () => saveInlineTimetable(true),
@@ -505,7 +551,6 @@ function saveInlineTimetable(setAsDefault) {
   renderUI();
 }
 
-// Reset Default Timetable
 function resetToDefaultTimetable() {
   showVirtualPopup({
     icon: '⚠️',
@@ -672,7 +717,6 @@ function getBunkStatus(present, absent) {
   }
 }
 
-// Inline Timetable Class Attendance Toggle
 function toggleSlotAttendance(courseId, slotStart, clickedStatus) {
   const todayStr = getTodayDateString();
   const slotKey = `${todayStr}_${courseId}_${slotStart}`;
@@ -697,7 +741,6 @@ function toggleSlotAttendance(courseId, slotStart, clickedStatus) {
   renderUI();
 }
 
-// Auto-mark day green in calendar when all classes attended
 function checkAndAutoMarkDay() {
   const todayStr = getTodayDateString();
   const todayName = getTodayString();
@@ -722,7 +765,6 @@ function checkAndAutoMarkDay() {
     addHistory(`All classes attended! Auto-marked calendar for ${todayStr}.`);
     localStorage.setItem(MARKED_DATES_KEY, JSON.stringify(markedDates));
     
-    // Clean up slot marks to avoid state duplication
     courses.forEach(c => {
       if (c.schedule && c.schedule[todayName]) {
         c.schedule[todayName].forEach(slot => {
@@ -754,7 +796,6 @@ function changeDay(dayName) {
 }
 
 function renderUI() {
-  // 1. Strict Tab Isolation (No course cards inside timetable)
   const ttSection = document.getElementById('timetableSection');
   const courseSection = document.getElementById('courseList');
   
@@ -766,13 +807,11 @@ function renderUI() {
       courseSection.style.setProperty('display', 'none', 'important');
   }
 
-  // 2. Day Selector Highlights
   document.querySelectorAll('.day-selector button').forEach(btn => {
     btn.classList.remove('active-day');
     if (btn.innerText.startsWith(currentSelectedDay.substring(0, 3))) btn.classList.add('active-day');
   });
 
-  // 3. Timetable List Rendering
   const timeContainer = document.getElementById('timetableContainer');
   const editBtn = document.getElementById('editTimetableBtn');
   
@@ -868,7 +907,6 @@ function renderUI() {
       }
   }
 
-  // 4. Course Cards Vertical List Rendering (Attendance % View)
   const listContainer = document.getElementById('courseList');
   listContainer.innerHTML = '';
   if (courses.length === 0) { 
@@ -937,7 +975,7 @@ document.addEventListener('click', (e) => {
 });
 
 // ==========================================
-// 8. CALENDAR SETUP & MODALS
+// 8. MODALS & AUTH MODAL (LIBRE BASKERVILLE)
 // ==========================================
 let setupBlobUrl = null;
 let setupTempData = {};
@@ -1109,10 +1147,17 @@ function toggleMenu() {
 function closeModal(e) { 
   if (e && e.target !== document.getElementById('modalOverlay') && !e.target.classList.contains('close-btn')) return; 
   document.getElementById('modalOverlay').classList.remove('active'); 
-  document.body.classList.remove('scroll-locked');
+  const modalContent = document.getElementById('modalContent');
+  if (modalContent) modalContent.className = 'modal-content';
+  
+  // Maintain scroll lock ONLY if the paywall is currently displayed
+  const paywallEl = document.getElementById('paywallOverlay');
+  const isPaywallShowing = paywallEl && (paywallEl.classList.contains('active') || paywallEl.style.display === 'flex');
+  if (!isPaywallShowing) {
+    document.body.classList.remove('scroll-locked');
+  }
 }
 
-// Global Modal Handler
 function openModal(type) {
   document.getElementById('sidebar').classList.remove('open');
   document.getElementById('menuOverlay').classList.remove('active');
@@ -1120,6 +1165,14 @@ function openModal(type) {
   const modalContent = document.getElementById('modalContent');
   modalOverlay.classList.add('active');
   document.body.classList.add('scroll-locked');
+  
+  // Assign Libre Baskerville typography class specifically to the login/account modal
+  if (type === 'authModal') {
+    modalContent.className = 'modal-content auth-modal-card';
+  } else {
+    modalContent.className = 'modal-content';
+  }
+
   let html = `<button class="close-btn" onclick="closeModal()">×</button>`;
 
   if (type === 'authModal') {
@@ -1127,19 +1180,22 @@ function openModal(type) {
       html += `
         <h2>Student Account</h2>
         <div style="text-align:center; padding:15px 0;">
-          <p style="font-size:1.15rem; font-weight:800; color:var(--text-main);">${currentUser.displayName || 'Student'}</p>
-          <p style="font-size:0.85rem; color:var(--text-sub); margin-bottom:15px;">${currentUser.email}</p>
-          <div style="display:inline-block; padding:5px 12px; border-radius:20px; font-size:0.8rem; font-weight:800; background:${userRole === 'admin' ? '#e74c3c' : '#2ecc71'}; color:white; margin-bottom:20px;">
-            ${userRole === 'admin' ? '🛡️ Administrator' : '🎓 Student Pass Active'}
+          <p style="font-size:1.15rem; font-weight:700; color:var(--text-main);">${currentUser.displayName || 'Student'}</p>
+          <p style="font-size:0.9rem; color:var(--text-sub); margin-bottom:15px;">${currentUser.email}</p>
+          <div style="display:inline-block; padding:6px 14px; border-radius:20px; font-size:0.8rem; font-weight:700; background:${userRole === 'admin' ? '#e74c3c' : (userRole === 'pro' ? '#2ecc71' : '#3498db')}; color:white; margin-bottom:20px;">
+            ${userRole === 'admin' ? '🛡️ Administrator' : (userRole === 'pro' ? '🎓 Pro Pass Active' : 'Basic Account')}
           </div>
-          <p style="font-size:0.85rem; color:var(--text-sub); margin-bottom:20px;">Your attendance data is backed up to Cloud Firestore.</p>
-          <button class="vpopup-btn vpopup-btn-cancel" style="width:100%;" onclick="logoutUser()">Sign Out</button>
+          <p style="font-size:0.85rem; color:var(--text-sub); margin-bottom:20px;">Your attendance data is synced with Cloud Firestore.</p>
+          <div style="display:flex; flex-direction:column; gap:10px;">
+            <button class="vpopup-btn vpopup-btn-cancel" style="width:100%;" onclick="logoutUser()">Sign Out</button>
+            <button class="vpopup-btn vpopup-btn-cancel" style="width:100%; background:#7f8c8d !important;" onclick="relockPaywallForTesting()">🔒 Re-lock Paywall (Test)</button>
+          </div>
         </div>
       `;
     } else {
       html += `
-        <h2>Sign In / Backup</h2>
-        <p style="font-size:0.85rem; color:var(--text-sub); margin:10px 0 20px 0;">Sign in to back up your attendance across devices.</p>
+        <h2>Student Sign In</h2>
+        <p style="font-size:0.9rem; color:var(--text-sub); margin:10px 0 20px 0;">Sign in to back up your courses and verify your semester pass.</p>
         
         <button class="btn-present" style="width:100%; padding:14px; background:#4285F4; margin-bottom:15px; display:flex; align-items:center; justify-content:center; gap:10px;" onclick="loginWithGoogle()">
           <span style="font-weight:900;">G</span> Continue with Google
@@ -1147,7 +1203,7 @@ function openModal(type) {
         
         <div style="text-align:center; margin:15px 0; color:var(--text-sub); font-size:0.8rem; font-weight:700;">OR USE EMAIL</div>
         
-        <input type="email" id="authEmail" class="modal-input" placeholder="College Email (e.g. name@nmit.ac.in)" />
+        <input type="email" id="authEmail" class="modal-input" placeholder="College Email" />
         <input type="password" id="authPassword" class="modal-input" placeholder="Password" />
         
         <div style="display:flex; gap:10px;">
@@ -1161,7 +1217,7 @@ function openModal(type) {
       <h2>How to Use This App</h2>
       <div style="max-height: 60vh; overflow-y: auto; text-align: left; margin-top:10px;">
         <h3 style="font-size:1rem; margin-top:10px;">1. Navigation</h3>
-        <p style="font-size:0.85rem; color:var(--text-sub);">Use the bottom bar to switch between <b>Attendance %</b> (course cards) and the <b>Timetable</b>.</p>
+        <p style="font-size:0.85rem; color:var(--text-sub);">Use the bottom bar to switch between <b>Attendance %</b> and the daily <b>Timetable</b>.</p>
         <h3 style="font-size:1rem; margin-top:10px;">2. Mark Live Attendance</h3>
         <p style="font-size:0.85rem; color:var(--text-sub);">Tap Present or Absent directly on today's classes in the Timetable tab.</p>
         <h3 style="font-size:1rem; margin-top:10px;">3. Edit Timetable</h3>
@@ -1411,7 +1467,7 @@ async function logoutUser() {
   try {
     await auth.signOut();
     closeModal();
-    alert("Signed out. Operating in offline/guest mode.");
+    alert("Signed out. Operating in offline mode.");
   } catch (error) {
     alert(error.message);
   }

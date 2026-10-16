@@ -5,12 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Attendance Tracker</title>
   
+  <!-- Google Fonts: Lato (Entire App) & Libre Baskerville (Login Modal) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Lato:ital,wght@0,300;0,400;0,700;0,900;1,400&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+
   <!-- Firebase SDKs (Compat versions for vanilla JS) -->
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 
-  <link rel="stylesheet" href="styles.css?v=50">
+  <link rel="stylesheet" href="styles.css?v=51">
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#ffffff">
 </head>
@@ -48,8 +53,10 @@
     </ul>
   </nav>
 
-  <!-- Virtual In-App Pop-up Container -->
-  <div class="modal-overlay" id="modalOverlay" onclick="closeModal(event)"><div class="modal-content" id="modalContent" onclick="event.stopPropagation()"></div></div>
+  <!-- Global Modal Container -->
+  <div class="modal-overlay" id="modalOverlay" onclick="closeModal(event)">
+    <div class="modal-content" id="modalContent" onclick="event.stopPropagation()"></div>
+  </div>
 
   <!-- Dedicated Clock Picker Modal -->
   <div class="modal-overlay" id="clockModalOverlay">
@@ -59,7 +66,6 @@
         <button class="close-btn" onclick="closeClockPicker()">×</button>
       </div>
       
-      <!-- Digital Display & AM/PM Toggle -->
       <div class="clock-display-row">
         <div class="clock-digital-box">
           <span id="clockHourDisplay" class="active-part" onclick="setClockView('hours')">09</span>
@@ -72,7 +78,6 @@
         </div>
       </div>
 
-      <!-- Analog Clock Face -->
       <div class="clock-dial-container">
         <div class="clock-dial" id="clockDial">
           <div class="clock-center-dot"></div>
@@ -81,7 +86,6 @@
         </div>
       </div>
 
-      <!-- Action Buttons -->
       <div class="vpopup-actions" style="margin-top: 20px;">
         <button class="vpopup-btn vpopup-btn-cancel" onclick="closeClockPicker()">✖ Cancel</button>
         <button class="vpopup-btn vpopup-btn-confirm" onclick="confirmClockTime()">✓ Set Time</button>
@@ -139,8 +143,8 @@
     </button>
   </nav>
 
-  <!-- Hard Launch Paywall Overlay -->
-  <div id="paywallOverlay" class="paywall-overlay" style="display: none;">
+  <!-- Hard Launch Paywall Overlay (Display managed by JavaScript) -->
+  <div id="paywallOverlay" class="paywall-overlay">
     <div class="paywall-card">
       <div class="paywall-badge">CAMPUS PASS</div>
       <h2>Unlock Attendance Tracker</h2>
@@ -163,13 +167,13 @@
       </button>
 
       <div class="paywall-key-section">
-        <input type="text" id="activationKeyInput" placeholder="Enter Access Code (CR / Admin)" />
+        <input type="text" id="activationKeyInput" placeholder="Enter Access Code" />
         <button onclick="redeemActivationKey()">Apply</button>
       </div>
       <div id="paywallError" class="paywall-error"></div>
     </div>
   </div>
 
-  <script src="script.js?v=50"></script>
+  <script src="script.js?v=51"></script>
 </body>
 </html>

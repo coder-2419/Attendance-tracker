@@ -312,9 +312,8 @@ function checkLaunchPaywall() {
     document.body.classList.add('scroll-locked');
   }
 }
-
 // ==========================================
-// 5. PROFESSIONAL CHECKOUT MODAL (REAL IMAGE ICONS)
+// PROFESSIONAL CHECKOUT WITH DIRECT APP INTENTS
 // ==========================================
 function initiatePayment() {
   if (!currentUser) {
@@ -324,10 +323,24 @@ function initiatePayment() {
   }
 
   const upiId = "8073510268@fam";
-  const payeeName = "Attendance Tracker Pro";
-  const amountVal = Number(subscriptionPrice || 19).toFixed(2);
-  const note = `PASS_${currentUser.uid.substring(0, 5)}`;
-  const upiUrl = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(payeeName)}&am=${amountVal}&cu=INR&tn=${encodeURIComponent(note)}`;
+  const payeeName = "Attendance Tracker";
+  // Send integer amount without decimals (prevents bank gateway decimal rejections)
+  const amountVal = Math.round(subscriptionPrice || 20); 
+  const note = `PASS`;
+
+  // Base parameters
+  const queryParams = `pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(payeeName)}&am=${amountVal}&cu=INR&tn=${encodeURIComponent(note)}`;
+
+  // Generic Intent
+  const upiUrl = `upi://pay?${queryParams}`;
+
+  // App-Specific Direct Deep Links (bypasses browser chooser & reduces P2P friction)
+  const gpayUrl = `intent://pay?${queryParams}#Intent;scheme=upi;package=com.google.android.apps.nbu.paisa.user;end`;
+  const phonePeUrl = `phonepe://pay?${queryParams}`;
+  const paytmUrl = `paytmmp://pay?${queryParams}`;
+  const bhimUrl = `bhim://pay?${queryParams}`;
+  const credUrl = `credpay://upi/pay?${queryParams}`;
+
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(upiUrl)}`;
 
   const modalOverlay = document.getElementById('modalOverlay');
@@ -337,7 +350,6 @@ function initiatePayment() {
   document.body.classList.add('scroll-locked');
 
   modalContent.innerHTML = `
-    <!-- Top Bar: Merchant Identity, Price & Bulletproof Close Button -->
     <div class="checkout-top-bar">
       <div class="checkout-merchant-info">
         <div class="checkout-merchant-icon">🛡️</div>
@@ -356,7 +368,7 @@ function initiatePayment() {
       <div class="checkout-top-right">
         <div class="checkout-price-box">
           <div class="checkout-price-label">AMOUNT DUE</div>
-          <div class="checkout-price-value">₹${subscriptionPrice}</div>
+          <div class="checkout-price-value">₹${amountVal}</div>
         </div>
         <button type="button" class="checkout-close-btn" onclick="forceCloseModal()" aria-label="Close Checkout">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -367,60 +379,58 @@ function initiatePayment() {
       </div>
     </div>
 
-    <!-- Security & Trust Guarantee Strip -->
     <div class="checkout-trust-strip">
       <span>🔒 256-Bit Encrypted Transfer</span>
       <span>⚡ Instant Cloud Activation</span>
     </div>
 
-    <!-- Scrollable Modal Body -->
     <div class="checkout-body">
-      <!-- 1-Tap Mobile UPI Intent Button -->
+      <!-- Direct Generic Intent -->
       <a href="${upiUrl}" class="btn-checkout-upi-app">
-        <span>📲 Pay via Installed UPI App</span>
+        <span>📲 Pay via Any Installed UPI App</span>
       </a>
 
-      <!-- Official App Image Icons -->
+      <!-- Targeted Direct App Triggers -->
       <div class="checkout-brand-icons-row">
-        <!-- 1. Google Pay -->
-        <a href="${upiUrl}" class="brand-icon-card" title="Google Pay">
+        <!-- Google Pay Direct Intent -->
+        <a href="${gpayUrl}" class="brand-icon-card" title="Open Google Pay" onclick="copyUpiVpa('${upiId}', false)">
           <img src="gpay_icon.jfif" alt="Google Pay" onerror="this.onerror=null; this.src='https://upload.wikimedia.org/wikipedia/commons/f/f2/Google_Pay_Logo.svg';" />
         </a>
 
-        <!-- 2. PhonePe -->
-        <a href="${upiUrl}" class="brand-icon-card" title="PhonePe">
+        <!-- PhonePe Direct Intent -->
+        <a href="${phonePeUrl}" class="brand-icon-card" title="Open PhonePe" onclick="copyUpiVpa('${upiId}', false)">
           <img src="phonepe_icon.jfif" alt="PhonePe" onerror="this.onerror=null; this.src='https://download.logo.wine/logo/PhonePe/PhonePe-Logo.wine.png';" />
         </a>
 
-        <!-- 3. Paytm -->
-        <a href="${upiUrl}" class="brand-icon-card" title="Paytm">
+        <!-- Paytm Direct Intent -->
+        <a href="${paytmUrl}" class="brand-icon-card" title="Open Paytm" onclick="copyUpiVpa('${upiId}', false)">
           <img src="paytm_icon.png" alt="Paytm" onerror="this.onerror=null; this.src='https://asset.brandfetch.io/id_j8vV11K/id_o5V51w_.png';" />
         </a>
 
-        <!-- 4. BHIM UPI -->
-        <a href="${upiUrl}" class="brand-icon-card" title="BHIM UPI">
+        <!-- BHIM Direct Intent -->
+        <a href="${bhimUrl}" class="brand-icon-card" title="Open BHIM UPI" onclick="copyUpiVpa('${upiId}', false)">
           <img src="bhim_icon.jfif" alt="BHIM UPI" onerror="this.onerror=null; this.src='https://upload.wikimedia.org/wikipedia/commons/e/e1/BHIM_logo.svg';" />
         </a>
 
-        <!-- 5. CRED -->
-        <a href="${upiUrl}" class="brand-icon-card" title="CRED">
+        <!-- CRED Direct Intent -->
+        <a href="${credUrl}" class="brand-icon-card" title="Open CRED" onclick="copyUpiVpa('${upiId}', false)">
           <img src="cred_icon.png" alt="CRED" onerror="this.onerror=null; this.src='https://web-images.credcdn.in/_next/assets/images/home-page/cred-logo.png';" />
         </a>
       </div>
 
-      <!-- Centered QR Presentation with Copy Button -->
+      <!-- QR Frame & 1-Tap Copy -->
       <div class="checkout-qr-frame">
         <img src="${qrUrl}" alt="UPI QR" class="checkout-qr-img" />
         <div class="checkout-copy-row">
           <span class="checkout-upi-text" id="upiVpaText">${upiId}</span>
-          <button type="button" class="btn-copy-upi" onclick="copyUpiVpa('${upiId}')">📋 Copy</button>
+          <button type="button" class="btn-copy-upi" onclick="copyUpiVpa('${upiId}', true)">📋 Copy</button>
         </div>
       </div>
 
-      <!-- UTR Verification Input Area -->
+      <!-- UTR Entry Form -->
       <div class="checkout-utr-section">
         <div class="checkout-utr-title">Confirm Your Payment</div>
-        <p class="checkout-utr-desc">Enter the 12-digit <b>UPI Reference / UTR Number</b> from your receipt to activate your account:</p>
+        <p class="checkout-utr-desc">Enter the 12-digit <b>UPI Reference / UTR Number</b> from your payment receipt:</p>
         
         <input type="text" id="paymentUtrInput" class="checkout-utr-input" placeholder="12-Digit UTR Number" maxlength="12" />
         <div id="utrStatusMsg" style="font-size:0.8rem; font-weight:700; color:var(--absent-btn); min-height:18px; margin-bottom:8px; text-align:center;"></div>
@@ -431,6 +441,24 @@ function initiatePayment() {
       </div>
     </div>
   `;
+}
+
+// Updated copy helper that supports background copying on app tap
+function copyUpiVpa(upiId, showToast = true) {
+  navigator.clipboard.writeText(upiId).then(() => {
+    if (showToast) {
+      const textEl = document.getElementById('upiVpaText');
+      if (textEl) {
+        const original = textEl.innerText;
+        textEl.innerText = 'Copied to clipboard!';
+        textEl.style.color = 'var(--present-btn)';
+        setTimeout(() => {
+          textEl.innerText = original;
+          textEl.style.color = 'var(--text-main)';
+        }, 1500);
+      }
+    }
+  }).catch(() => {});
 }
 
 // Unconditional Modal Closer

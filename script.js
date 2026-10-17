@@ -1,5 +1,5 @@
 // ==========================================
-// 1. FIREBASE INITIALIZATION & CONFIGURATION
+// 1. FIREBASE INITIALIZATION WITH FAILSAFE
 // ==========================================
 const firebaseConfig = {
   apiKey: "AIzaSyDfzYCLN2b4SNsUPBL9CqPIWcSTH2WCt9c",
@@ -10,15 +10,28 @@ const firebaseConfig = {
   appId: "1:266695080777:web:a84408e4b87b9e37f77898"
 };
 
-if (!firebase.apps.length) {
-  firebase.initializeApp(firebaseConfig);
+let auth = null;
+let db = null;
+
+try {
+  if (typeof firebase !== 'undefined') {
+    if (!firebase.apps.length) {
+      firebase.initializeApp(firebaseConfig);
+    }
+    auth = firebase.auth();
+    db = firebase.firestore();
+  }
+} catch (e) {
+  console.warn("Firebase offline or placeholder credentials detected:", e);
 }
-const auth = firebase.auth();
-const db = firebase.firestore();
 
 let currentUser = null;
-let userRole = 'student'; 
-let userDocUnsubscribe = null
+let userRole = 'student'; // 'student', 'pro', or 'admin'
+let userDocUnsubscribe = null;
+let settingsUnsubscribe = null;
+
+let subscriptionPrice = parseInt(localStorage.getItem('subscription_price'), 10) || 19;
+let authMode = 'signin'; 
 
 const DB_KEY = 'attendance_tracker_v43'; 
 const HISTORY_KEY = 'attendance_history_v43';
@@ -27,9 +40,7 @@ const MARKED_DATES_KEY = 'marked_dates_v43';
 const MANUAL_SHOWN_KEY = 'appManualShown_v43';
 const CUSTOM_DEFAULT_SCHEDULE_KEY = 'custom_default_timetable_v43';
 const PRO_STATUS_KEY = 'attendance_app_is_pro_v1';
-const VALID_ACCESS_KEYS = ['NMIT2026', 'CAMPUSPRO', 'ADMINFREE'];
 
-// Navigation & Clock State
 let currentTab = 'courses';
 let isEditingTimetable = false;
 let inlineEditSchedule = [];
@@ -91,14 +102,58 @@ function loadFromDatabase() {
 let courses = loadFromDatabase();
 
 // ==========================================
-// 2. CLOUD FIRESTORE & AUTH STATE
+// 2. DYNAMIC PRICING SYNCHRONIZATION
+// ==========================================
+function updateSubscriptionUI() {
+  const amountDisplay = document.getElementById('paywallAmountDisplay');
+  const btnAmountDisplay = document.getElementById('paywallBtnAmount');
+  if (amountDisplay) amountDisplay.innerText = subscriptionPrice;
+  if (btnAmountDisplay) btnAmountDisplay.innerText = subscriptionPrice;
+}
+
+function listenToAppSettings() {
+  if (!db || settingsUnsubscribe) return;
+  settingsUnsubscribe = db.collection('app_settings').doc('config').onSnapshot(doc => {
+    if (doc.exists && doc.data().price) {
+      subscriptionPrice = parseInt(doc.data().price, 10) || 19;
+      localStorage.setItem('subscription_price', subscriptionPrice);
+      updateSubscriptionUI();
+    }
+  }, err => console.warn("App settings listener warning:", err));
+}
+
+async function saveSubscriptionPrice() {
+  if (!db) return alert("Firebase not connected.");
+  const input = document.getElementById('adminPriceInput');
+  const newPrice = parseInt(input.value, 10);
+  if (isNaN(newPrice) || newPrice < 1) {
+    return alert("Please enter a valid subscription amount.");
+  }
+
+  try {
+    await db.collection('app_settings').doc('config').set({
+      price: newPrice,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+
+    subscriptionPrice = newPrice;
+    localStorage.setItem('subscription_price', newPrice);
+    updateSubscriptionUI();
+    alert(`Subscription price successfully set to ₹${newPrice}!`);
+  } catch (err) {
+    alert("Failed to update subscription price: " + err.message);
+  }
+}
+
+// ==========================================
+// 3. CLOUD FIRESTORE & AUTH STATE
 // ==========================================
 function saveToDatabase() {
   localStorage.setItem(DB_KEY, JSON.stringify(courses));
   localStorage.setItem(HISTORY_KEY, JSON.stringify(historyLog));
   localStorage.setItem(MARKED_DATES_KEY, JSON.stringify(markedDates));
 
-  if (currentUser) {
+  if (currentUser && db) {
     db.collection('users').doc(currentUser.uid).set({
       email: currentUser.email,
       courses: courses,
@@ -119,45 +174,46 @@ function addHistory(action) {
   saveToDatabase();
 }
 
-// Auth State Observer
-auth.onAuthStateChanged(async (user) => {
-  const authMenuItem = document.getElementById('authMenuItem');
-  const adminMenuItem = document.getElementById('adminVerifyMenuItem');
-  
-  if (userDocUnsubscribe) {
-    userDocUnsubscribe();
-    userDocUnsubscribe = null;
-  }
-
-  if (user) {
-    currentUser = user;
-    if (authMenuItem) authMenuItem.innerHTML = `👤 ${user.displayName || user.email.split('@')[0]}`;
-    await loadUserDataFromFirestore(user.uid);
-    listenToUserDocRealtime(user.uid);
+if (auth) {
+  auth.onAuthStateChanged(async (user) => {
+    const authMenuItem = document.getElementById('authMenuItem');
+    const adminMenuItem = document.getElementById('adminVerifyMenuItem');
     
-    const modalContent = document.getElementById('modalContent');
-    const modalOverlay = document.getElementById('modalOverlay');
-    if (modalOverlay && modalOverlay.classList.contains('active') && modalContent && modalContent.classList.contains('auth-modal-card')) {
-      closeModal();
+    if (userDocUnsubscribe) {
+      userDocUnsubscribe();
+      userDocUnsubscribe = null;
     }
-  } else {
-    currentUser = null;
-    userRole = 'student';
-    localStorage.removeItem(PRO_STATUS_KEY);
-    if (authMenuItem) authMenuItem.innerHTML = `🔑 Sign In / Account`;
-    if (adminMenuItem) adminMenuItem.style.display = 'none';
-    
-    setTimeout(() => {
-      openModal('authModal');
-    }, 300);
-  }
-  
-  checkLaunchPaywall();
-  renderUI();
-});
 
-// Real-time listener: Unlocks the student immediately when Admin approves the payment
+    if (user) {
+      currentUser = user;
+      if (authMenuItem) authMenuItem.innerHTML = `👤 ${user.displayName || user.email.split('@')[0]}`;
+      await loadUserDataFromFirestore(user.uid);
+      listenToUserDocRealtime(user.uid);
+      
+      const modalContent = document.getElementById('modalContent');
+      const modalOverlay = document.getElementById('modalOverlay');
+      if (modalOverlay && modalOverlay.classList.contains('active') && modalContent && modalContent.classList.contains('auth-modal-card')) {
+        forceCloseModal();
+      }
+    } else {
+      currentUser = null;
+      userRole = 'student';
+      localStorage.removeItem(PRO_STATUS_KEY);
+      if (authMenuItem) authMenuItem.innerHTML = `🔑 Sign In / Account`;
+      if (adminMenuItem) adminMenuItem.style.display = 'none';
+      
+      setTimeout(() => {
+        openModal('authModal');
+      }, 300);
+    }
+    
+    checkLaunchPaywall();
+    renderUI();
+  });
+}
+
 function listenToUserDocRealtime(uid) {
+  if (!db) return;
   userDocUnsubscribe = db.collection('users').doc(uid).onSnapshot(doc => {
     if (doc.exists) {
       const data = doc.data();
@@ -182,6 +238,7 @@ function listenToUserDocRealtime(uid) {
 }
 
 async function loadUserDataFromFirestore(uid) {
+  if (!db) return;
   try {
     const userDocRef = db.collection('users').doc(uid);
     const doc = await userDocRef.get();
@@ -223,13 +280,15 @@ async function loadUserDataFromFirestore(uid) {
 }
 
 // ==========================================
-// 3. HARD PAYWALL & SECURE UTR VERIFICATION
+// 4. HARD PAYWALL ON LAUNCH
 // ==========================================
 function isUserUnlocked() {
-  if (currentUser) {
-    return userRole === 'admin' || userRole === 'pro';
+  if (localStorage.getItem(PRO_STATUS_KEY) === 'true') return true;
+  if (currentUser && (userRole === 'admin' || userRole === 'pro')) {
+    localStorage.setItem(PRO_STATUS_KEY, 'true');
+    return true;
   }
-  return false; // Require login and verification
+  return false;
 }
 
 function checkLaunchPaywall() {
@@ -254,6 +313,9 @@ function checkLaunchPaywall() {
   }
 }
 
+// ==========================================
+// PROFESSIONAL BUSINESS CHECKOUT MODAL (IMAGE ICONS)
+// ==========================================
 function initiatePayment() {
   if (!currentUser) {
     alert("Please sign in with your email first so your semester pass can be linked to your account.");
@@ -261,53 +323,115 @@ function initiatePayment() {
     return;
   }
 
-  const upiId = "8073510268@fam"; 
-  const payeeName = "Attendance Tracker";
-  const amount = "19.00";
+  const upiId = "8073510268@fam";
+  const payeeName = "Attendance Tracker Pro";
+  const amountVal = Number(subscriptionPrice || 19).toFixed(2);
   const note = `PASS_${currentUser.uid.substring(0, 5)}`;
-  const upiUrl = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(payeeName)}&am=${amount}&cu=INR&tn=${encodeURIComponent(note)}`;
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(upiUrl)}`;
+  const upiUrl = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(payeeName)}&am=${amountVal}&cu=INR&tn=${encodeURIComponent(note)}`;
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(upiUrl)}`;
 
   const modalOverlay = document.getElementById('modalOverlay');
   const modalContent = document.getElementById('modalContent');
-  modalContent.className = 'modal-content';
+  modalContent.className = 'modal-content checkout-card';
   modalOverlay.classList.add('active');
   document.body.classList.add('scroll-locked');
 
   modalContent.innerHTML = `
-    <button class="close-btn" onclick="closeModal()">×</button>
-    <div style="text-align:center; padding: 5px;">
-      <h2 style="font-size:1.3rem; margin-bottom:6px;">Step 1: Pay ₹9 via UPI</h2>
-      <p style="font-size:0.85rem; color:var(--text-sub); margin-bottom:15px;">Tap the app button below or scan the QR code.</p>
+    <!-- Top Bar: Merchant Identity, Price & Bulletproof Close Button -->
+    <div class="checkout-top-bar">
+      <div class="checkout-merchant-info">
+        <div class="checkout-merchant-icon">🛡️</div>
+        <div>
+          <div class="checkout-merchant-name">
+            Attendance Tracker
+            <span class="badge-verified-pill">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+              VERIFIED
+            </span>
+          </div>
+          <div class="checkout-merchant-item">Semester Pro Pass • Lifetime</div>
+        </div>
+      </div>
       
-      <div style="margin-bottom:15px;">
-        <a href="${upiUrl}" style="display:inline-block; width:100%; padding:13px; background:#3498db; color:white; text-decoration:none; border-radius:12px; font-weight:800; font-size:0.95rem; box-shadow: 0 4px 12px rgba(52, 152, 219, 0.3);">
-          📲 Open Installed UPI App
+      <div class="checkout-top-right">
+        <div class="checkout-price-box">
+          <div class="checkout-price-label">AMOUNT DUE</div>
+          <div class="checkout-price-value">₹${subscriptionPrice}</div>
+        </div>
+        <button type="button" class="checkout-close-btn" onclick="forceCloseModal()" aria-label="Close Checkout">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Security & Trust Guarantee Strip -->
+    <div class="checkout-trust-strip">
+      <span>🔒 256-Bit Encrypted Transfer</span>
+      <span>⚡ Instant Cloud Activation</span>
+    </div>
+
+    <!-- Scrollable Modal Body -->
+    <div class="checkout-body">
+      <!-- 1-Tap Mobile UPI Intent Button -->
+      <a href="${upiUrl}" class="btn-checkout-upi-app">
+        <span>📲 Pay via Installed UPI App</span>
+      </a>
+
+      <!-- Official App Image Icons -->
+      <div class="checkout-brand-icons-row">
+        <!-- 1. Google Pay -->
+        <a href="${upiUrl}" class="brand-icon-card" title="Google Pay">
+          <img src="gpay_icon.jfif" alt="Google Pay" onerror="this.onerror=null; this.src='https://upload.wikimedia.org/wikipedia/commons/f/f2/Google_Pay_Logo.svg';" />
+        </a>
+
+        <!-- 2. PhonePe -->
+        <a href="${upiUrl}" class="brand-icon-card" title="PhonePe">
+          <img src="phonepe_icon.jfif" alt="PhonePe" onerror="this.onerror=null; this.src='https://download.logo.wine/logo/PhonePe/PhonePe-Logo.wine.png';" />
+        </a>
+
+        <!-- 3. Paytm -->
+        <a href="${upiUrl}" class="brand-icon-card" title="Paytm">
+          <img src="paytm_icon.png" alt="Paytm" onerror="this.onerror=null; this.src='https://asset.brandfetch.io/id_j8vV11K/id_o5V51w_.png';" />
+        </a>
+
+        <!-- 4. BHIM UPI -->
+        <a href="${upiUrl}" class="brand-icon-card" title="BHIM UPI">
+          <img src="bhim_icon.jfif" alt="BHIM UPI" onerror="this.onerror=null; this.src='https://upload.wikimedia.org/wikipedia/commons/e/e1/BHIM_logo.svg';" />
+        </a>
+
+        <!-- 5. CRED -->
+        <a href="${upiUrl}" class="brand-icon-card" title="CRED">
+          <img src="cred_icon.png" alt="CRED" onerror="this.onerror=null; this.src='https://web-images.credcdn.in/_next/assets/images/home-page/cred-logo.png';" />
         </a>
       </div>
 
-      <div style="margin: 12px 0;">
-        <img src="${qrUrl}" alt="UPI QR" style="width:160px; height:160px; border-radius:10px; border:1px solid var(--border-color);" />
-        <div style="font-size:0.75rem; color:var(--text-sub); margin-top:4px;">UPI ID: <b>${upiId}</b></div>
+      <!-- Centered QR Presentation with Copy Button -->
+      <div class="checkout-qr-frame">
+        <img src="${qrUrl}" alt="UPI QR" class="checkout-qr-img" />
+        <div class="checkout-copy-row">
+          <span class="checkout-upi-text" id="upiVpaText">${upiId}</span>
+          <button type="button" class="btn-copy-upi" onclick="copyUpiVpa('${upiId}')">📋 Copy</button>
+        </div>
       </div>
 
-      <hr style="border:none; border-top:1px dashed var(--border-color); margin: 15px 0;" />
+      <!-- UTR Verification Input Area -->
+      <div class="checkout-utr-section">
+        <div class="checkout-utr-title">Confirm Your Payment</div>
+        <p class="checkout-utr-desc">Enter the 12-digit <b>UPI Reference / UTR Number</b> from your receipt to activate your account:</p>
+        
+        <input type="text" id="paymentUtrInput" class="checkout-utr-input" placeholder="12-Digit UTR Number" maxlength="12" />
+        <div id="utrStatusMsg" style="font-size:0.8rem; font-weight:700; color:var(--absent-btn); min-height:18px; margin-bottom:8px; text-align:center;"></div>
 
-      <h3 style="font-size:1.05rem; margin-bottom:6px;">Step 2: Submit 12-Digit UTR</h3>
-      <p style="font-size:0.8rem; color:var(--text-sub); margin-bottom:12px;">Copy the <b>UPI Ref No. / UTR</b> from your GPay, PhonePe, or Paytm receipt:</p>
-      
-      <input type="text" id="paymentUtrInput" class="modal-input" placeholder="e.g. 428901234567" maxlength="12" style="text-align:center; font-weight:800; font-size:1.05rem; letter-spacing:1px; margin-bottom:10px;" />
-      
-      <div id="utrStatusMsg" style="font-size:0.8rem; font-weight:700; color:var(--absent-btn); margin-bottom:10px;"></div>
-
-      <button class="vpopup-btn vpopup-btn-confirm" style="width:100%;" onclick="submitUtrForVerification()">
-        ✓ Submit for Verification
-      </button>
+        <button type="button" class="checkout-verify-btn" onclick="submitUtrForVerification()">
+          ✓ Confirm & Activate Pass
+        </button>
+      </div>
     </div>
   `;
 }
-
-// Submits UTR to Firestore instead of immediately granting access
 async function submitUtrForVerification() {
   const utrInput = document.getElementById('paymentUtrInput');
   const statusMsg = document.getElementById('utrStatusMsg');
@@ -323,11 +447,12 @@ async function submitUtrForVerification() {
   statusMsg.innerText = 'Submitting to database...';
 
   try {
-    // Check if UTR was already submitted by someone else
+    if (!db) throw new Error("Firestore not initialized.");
+    
     const existing = await db.collection('payment_verifications').doc(utr).get();
     if (existing.exists && existing.data().status === 'approved') {
       statusMsg.style.color = 'var(--absent-btn)';
-      statusMsg.innerText = 'This UTR has already been used by an account.';
+      statusMsg.innerText = 'This UTR has already been verified for an account.';
       return;
     }
 
@@ -336,16 +461,16 @@ async function submitUtrForVerification() {
       uid: currentUser.uid,
       email: currentUser.email,
       name: currentUser.displayName || 'Student',
-      amount: 19,
+      amount: subscriptionPrice,
       status: 'pending',
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
 
-    closeModal();
+    forceCloseModal();
     showVirtualPopup({
       icon: '⏳',
       title: 'Payment Under Review',
-      message: `Your UTR <b>${utr}</b> was received! Your app will unlock automatically as soon as the admin confirms the credit.`,
+      message: `Your UTR <b>${utr}</b> was submitted! Your app will unlock automatically as soon as the credit is confirmed.`,
       confirmText: 'OK',
       cancelText: '',
       onConfirm: () => {}
@@ -357,58 +482,8 @@ async function submitUtrForVerification() {
   }
 }
 
-// Redeem custom promotion / activation keys
-function redeemActivationKey() {
-  const input = document.getElementById('activationKeyInput');
-  const errorEl = document.getElementById('paywallError');
-  const code = (input.value || '').trim().toUpperCase();
-
-  if (VALID_ACCESS_KEYS.includes(code)) {
-    errorEl.innerText = '';
-    unlockApp();
-  } else {
-    errorEl.innerText = 'Invalid access code. Please try again.';
-  }
-}
-
-function unlockApp() {
-  localStorage.setItem(PRO_STATUS_KEY, 'true');
-  userRole = (userRole === 'admin') ? 'admin' : 'pro';
-  
-  if (currentUser) {
-    db.collection('users').doc(currentUser.uid).set({
-      isPro: true,
-      role: userRole,
-      unlockedAt: firebase.firestore.FieldValue.serverTimestamp()
-    }, { merge: true }).catch(err => console.error("Cloud pro update failed:", err));
-  }
-
-  const paywallEl = document.getElementById('paywallOverlay');
-  if (paywallEl) {
-    paywallEl.classList.remove('active');
-    paywallEl.style.setProperty('display', 'none', 'important');
-  }
-  document.body.classList.remove('scroll-locked');
-  alert("🎉 Access Unlocked! Welcome to Attendance Tracker.");
-  renderUI();
-}
-
-function relockPaywallForTesting() {
-  localStorage.removeItem(PRO_STATUS_KEY);
-  if (currentUser) {
-    userRole = 'student';
-    db.collection('users').doc(currentUser.uid).set({
-      isPro: false,
-      role: 'student'
-    }, { merge: true });
-  }
-  closeModal();
-  checkLaunchPaywall();
-}
-window.relockPaywall = relockPaywallForTesting;
-
 // ==========================================
-// 4. INTERACTIVE CLOCK PICKER
+// 6. INTERACTIVE CLOCK PICKER
 // ==========================================
 function openClockPicker(index, field) {
   clockTargetIndex = index;
@@ -526,7 +601,7 @@ function confirmClockTime() {
 }
 
 // ==========================================
-// 5. TIMETABLE EDITING & VIRTUAL POPUPS
+// 7. TIMETABLE EDITING & POPUPS
 // ==========================================
 function showVirtualPopup({ icon = '📋', title, message, confirmText = '✓ Save', cancelText = '✖ No', onConfirm, onCancel }) {
   const modalOverlay = document.getElementById('modalOverlay');
@@ -549,12 +624,12 @@ function showVirtualPopup({ icon = '📋', title, message, confirmText = '✓ Sa
   
   if (cancelText) {
     document.getElementById('vpopupCancel').onclick = () => {
-      closeModal();
+      forceCloseModal();
       if (onCancel) onCancel();
     };
   }
   document.getElementById('vpopupConfirm').onclick = () => {
-    closeModal();
+    forceCloseModal();
     if (onConfirm) onConfirm();
   };
 }
@@ -678,7 +753,7 @@ function resetToDefaultTimetable() {
 }
 
 // ==========================================
-// 6. ATTENDANCE MATH & LIVE LOGGING
+// 8. ATTENDANCE MATH & LIVE LOGGING
 // ==========================================
 function format12Hour(time24) {
   if (!time24 || time24 === '--:--') return '--:--';
@@ -885,7 +960,7 @@ function checkAndAutoMarkDay() {
 }
 
 // ==========================================
-// 7. TAB ROUTING & CORE UI RENDERER
+// 9. TAB ROUTING & CORE UI RENDERER
 // ==========================================
 function switchTab(tab) {
   currentTab = tab;
@@ -1083,8 +1158,36 @@ document.addEventListener('click', (e) => {
 });
 
 // ==========================================
-// 8. MODALS & ADMIN APPROVAL DASHBOARD
+// 10. MODALS, SIDEBAR CONTROLLER & AUTH
 // ==========================================
+function toggleMenu() { 
+  const sidebar = document.getElementById('sidebar');
+  const overlay = document.getElementById('menuOverlay');
+  
+  if (!sidebar || !overlay) return;
+  
+  const isOpen = sidebar.classList.contains('open');
+  if (isOpen) {
+    sidebar.classList.remove('open');
+    overlay.classList.remove('active');
+    
+    const paywallEl = document.getElementById('paywallOverlay');
+    const isPaywallActive = paywallEl && (paywallEl.classList.contains('active') || paywallEl.style.display === 'flex');
+    if (!isPaywallActive) {
+      document.body.classList.remove('scroll-locked');
+    }
+  } else {
+    sidebar.classList.add('open');
+    overlay.classList.add('active');
+    document.body.classList.add('scroll-locked');
+  }
+}
+
+function switchAuthMode(mode) {
+  authMode = mode;
+  openModal('authModal');
+}
+
 let setupBlobUrl = null;
 let setupTempData = {};
 let setupStartDate = null;
@@ -1120,7 +1223,7 @@ function startCalendarSetup() {
   }
 
   buildSetupCalendar(setupStartDate, setupEndDate);
-  closeModal();
+  forceCloseModal();
   document.getElementById('splitScreenOverlay').classList.add('active');
 }
 
@@ -1245,38 +1348,18 @@ function toggleFullDayPresent(dateString) {
   renderUI(); 
 }
 
-function toggleMenu() { 
-  const sidebar = document.getElementById('sidebar');
-  sidebar.classList.toggle('open'); 
-  document.getElementById('menuOverlay').classList.toggle('active'); 
-  document.body.classList.toggle('scroll-locked', sidebar.classList.contains('open'));
-}
-
-function closeModal(e) { 
-  if (e && e.target !== document.getElementById('modalOverlay') && !e.target.classList.contains('close-btn')) return; 
-  document.getElementById('modalOverlay').classList.remove('active'); 
-  const modalContent = document.getElementById('modalContent');
-  if (modalContent) modalContent.className = 'modal-content';
-  
-  const paywallEl = document.getElementById('paywallOverlay');
-  const isPaywallShowing = paywallEl && (paywallEl.classList.contains('active') || paywallEl.style.display === 'flex');
-  if (!isPaywallShowing) {
-    document.body.classList.remove('scroll-locked');
-  }
-}
-
-// Admin Verification Modal Handler
 async function openAdminVerifyModal() {
   const modalContent = document.getElementById('modalContent');
   modalContent.className = 'modal-content';
   modalContent.innerHTML = `
-    <button class="close-btn" onclick="closeModal()">×</button>
+    <button class="close-btn" onclick="forceCloseModal()">×</button>
     <h2>Pending UPI Payments</h2>
-    <p style="font-size:0.85rem; color:var(--text-sub); margin-bottom:15px;">Check incoming ₹19 credits in your GPay/PhonePe and match the 12-digit UTR:</p>
+    <p style="font-size:0.85rem; color:var(--text-sub); margin-bottom:15px;">Check incoming credits in your UPI app and match the 12-digit UTR:</p>
     <div id="adminRequestsList" style="max-height: 50vh; overflow-y:auto;">Loading requests...</div>
   `;
 
   try {
+    if (!db) throw new Error("Firestore not initialized.");
     const snapshot = await db.collection('payment_verifications')
       .where('status', '==', 'pending')
       .get();
@@ -1293,7 +1376,7 @@ async function openAdminVerifyModal() {
       html += `
         <div style="background:var(--bg-color); border:1px solid var(--border-color); border-radius:12px; padding:12px; margin-bottom:10px; text-align:left;">
           <div style="font-weight:800; font-size:0.95rem; color:var(--text-main);">${data.email}</div>
-          <div style="font-size:0.8rem; color:var(--text-sub); margin: 3px 0;">UTR: <b style="letter-spacing:1px; color:#3498db;">${data.utr}</b></div>
+          <div style="font-size:0.8rem; color:var(--text-sub); margin: 3px 0;">UTR: <b style="letter-spacing:1px; color:#3498db;">${data.utr}</b> (₹${data.amount || subscriptionPrice})</div>
           <div style="display:flex; gap:8px; margin-top:8px;">
             <button class="vpopup-btn vpopup-btn-confirm" style="padding:6px 12px; font-size:0.8rem;" onclick="adminApprovePayment('${docSnap.id}', '${data.uid}')">✓ Approve</button>
             <button class="vpopup-btn vpopup-btn-cancel" style="padding:6px 12px; font-size:0.8rem;" onclick="adminRejectPayment('${docSnap.id}')">✖ Reject</button>
@@ -1309,13 +1392,11 @@ async function openAdminVerifyModal() {
 
 async function adminApprovePayment(utr, studentUid) {
   try {
-    // 1. Mark verification document approved
     await db.collection('payment_verifications').doc(utr).update({
       status: 'approved',
       approvedAt: firebase.firestore.FieldValue.serverTimestamp()
     });
 
-    // 2. Unlock the student's cloud profile (triggers real-time unlock on their phone)
     await db.collection('users').doc(studentUid).set({
       isPro: true,
       role: 'pro',
@@ -1344,8 +1425,11 @@ async function adminRejectPayment(utr) {
 }
 
 function openModal(type) {
-  document.getElementById('sidebar').classList.remove('open');
-  document.getElementById('menuOverlay').classList.remove('active');
+  const sidebar = document.getElementById('sidebar');
+  const overlay = document.getElementById('menuOverlay');
+  if (sidebar) sidebar.classList.remove('open');
+  if (overlay) overlay.classList.remove('active');
+
   const modalOverlay = document.getElementById('modalOverlay');
   const modalContent = document.getElementById('modalContent');
   modalOverlay.classList.add('active');
@@ -1362,42 +1446,89 @@ function openModal(type) {
     return;
   }
 
-  let html = `<button class="close-btn" onclick="closeModal()">×</button>`;
+  let html = `<button class="close-btn" onclick="forceCloseModal()">×</button>`;
 
   if (type === 'authModal') {
     if (currentUser) {
+      let adminPricingSection = '';
+      if (userRole === 'admin') {
+        adminPricingSection = `
+          <div style="background:var(--bg-color); border:1.5px solid var(--border-color); border-radius:14px; padding:15px; margin: 15px 0; text-align:left;">
+            <div style="font-weight:800; font-size:0.95rem; color:var(--text-main); margin-bottom:4px;">⚙️ Subscription Price Setting</div>
+            <p style="font-size:0.75rem; color:var(--text-sub); margin-bottom:10px;">Set the semester fee for all students (in ₹):</p>
+            <div style="display:flex; gap:8px;">
+              <input type="number" id="adminPriceInput" class="modal-input" style="margin-bottom:0; padding:10px; font-weight:800; font-size:1.05rem;" value="${subscriptionPrice}" min="1" />
+              <button class="vpopup-btn vpopup-btn-confirm" style="flex:none; padding:10px 16px; font-size:0.85rem;" onclick="saveSubscriptionPrice()">Save Price</button>
+            </div>
+          </div>
+        `;
+      }
+
       html += `
         <h2>Student Account</h2>
         <div style="text-align:center; padding:15px 0;">
           <p style="font-size:1.15rem; font-weight:700; color:var(--text-main);">${currentUser.displayName || 'Student'}</p>
           <p style="font-size:0.9rem; color:var(--text-sub); margin-bottom:15px;">${currentUser.email}</p>
-          <div style="display:inline-block; padding:6px 14px; border-radius:20px; font-size:0.8rem; font-weight:700; background:${userRole === 'admin' ? 'var(--absent-btn)' : (userRole === 'pro' ? 'var(--present-btn)' : '#3498db')}; color:white; margin-bottom:20px;">
+          <div style="display:inline-block; padding:6px 14px; border-radius:20px; font-size:0.8rem; font-weight:700; background:${userRole === 'admin' ? 'var(--absent-btn)' : (userRole === 'pro' ? 'var(--present-btn)' : '#3498db')}; color:white; margin-bottom:15px;">
             ${userRole === 'admin' ? '🛡️ Administrator' : (userRole === 'pro' ? '🎓 Pro Pass Active' : 'Basic Account')}
           </div>
-          <p style="font-size:0.85rem; color:var(--text-sub); margin-bottom:20px;">Your attendance data is synced with Cloud Firestore.</p>
-          <div style="display:flex; flex-direction:column; gap:10px;">
-            <button class="vpopup-btn vpopup-btn-cancel" style="width:100%;" onclick="logoutUser()">Sign Out</button>
-            <button class="vpopup-btn vpopup-btn-cancel" style="width:100%; background:#7f8c8d !important;" onclick="relockPaywallForTesting()">🔒 Re-lock Paywall (Test)</button>
-          </div>
+          <p style="font-size:0.85rem; color:var(--text-sub); margin-bottom:15px;">Your attendance data is synced with Cloud Firestore.</p>
+          
+          ${adminPricingSection}
+
+          <button class="vpopup-btn vpopup-btn-cancel" style="width:100%; margin-top:5px;" onclick="logoutUser()">Sign Out</button>
         </div>
       `;
     } else {
+      const isRegister = (authMode === 'register');
+      const title = isRegister ? 'Create an Account' : 'Welcome Back';
+      const subtitle = isRegister 
+        ? 'Get started with attendance tracking and cloud backup' 
+        : 'Sign in to access your attendance records and schedule';
+      const actionText = isRegister ? 'Sign Up' : 'Sign In';
+
       html += `
-        <h2>Student Sign In</h2>
-        <p style="font-size:0.9rem; color:var(--text-sub); margin:10px 0 20px 0;">Sign in to back up your courses and verify your semester pass.</p>
-        
-        <button class="btn-present" style="width:100%; padding:14px; background:#4285F4; margin-bottom:15px; display:flex; align-items:center; justify-content:center; gap:10px;" onclick="loginWithGoogle()">
-          <span style="font-weight:900;">G</span> Continue with Google
+        <div class="auth-brand-badge">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+            <polyline points="22 4 12 14.01 9 11.01"></polyline>
+          </svg>
+        </div>
+        <h2>${title}</h2>
+        <p class="auth-subtext">${subtitle}</p>
+
+        <button class="btn-google-oauth" onclick="loginWithGoogle()">
+          <svg width="18" height="18" viewBox="0 0 18 18">
+            <path fill="#4285F4" d="M17.64 9.2c0-.63-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.71v2.26h2.92a8.78 8.78 0 0 0 2.68-6.61z"/>
+            <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.27c-.8.54-1.83.87-3.04.87-2.34 0-4.32-1.58-5.03-3.71H.96v2.33A8.99 8.99 0 0 0 9 18z"/>
+            <path fill="#FBBC05" d="M3.97 10.71A5.41 5.41 0 0 1 3.69 9c0-.6.1-1.18.28-1.71V4.96H.96A8.99 8.99 0 0 0 0 9c0 1.45.35 2.82.96 4.04l3.01-2.33z"/>
+            <path fill="#EA4335" d="M9 3.58c1.32 0 2.51.45 3.44 1.35l2.58-2.59C13.46.89 11.43 0 9 0A8.99 8.99 0 0 0 .96 4.96l3.01 2.33c.71-2.13 2.69-3.71 5.03-3.71z"/>
+          </svg>
+          Continue with Google
         </button>
-        
-        <div style="text-align:center; margin:15px 0; color:var(--text-sub); font-size:0.8rem; font-weight:700;">OR USE EMAIL</div>
-        
-        <input type="email" id="authEmail" class="modal-input" placeholder="College Email" />
-        <input type="password" id="authPassword" class="modal-input" placeholder="Password" />
-        
-        <div style="display:flex; gap:10px;">
-          <button class="btn-present" style="flex:1; padding:12px;" onclick="loginWithEmail()">Sign In</button>
-          <button class="btn-present" style="flex:1; padding:12px; background:var(--bg-color); color:var(--text-main); border:1px solid var(--border-color);" onclick="registerWithEmail(document.getElementById('authEmail').value, document.getElementById('authPassword').value)">Register</button>
+
+        <div class="auth-divider">
+          <span>or continue with email</span>
+        </div>
+
+        <div class="auth-input-group">
+          <label>Email address</label>
+          <input type="email" id="authEmail" class="modal-input" placeholder="name@college.edu" autocomplete="email" />
+        </div>
+
+        <div class="auth-input-group">
+          <label>Password</label>
+          <input type="password" id="authPassword" class="modal-input" placeholder="Enter your password" autocomplete="current-password" />
+        </div>
+
+        <button class="btn-auth-primary" onclick="${isRegister ? "registerWithEmail(document.getElementById('authEmail').value, document.getElementById('authPassword').value)" : "loginWithEmail()"}">
+          ${actionText}
+        </button>
+
+        <div class="auth-switch-prompt">
+          ${isRegister 
+            ? `Already have an account? <a onclick="switchAuthMode('signin')">Sign In</a>` 
+            : `Don't have an account? <a onclick="switchAuthMode('register')">Sign Up</a>`}
         </div>
       `;
     }
@@ -1570,7 +1701,7 @@ function saveSingleCourseAttendance() {
   addHistory(`Edited: ${course.name}`);
   saveToDatabase();
   renderUI();
-  closeModal();
+  forceCloseModal();
 }
 
 function handleAddCourse() {
@@ -1586,7 +1717,7 @@ function handleAddCourse() {
   addHistory(`Added Course: ${name}`); 
   saveToDatabase(); 
   renderUI(); 
-  closeModal();
+  forceCloseModal();
 }
 
 function saveTargetPercentage() {
@@ -1595,7 +1726,7 @@ function saveTargetPercentage() {
   targetPercentage = newTarget;
   localStorage.setItem('target_percentage', targetPercentage);
   renderUI();
-  closeModal();
+  forceCloseModal();
 }
 
 function removeCourseById(id) {
@@ -1612,10 +1743,11 @@ function removeCourseById(id) {
 
 // Authentication Handlers
 async function loginWithGoogle() {
+  if (!auth) return alert("Firebase not connected.");
   const provider = new firebase.auth.GoogleAuthProvider();
   try {
     const result = await auth.signInWithPopup(provider);
-    closeModal();
+    forceCloseModal();
     alert(`Welcome, ${result.user.displayName || result.user.email}!`);
   } catch (error) {
     alert(error.message);
@@ -1623,13 +1755,14 @@ async function loginWithGoogle() {
 }
 
 async function loginWithEmail() {
+  if (!auth) return alert("Firebase not connected.");
   const email = document.getElementById('authEmail').value.trim();
   const pass = document.getElementById('authPassword').value;
   if (!email || !pass) return alert("Please enter both email and password.");
 
   try {
     await auth.signInWithEmailAndPassword(email, pass);
-    closeModal();
+    forceCloseModal();
     alert("Signed in successfully!");
   } catch (error) {
     if (error.code === 'auth/user-not-found') {
@@ -1643,9 +1776,10 @@ async function loginWithEmail() {
 }
 
 async function registerWithEmail(email, pass) {
+  if (!auth) return alert("Firebase not connected.");
   try {
     await auth.createUserWithEmailAndPassword(email, pass);
-    closeModal();
+    forceCloseModal();
     alert("Account created and signed in!");
   } catch (error) {
     alert(error.message);
@@ -1653,9 +1787,10 @@ async function registerWithEmail(email, pass) {
 }
 
 async function logoutUser() {
+  if (!auth) return;
   try {
     await auth.signOut();
-    closeModal();
+    forceCloseModal();
     alert("Signed out. Operating in offline mode.");
   } catch (error) {
     alert(error.message);
@@ -1663,10 +1798,11 @@ async function logoutUser() {
 }
 
 // ==========================================
-// 9. APP INITIALIZATION & STARTUP
+// 11. APP INITIALIZATION & STARTUP
 // ==========================================
 startLiveClock(); 
 updateHolidayButton(); 
+listenToAppSettings();
 checkLaunchPaywall();
 renderUI(); 
 setInterval(renderUI, 60000); 

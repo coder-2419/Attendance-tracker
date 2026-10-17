@@ -314,7 +314,7 @@ function checkLaunchPaywall() {
 }
 
 // ==========================================
-// PROFESSIONAL BUSINESS CHECKOUT MODAL (IMAGE ICONS)
+// 5. PROFESSIONAL CHECKOUT MODAL (REAL IMAGE ICONS)
 // ==========================================
 function initiatePayment() {
   if (!currentUser) {
@@ -432,6 +432,48 @@ function initiatePayment() {
     </div>
   `;
 }
+
+// Unconditional Modal Closer
+function forceCloseModal() {
+  const modalOverlay = document.getElementById('modalOverlay');
+  if (modalOverlay) {
+    modalOverlay.classList.remove('active');
+    modalOverlay.style.removeProperty('display');
+  }
+  const modalContent = document.getElementById('modalContent');
+  if (modalContent) {
+    modalContent.className = 'modal-content';
+    modalContent.innerHTML = '';
+  }
+  const paywallEl = document.getElementById('paywallOverlay');
+  const isPaywallShowing = paywallEl && (paywallEl.classList.contains('active') || paywallEl.style.display === 'flex');
+  if (!isPaywallShowing) {
+    document.body.classList.remove('scroll-locked');
+  }
+}
+
+function closeModal(e) { 
+  if (e && e.target && e.target !== document.getElementById('modalOverlay') && !e.target.closest('.close-btn') && !e.target.closest('.checkout-close-btn')) return; 
+  forceCloseModal();
+}
+
+function copyUpiVpa(upiId) {
+  navigator.clipboard.writeText(upiId).then(() => {
+    const textEl = document.getElementById('upiVpaText');
+    if (textEl) {
+      const original = textEl.innerText;
+      textEl.innerText = 'Copied to clipboard!';
+      textEl.style.color = 'var(--present-btn)';
+      setTimeout(() => {
+        textEl.innerText = original;
+        textEl.style.color = 'var(--text-main)';
+      }, 1500);
+    }
+  }).catch(() => {
+    alert("UPI ID: " + upiId);
+  });
+}
+
 async function submitUtrForVerification() {
   const utrInput = document.getElementById('paymentUtrInput');
   const statusMsg = document.getElementById('utrStatusMsg');

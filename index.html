@@ -4,59 +4,86 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Attendance Tracker</title>
-  
-  <!-- Google Fonts: Lato (App) & Libre Baskerville (Auth Modal) -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Lato:ital,wght@0,300;0,400;0,700;0,900;1,400&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
-
-  <!-- Firebase SDKs (Compat versions) -->
-  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
-
-  <link rel="stylesheet" href="styles.css?v=55">
+  <link rel="stylesheet" href="styles.css?v=60">
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#ffffff">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Lato:wght@400;600;700;800;900&family=Libre+Baskerville:wght@700&display=swap" rel="stylesheet">
 </head>
 <body>
 
   <!-- Top Sticky Header -->
   <header class="header">
-    <div class="header-left"><button class="menu-btn" onclick="toggleMenu()">☰</button></div>
-    <div class="header-center"><h1>ATTENDANCE TRACKER</h1></div>
-    <div class="header-right"><div id="liveClock" class="live-clock" style="cursor:pointer;" onclick="openModal('calendarMode')"></div></div>
+    <div class="header-left">
+      <button id="gearBtn" class="settings-btn" onclick="openSettingsPage()" aria-label="Open Settings">⚙️</button>
+    </div>
+    <div class="header-center">
+      <h1>ATTENDANCE TRACKER</h1>
+    </div>
+    <div class="header-right">
+      <div id="liveClock" class="live-clock" style="cursor:pointer;" onclick="openModal('calendarMode')"></div>
+    </div>
   </header>
 
-  <!-- Sidebar Navigation & Backdrop -->
-  <div class="overlay" id="menuOverlay" onclick="toggleMenu()"></div>
-  <nav class="sidebar" id="sidebar">
-    <div class="theme-toggle-wrapper" onclick="toggleDarkMode()">
-      <div class="neumorphic-toggle">
-        <div class="toggle-thumb">
-          <svg class="sun-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
-          <svg class="moon-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
-        </div>
-        <span class="toggle-text light-text">LIGHT MODE</span>
-        <span class="toggle-text dark-text">DARK MODE</span>
-      </div>
+  <!-- Funky Settings Page -->
+  <div class="settings-page" id="settingsPage">
+    <div class="settings-header">
+      <h2>SETTINGS & TOOLS</h2>
+      <button class="close-btn" style="position: static;" onclick="closeSettingsPage()">×</button>
     </div>
+    
+    <div class="settings-body">
+      <div class="setting-tab" style="justify-content: center; padding: 20px;" onclick="toggleDarkMode()">
+        <div class="neumorphic-toggle" style="margin: 0;">
+          <div class="toggle-thumb">
+            <svg class="sun-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+            <svg class="moon-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+          </div>
+          <span class="toggle-text light-text">LIGHT MODE</span>
+          <span class="toggle-text dark-text">DARK MODE</span>
+        </div>
+      </div>
 
-    <ul>
-      <li id="authMenuItem" onclick="openModal('authModal')" style="font-weight: 800; color: #3498db;">🔑 Sign In / Account</li>
-      <li id="adminVerifyMenuItem" onclick="openModal('adminVerifyModal')" style="display:none; font-weight:800; color:#e67e22;">🛡️ Verify Payments</li>
-      <li onclick="openModal('userManual')">How to Use the App</li>
-      <li onclick="openModal('historyLog')">View History Log</li>
-      <li onclick="openModal('setupCalendar')">Sync Academic Calendar</li>
-      <li onclick="openModal('setTarget')">Set Target Attendance</li>
-      <li onclick="openModal('editAttendance')">Edit Attendance</li>
-      <li onclick="openModal('addCourse')">Add Custom Course</li>
-      <li onclick="openModal('removeCourse')">Remove Course</li>
-      <li onclick="resetToDefaultTimetable()" style="color:#e74c3c;">Reset Default Timetable</li>
-    </ul>
-  </nav>
+      <div class="setting-tab funky-pink" id="authMenuItem" onclick="openModal('authModal')">🔑 Sign In / Account</div>
+      <div class="setting-tab funky-blue" id="adminVerifyMenuItem" onclick="openModal('adminVerifyModal')" style="display:none;">🛡️ Manage Orders</div>
+      <div class="setting-tab funky-green" onclick="requestNotificationPermission()">🔔 Enable Class Notifications</div>
+      <div class="setting-tab funky-orange" onclick="openModal('setSemesterDates')">🗓️ Set Semester Dates</div>
+      <div class="setting-tab funky-purple" onclick="openModal('setupCalendar')">📅 Sync Academic Calendar</div>
+      <div class="setting-tab funky-teal" onclick="openModal('setTarget')">🎯 Set Target Attendance</div>
+      <div class="setting-tab funky-yellow" onclick="openModal('addCourse')">➕ Add Custom Course</div>
+      <div class="setting-tab funky-pink" onclick="openModal('editAttendance')">✏️ Edit Attendance Counts</div>
+      <div class="setting-tab funky-blue" onclick="openModal('historyLog')">📜 View Activity Log</div>
+      <div class="setting-tab funky-green" onclick="openModal('userManual')">📖 How to Use the App</div>
+      <div class="setting-tab funky-orange" onclick="openModal('removeCourse')">🗑️ Remove Course</div>
+      <div class="setting-tab funky-red" onclick="resetToDefaultTimetable()">⚠️ Reset Current Semester</div>
+    </div>
+  </div>
 
-  <!-- Global Modal Container -->
+  <!-- Paywall Overlay -->
+  <div class="paywall-overlay" id="paywallOverlay">
+    <div class="paywall-card">
+      <div class="paywall-badge">CAMPUS PASS</div>
+      <h2>Unlock Attendance Tracker</h2>
+      <p class="paywall-sub">Get lifetime semester access to live period tracking, safe bunk calculations, custom timetables, and academic calendar sync.</p>
+      <div class="paywall-pricing">
+        <span class="currency">₹</span>
+        <span class="amount" id="paywallAmountDisplay">20</span>
+        <span class="period">/ semester</span>
+      </div>
+      <ul class="paywall-features">
+        <li>✓ Live period attendance & bunk safety meter</li>
+        <li>✓ Full academic calendar holiday auto-sync</li>
+        <li>✓ Custom timetable builder with clock picker</li>
+        <li>✓ Cloud backup & multi-device sync</li>
+      </ul>
+      <button class="paywall-btn" onclick="initiatePayment()">
+        ⚡ Pay ₹<span id="paywallBtnAmount">20</span> & Unlock
+      </button>
+    </div>
+  </div>
+
+  <!-- Primary Modal Overlay -->
   <div class="modal-overlay" id="modalOverlay" onclick="closeModal(event)">
     <div class="modal-content" id="modalContent" onclick="event.stopPropagation()"></div>
   </div>
@@ -68,7 +95,6 @@
         <span id="clockPickerTitle">Set Time</span>
         <button class="close-btn" onclick="closeClockPicker()">×</button>
       </div>
-      
       <div class="clock-display-row">
         <div class="clock-digital-box">
           <span id="clockHourDisplay" class="active-part" onclick="setClockView('hours')">09</span>
@@ -80,7 +106,6 @@
           <button id="clockPmBtn" class="ampm-btn" onclick="setClockAmPm('PM')">PM</button>
         </div>
       </div>
-
       <div class="clock-dial-container">
         <div class="clock-dial" id="clockDial">
           <div class="clock-center-dot"></div>
@@ -88,7 +113,6 @@
           <div id="clockNumbers" class="clock-numbers"></div>
         </div>
       </div>
-
       <div class="vpopup-actions" style="margin-top: 20px;">
         <button class="vpopup-btn vpopup-btn-cancel" onclick="closeClockPicker()">✖ Cancel</button>
         <button class="vpopup-btn vpopup-btn-confirm" onclick="confirmClockTime()">✓ Set Time</button>
@@ -96,7 +120,7 @@
     </div>
   </div>
 
-  <!-- Split Screen Setup -->
+  <!-- Split Screen Overlay -->
   <div class="split-screen-overlay" id="splitScreenOverlay">
     <div class="split-top" id="splitTopContainer">
       <button class="close-btn" style="z-index: 10; color: #fff; background: rgba(0,0,0,0.6); border-radius: 50%; width: 40px; height: 40px; top: 10px; right: 10px; position:absolute;" onclick="closeSplitScreen()">×</button>
@@ -111,16 +135,54 @@
     </div>
   </div>
 
-  <!-- Main View -->
+  <!-- Main View Container -->
   <main class="main-content">
-    <div class="timetable-container" id="timetableSection" style="display:none;">
-      <div class="schedule-header">
-        <h3 id="timetableHeaderTitle">Daily Timetable</h3>
-        <div style="display:flex; gap:15px; align-items:center;">
-          <button id="editTimetableBtn" onclick="toggleTimetableEdit()" style="background:none; border:none; font-size:1.3rem; cursor:pointer;" title="Edit Timetable">✏️</button>
-          <button id="holidayBtn" class="holiday-btn" onclick="toggleHoliday()">Mark Today Holiday</button>
+    
+    <!-- Top Utility Bar: Semester Switcher & Global Alert -->
+    <div class="top-utility-bar">
+      <div class="semester-pill-box">
+        <label for="semesterSelect">🎓 Semester:</label>
+        <select id="semesterSelect" class="semester-select" onchange="switchSemester(this.value)">
+          <option value="Semester 1">Semester 1</option>
+          <option value="Semester 2">Semester 2</option>
+          <option value="Semester 3">Semester 3</option>
+          <option value="Semester 4">Semester 4</option>
+          <option value="Semester 5">Semester 5</option>
+          <option value="Semester 6">Semester 6</option>
+          <option value="Semester 7">Semester 7</option>
+          <option value="Semester 8">Semester 8</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Critical Shortage Warning Banner (Funky Striped) -->
+    <div id="criticalGlobalBanner" class="critical-global-alert" style="display:none;"></div>
+
+    <!-- 1. COURSES TAB (Attendance % & Bunk Meter) -->
+    <section id="coursesSection" class="tab-view-container">
+      <div class="section-actions-bar">
+        <h3>Course Health</h3>
+        <div class="report-btn-group">
+          <button class="report-action-btn" onclick="printAttendanceReport()" title="Print PDF Summary">📄 Print PDF</button>
+          <button class="report-action-btn" onclick="exportAttendanceCSV()" title="Export CSV">📊 Excel</button>
         </div>
       </div>
+      <div id="courseList" class="course-list-container"></div>
+    </section>
+
+    <!-- 2. TIMETABLE TAB (Daily Schedule) -->
+    <section id="timetableSection" class="tab-view-container" style="display:none;">
+      <div class="schedule-header">
+        <h3 id="timetableHeaderTitle">Daily Timetable</h3>
+        <div class="timetable-header-actions">
+          <button id="markAllPresentBtn" class="btn-mark-all-present" onclick="markAllPresentToday()" title="Mark all today's classes present">⚡ Mark All Present</button>
+          <button class="share-quick-btn" onclick="openShareTimetableModal()" title="Share Timetable with Classmates">📤 Share</button>
+          <button class="share-quick-btn" onclick="openImportTimetableModal()" title="Import Class Timetable">📥 Import</button>
+          <button id="editTimetableBtn" onclick="toggleTimetableEdit()" class="icon-action-btn" title="Edit Timetable">✏️</button>
+          <button id="holidayBtn" class="holiday-btn" onclick="toggleHoliday()">Mark Holiday</button>
+        </div>
+      </div>
+
       <div class="day-selector" id="daySelector">
         <button onclick="changeDay('Sunday')">Sun</button>
         <button onclick="changeDay('Monday')">Mon</button>
@@ -130,47 +192,65 @@
         <button onclick="changeDay('Friday')">Fri</button>
         <button onclick="changeDay('Saturday')">Sat</button>
       </div>
+
       <div id="timetableContainer" class="timetable-list"></div>
-    </div>
-    
-    <div id="courseList" class="course-list-container"></div>
+    </section>
+
+    <!-- 3. EVENTS & DEADLINES TAB (Funky Neo-Brutalist) -->
+    <section id="eventsSection" class="tab-view-container" style="display:none;">
+      <div id="urgentLiveEventBanner" class="urgent-live-banner">
+        <div class="urgent-dot"></div>
+        <div class="urgent-text-wrap">
+          <span class="urgent-tag">NEXT UPCOMING EVENT</span>
+          <span id="urgentEventTitle" class="urgent-title">No upcoming events</span>
+        </div>
+      </div>
+
+      <div class="events-toolbar">
+        <button class="btn-add-event funky-button" onclick="openAddEventModal()">➕ Add Event</button>
+        <div class="events-filter-group">
+          <select id="eventFilterSelect" class="events-filter-select funky-select" onchange="renderEventsList()">
+            <option value="all">All Events</option>
+            <option value="upcoming">Upcoming Only</option>
+            <option value="past">Past Events</option>
+            <option value="Exam">Exams</option>
+            <option value="Assignment">Assignments</option>
+            <option value="Fest">Fests / Extra</option>
+          </select>
+          <select id="eventSortSelect" class="events-filter-select funky-select" onchange="renderEventsList()">
+            <option value="date-asc">Date: Soonest First</option>
+            <option value="date-desc">Date: Latest First</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="eventsList" class="events-list-container"></div>
+    </section>
+
   </main>
 
-  <!-- Bottom Navigation Bar -->
+  <!-- Bottom Navigation Bar (3 Tabs) -->
   <nav class="bottom-nav">
     <button class="nav-btn active" id="nav-courses" onclick="switchTab('courses')">
-      <span style="font-size:1.35rem; margin-bottom:3px;">📊</span>Attendance %
+      <span class="nav-icon">📊</span>
+      <span>Attendance %</span>
     </button>
     <button class="nav-btn" id="nav-timetable" onclick="switchTab('timetable')">
-      <span style="font-size:1.35rem; margin-bottom:3px;">📅</span>Timetable
+      <span class="nav-icon">📅</span>
+      <span>Timetable</span>
+    </button>
+    <button class="nav-btn" id="nav-events" onclick="switchTab('events')">
+      <span class="nav-icon">🎉</span>
+      <span>Events</span>
     </button>
   </nav>
 
-  <!-- Hard Launch Paywall Overlay -->
-  <div id="paywallOverlay" class="paywall-overlay">
-    <div class="paywall-card">
-      <div class="paywall-badge">CAMPUS PASS</div>
-      <h2>Unlock Attendance Tracker</h2>
-      <p class="paywall-sub">Get lifetime semester access to live period tracking, safe bunk calculations, custom timetables, and academic calendar sync.</p>
-      
-      <div class="paywall-pricing">
-        <span class="currency">₹</span><span class="amount" id="paywallAmountDisplay">19</span>
-        <span class="period">/ semester</span>
-      </div>
+  <!-- Firebase Compat SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 
-      <ul class="paywall-features">
-        <li>✓ Live period attendance & bunk safety meter</li>
-        <li>✓ Full academic calendar holiday auto-sync</li>
-        <li>✓ Custom timetable builder with clock picker</li>
-        <li>✓ Cloud backup & multi-device sync</li>
-      </ul>
-
-      <button class="paywall-btn" id="paywallPayBtn" onclick="initiatePayment()">
-        ⚡ Pay ₹<span id="paywallBtnAmount">19</span> & Unlock
-      </button>
-    </div>
-  </div>
-
-  <script src="script.js?v=55"></script>
+  <!-- Main Logic -->
+  <script src="script.js?v=60"></script>
 </body>
 </html>

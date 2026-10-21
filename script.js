@@ -372,67 +372,6 @@ function isTodayHoliday() {
   return manualHoliday || calendarHoliday;
 }
 
-function isTodayHoliday() {
-  const todayStr = getTodayDateString();
-  const manualHoliday = localStorage.getItem('holiday_' + todayStr) === 'true';
-  const calendarHoliday = academicCalendar && academicCalendar.holidays && academicCalendar.holidays.includes(todayStr);
-  return manualHoliday || calendarHoliday;
-}
-
-function updateHolidayButton() {
-  const btn = document.getElementById('holidayBtn');
-  if (!btn) return;
-  const todayStr = getTodayDateString();
-  
-  if (getTodayString() === 'Sunday') {
-    btn.classList.add('active');
-    btn.innerText = 'SUNDAY - HOLIDAY';
-    btn.style.pointerEvents = 'none'; 
-  } else if (localStorage.getItem('holiday_' + todayStr) === 'true' || (academicCalendar && academicCalendar.holidays && academicCalendar.holidays.includes(todayStr))) { 
-    btn.classList.add('active'); 
-    btn.innerText = 'HOLIDAY ACTIVE'; 
-    btn.style.pointerEvents = 'auto';
-  } else { 
-    btn.classList.remove('active'); 
-    btn.innerText = 'Mark Holiday'; 
-    btn.style.pointerEvents = 'auto';
-  }
-}
-
-function isTodayHoliday() {
-  const todayStr = getTodayDateString();
-  const manualHoliday = localStorage.getItem('holiday_' + todayStr) === 'true';
-  const calendarHoliday = academicCalendar && academicCalendar.holidays && academicCalendar.holidays.includes(todayStr);
-  return manualHoliday || calendarHoliday;
-}
-
-function updateHolidayButton() {
-  const btn = document.getElementById('holidayBtn');
-  if (!btn) return;
-  const todayStr = getTodayDateString();
-  
-  if (getTodayString() === 'Sunday') {
-    btn.classList.add('active');
-    btn.innerText = 'SUNDAY - HOLIDAY';
-    btn.style.pointerEvents = 'none'; 
-  } else if (localStorage.getItem('holiday_' + todayStr) === 'true' || (academicCalendar && academicCalendar.holidays && academicCalendar.holidays.includes(todayStr))) { 
-    btn.classList.add('active'); 
-    btn.innerText = 'HOLIDAY ACTIVE'; 
-    btn.style.pointerEvents = 'auto';
-  } else { 
-    btn.classList.remove('active'); 
-    btn.innerText = 'Mark Holiday'; 
-    btn.style.pointerEvents = 'auto';
-  }
-}
-
-function isTodayHoliday() {
-  const todayStr = getTodayDateString();
-  const manualHoliday = localStorage.getItem('holiday_' + todayStr) === 'true';
-  const calendarHoliday = academicCalendar && academicCalendar.holidays && academicCalendar.holidays.includes(todayStr);
-  return manualHoliday || calendarHoliday;
-}
-
 function updateHolidayButton() {
   const btn = document.querySelector('.holiday-btn');
   if (!btn) return;
@@ -841,64 +780,7 @@ function renderEventsList() {
 }
 
 // ==========================================
-// 10. COURSE MILESTONES (EXAMS/ASSIGNMENTS)
-// ==========================================
-function openCourseMilestones(courseId) {
-  const course = courses.find(c => c.id === courseId);
-  if (!course) return;
-
-  const modalOverlay = document.getElementById('modalOverlay');
-  const modalContent = document.getElementById('modalContent');
-  modalContent.className = 'modal-content';
-  modalOverlay.classList.add('active');
-  document.body.classList.add('scroll-locked');
-
-  let listHtml = '';
-  (course.milestones || []).forEach((m, idx) => {
-    listHtml += `
-      <div style="display:flex; justify-content:space-between; align-items:center; padding:10px; background:var(--bg-color); border-radius:10px; margin-bottom:8px; border:1px solid var(--border-color);">
-        <div><b style="color:var(--text-main); font-size:0.95rem;">${m.title}</b> <span style="font-size:0.7rem; background:#3498db; color:#fff; padding:2px 6px; border-radius:6px; font-weight:800;">${m.type}</span><div style="font-size:0.8rem; color:var(--text-sub); margin-top:3px; font-weight:800;">Due: ${m.date}</div></div>
-        <button onclick="deleteMilestone(${course.id}, ${idx})" style="background:none; border:none; cursor:pointer; font-size:1.1rem;">🗑️</button>
-      </div>`;
-  });
-
-  modalContent.innerHTML = `
-    <button class="close-btn" onclick="forceCloseModal()">×</button>
-    <h2 style="margin-bottom:15px;">${course.name} Milestones</h2>
-    <div style="margin: 15px 0;">${listHtml || '<p style="color:var(--text-sub); font-size:0.85rem;">No assessments logged.</p>'}</div>
-    <hr style="border:none; border-top:1px dashed var(--border-color); margin:15px 0;">
-    <h3 style="font-size:0.95rem; margin-bottom:8px; font-weight:800;">Add Assessment / Exam</h3>
-    <input type="text" id="newMilestoneTitle" class="modal-input" placeholder="e.g. Internal Test 1" />
-    <input type="date" id="newMilestoneDate" class="modal-input" value="${getTodayDateString()}" />
-    <select id="newMilestoneType" class="modal-input funky-select">
-      <option value="Exam">Exam</option><option value="Assignment">Assignment</option><option value="Quiz">Quiz</option>
-    </select>
-    <button class="btn-auth-primary" style="width:100%; padding:12px; margin-top:8px;" onclick="saveMilestone(${course.id})">+ Add Milestone</button>
-  `;
-}
-
-function saveMilestone(courseId) {
-  const course = courses.find(c => c.id === courseId);
-  const title = document.getElementById('newMilestoneTitle').value.trim();
-  const date = document.getElementById('newMilestoneDate').value;
-  const type = document.getElementById('newMilestoneType').value;
-  if (!title || !date) return alert("Fill assessment title and date.");
-
-  if (!course.milestones) course.milestones = [];
-  course.milestones.push({ title, date, type });
-  saveToDatabase();
-  openCourseMilestones(courseId);
-}
-
-function deleteMilestone(courseId, idx) {
-  const course = courses.find(c => c.id === courseId);
-  course.milestones.splice(idx, 1);
-  saveToDatabase();
-  openCourseMilestones(courseId);
-}
-
-// ==========================================
-// 11. PWA / CLASS START WEB NOTIFICATIONS
+// 10. PWA / CLASS START WEB NOTIFICATIONS
 // ==========================================
 let notificationPermissionGranted = ("Notification" in window) && Notification.permission === "granted";
 let sentNotificationSlots = {};
@@ -934,7 +816,6 @@ function checkClassStartNotifications() {
         const slotMinutes = h * 60 + m;
         const diff = slotMinutes - currentMinutes;
 
-        // Trigger notification between 5 and 10 minutes before start
         if (diff > 0 && diff <= 10) {
           const notifKey = `${todayStr}_${c.id}_${slot.start}`;
           if (!sentNotificationSlots[notifKey]) {
@@ -951,7 +832,7 @@ function checkClassStartNotifications() {
 }
 
 // ==========================================
-// 12. CORE RENDERING ENGINE & VIEWS
+// 11. CORE RENDERING ENGINE & VIEWS
 // ==========================================
 function switchTab(tab) {
   currentTab = tab;
@@ -974,7 +855,6 @@ function switchTab(tab) {
 }
 
 function renderUI() {
-  // Update semester selector
   const semSelect = document.getElementById('semesterSelect');
   if (semSelect) semSelect.value = currentSemester;
 
@@ -987,7 +867,6 @@ function renderUI() {
     }
   });
 
-  // 1. Critical shortage banner
   const globalAlert = document.getElementById('criticalGlobalBanner');
   const baseStats = getCalculatedAttendance();
   let criticalCount = 0;
@@ -1008,7 +887,7 @@ function renderUI() {
     globalAlert.style.display = 'none';
   }
 
-  // 2. Render Courses
+  // 2. Render Courses (CLEANED UP: Simulator and Milestones removed)
   const listContainer = document.getElementById('courseList');
   if (listContainer) {
     listContainer.innerHTML = '';
@@ -1040,10 +919,6 @@ function renderUI() {
                 <p>Classes: ${totalPresent}/${total}</p>
                 ${getBunkStatus(totalPresent, totalAbsent)}
                 ${shortageBadge}
-                <div class="course-card-actions-row">
-                  <button class="course-util-btn" onclick="event.stopPropagation(); openModal('whatIfSimulator', ${course.id})">🧮 Simulate</button>
-                  <button class="course-util-btn" onclick="event.stopPropagation(); openCourseMilestones(${course.id})">🎯 Milestones</button>
-                </div>
               </div>
             </div>
             <div class="action-bar" id="action-${course.id}">
@@ -1089,7 +964,12 @@ function renderUI() {
       const currentTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
 
       if (isSunday || isDeclaredHoliday) {
-        timeContainer.innerHTML = `<div class="holiday-banner"><p style="color:var(--absent-btn); font-size:1.15rem; font-weight:800;">🏖️ ${isSunday ? 'SUNDAY IS A HOLIDAY' : 'TODAY IS A HOLIDAY'}</p></div>`;
+        timeContainer.innerHTML = `
+          <div class="holiday-banner" style="text-align:center; padding:30px 0;">
+            <p style="color:var(--absent-btn); font-size:1.15rem; font-weight:800;">
+              🏖️ ${isSunday ? 'SUNDAY IS A HOLIDAY' : 'TODAY IS A HOLIDAY'}
+            </p>
+          </div>`;
       } else {
         let todaysClasses = [];
         courses.forEach(c => { 
@@ -1154,7 +1034,7 @@ function renderUI() {
 }
 
 // ==========================================
-// 13. SETTINGS PAGE & MODAL CONTROLLERS
+// 12. SETTINGS PAGE & MODAL CONTROLLERS
 // ==========================================
 function openSettingsPage() {
   const gear = document.getElementById('gearBtn');
@@ -1179,7 +1059,6 @@ function closeSettingsPage() {
 
 // Master Modals Router
 function openModal(type, extraId = null) {
-  // Always close the settings drawer smoothly before sliding up a modal
   closeSettingsPage();
 
   const modalOverlay = document.getElementById('modalOverlay');
@@ -1187,14 +1066,12 @@ function openModal(type, extraId = null) {
   modalOverlay.classList.add('active');
   document.body.classList.add('scroll-locked');
   
-  // Set default class
   modalContent.className = 'modal-content';
 
   if (type === 'authModal') {
     modalContent.className = 'modal-content auth-modal-card';
   }
 
-  // Intercept Admin Verify
   if (type === 'adminVerifyModal') {
     openAdminVerifyModal();
     return;
@@ -1215,42 +1092,6 @@ function openModal(type, extraId = null) {
         <button class="btn-auth-primary" style="width:100%; margin-top:8px;" onclick="saveSemesterDates()">Save Dates</button>
       </div>
     `;
-  } 
-  else if (type === 'whatIfSimulator') {
-    if (extraId) simSelectedCourseId = extraId;
-    else if (!simSelectedCourseId && courses.length > 0) simSelectedCourseId = courses[0].id;
-    
-    let options = courses.map(c => `<option value="${c.id}" ${c.id == simSelectedCourseId ? 'selected' : ''}>${c.name}</option>`).join('');
-    html += `
-      <h2>Bunk Simulator</h2>
-      <p style="font-size:0.82rem; color:var(--text-sub); margin-bottom:14px;">Forecast your attendance percentage.</p>
-      
-      <select id="simCoursePicker" class="modal-input funky-select" onchange="simSelectedCourseId=this.value; updateWhatIfCalculation();">
-        ${options}
-      </select>
-
-      <div class="simulator-box">
-        <div class="sim-metric-row">
-          <div class="sim-metric-item">
-            <span class="sim-metric-val" id="simNewPercentage">--%</span>
-            <span class="sim-metric-label">Projected %</span>
-          </div>
-        </div>
-
-        <div class="sim-control-group">
-          <label><span>Will Attend:</span> <span id="simAttendDisplay">+0</span></label>
-          <input type="range" id="simAttendSlider" class="sim-range-slider" min="0" max="25" value="0" oninput="updateWhatIfCalculation()">
-        </div>
-
-        <div class="sim-control-group">
-          <label><span>Will Miss:</span> <span id="simMissDisplay">+0</span></label>
-          <input type="range" id="simMissSlider" class="sim-range-slider" min="0" max="25" value="0" oninput="updateWhatIfCalculation()">
-        </div>
-
-        <div id="simVerdict" style="margin-top:10px; font-size:0.85rem; background:#1e293b; padding:8px; border-radius:8px;"></div>
-      </div>
-    `;
-    setTimeout(updateWhatIfCalculation, 0);
   } 
   else if (type === 'calendarMode') {
     const year = currentCalDate.getFullYear();
@@ -1542,7 +1383,7 @@ function showVirtualPopup({ icon, title, message, confirmText, cancelText, onCon
 }
 
 // ==========================================
-// 14. DATA MODIFIERS (SAVE, ADD, REMOVE)
+// 13. DATA MODIFIERS (SAVE, ADD, REMOVE)
 // ==========================================
 function saveSemesterDates() {
   const sDate = document.getElementById('semStartInput').value;
@@ -1647,7 +1488,7 @@ function removeCourseById(id) {
 }
 
 // ==========================================
-// 15. TIMETABLE INLINE EDITING
+// 14. TIMETABLE INLINE EDITING
 // ==========================================
 function toggleTimetableEdit() {
   if (isEditingTimetable) {
@@ -1665,6 +1506,20 @@ function toggleTimetableEdit() {
     inlineEditSchedule.sort((a,b) => a.start.localeCompare(b.start));
     renderUI();
   }
+}
+
+function addInlinePeriod() {
+  inlineEditSchedule.push({ start: '09:00', end: '10:00', name: '' });
+  renderUI();
+}
+
+function updateInlinePeriod(index, field, value) {
+  inlineEditSchedule[index][field] = value;
+}
+
+function removeInlinePeriod(index) {
+  inlineEditSchedule.splice(index, 1);
+  renderUI();
 }
 
 function saveInlineTimetable() {
@@ -1696,20 +1551,6 @@ function saveInlineTimetable() {
   renderUI();
 }
 
-function addInlinePeriod() {
-  inlineEditSchedule.push({ start: '09:00', end: '10:00', name: '' });
-  renderUI();
-}
-
-function updateInlinePeriod(index, field, value) {
-  inlineEditSchedule[index][field] = value;
-}
-
-function removeInlinePeriod(index) {
-  inlineEditSchedule.splice(index, 1);
-  renderUI();
-}
-
 function changeDay(dayName) { 
   currentSelectedDay = dayName; 
   isEditingTimetable = false;
@@ -1717,7 +1558,7 @@ function changeDay(dayName) {
 }
 
 // ==========================================
-// 16. INTERACTIVE CLOCK PICKER
+// 15. INTERACTIVE CLOCK PICKER
 // ==========================================
 function openClockPicker(index, field) {
   clockTargetIndex = index;
@@ -1835,7 +1676,7 @@ function confirmClockTime() {
 }
 
 // ==========================================
-// 17. ACADEMIC CALENDAR SETUP
+// 16. ACADEMIC CALENDAR SETUP
 // ==========================================
 let setupBlobUrl = null;
 let setupTempData = {};
@@ -1963,7 +1804,7 @@ function closeSplitScreen() {
 }
 
 // ==========================================
-// 18. TIMETABLE SHARING & IMPORTING
+// 17. TIMETABLE SHARING & IMPORTING
 // ==========================================
 async function openShareTimetableModal() {
   if (courses.length === 0) return alert("You don't have any courses to share.");
@@ -2119,7 +1960,7 @@ function applyImportedTimetable(mode) {
 }
 
 // ==========================================
-// 19. AUTHENTICATION HANDLERS
+// 18. AUTHENTICATION HANDLERS
 // ==========================================
 function switchAuthMode(mode) {
   authMode = mode;
@@ -2182,7 +2023,7 @@ async function logoutUser() {
 }
 
 // ==========================================
-// 20. AUTOMATED CHECKOUT SYSTEM
+// 19. AUTOMATED CHECKOUT SYSTEM
 // ==========================================
 async function initiatePayment() {
   if (!currentUser) {
@@ -2361,7 +2202,7 @@ async function adminRejectOrder(orderId) {
 }
 
 // ==========================================
-// 21. APP STARTUP
+// 20. APP STARTUP
 // ==========================================
 function startLiveClock() {
   const el = document.getElementById('liveClock');

@@ -23,10 +23,32 @@
 
   <!-- Top Sticky Header -->
   <header class="header">
-    <div class="header-left"><button class="menu-btn" onclick="toggleMenu()">☰</button></div>
+    <div class="header-left"><button class="menu-btn settings-gear" id="settingsGear" aria-label="Open settings" onclick="toggleSettings()"><svg viewBox="0 0 100 100" aria-hidden="true"><path class="gear-teeth" d="M43 2h14l3 12a37 37 0 0 1 8 3l10-7 10 10-7 10a37 37 0 0 1 3 8l12 3v14l-12 3a37 37 0 0 1-3 8l7 10-10 10-10-7a37 37 0 0 1-8 3l-3 12H43l-3-12a37 37 0 0 1-8-3l-10 7-10-10 7-10a37 37 0 0 1-3-8L4 57V43l12-3a37 37 0 0 1 3-8l-7-10 10-10 10 7a37 37 0 0 1 8-3z"/><circle class="gear-ring" cx="50" cy="50" r="32"/><circle class="gear-inner" cx="50" cy="50" r="23"/><path class="gear-spoke" d="M47 28h6v17h-6zm0 27h6v17h-6zM28 47h17v6H28zm27 0h17v6H55z"/><circle class="gear-hub" cx="50" cy="50" r="9"/></svg></button></div>
     <div class="header-center"><h1>ATTENDANCE TRACKER</h1></div>
     <div class="header-right"><div id="liveClock" class="live-clock" style="cursor:pointer;" onclick="openModal('calendarMode')"></div></div>
   </header>
+
+  <!-- Settings screen -->
+  <div class="settings-overlay" id="settingsOverlay" aria-hidden="true">
+    <section class="settings-screen">
+      <header class="settings-header"><button class="close-btn" onclick="toggleSettings(false)" aria-label="Close settings">×</button><h2>Settings</h2><div class="theme-toggle-wrapper settings-theme-toggle" onclick="toggleDarkMode()"><div class="neumorphic-toggle"><div class="toggle-thumb"><svg class="sun-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg><svg class="moon-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg></div><span class="toggle-text light-text">LIGHT</span><span class="toggle-text dark-text">DARK</span></div></div></header>
+      <div class="settings-layout">
+        <nav class="settings-tabs" id="settingsTabs">
+          <button onclick="openSettingsTab('account')">Account</button>
+          <button onclick="openSettingsTab('help')">How to Use</button>
+          <button onclick="openSettingsTab('history')">History Log</button>
+          <button onclick="openSettingsTab('calendar')">Academic Calendar</button>
+          <button onclick="openSettingsTab('target')">Target Attendance</button>
+          <button onclick="openSettingsTab('edit')">Edit Attendance</button>
+          <button onclick="openSettingsTab('add')">Add Course</button>
+          <button onclick="openSettingsTab('remove')">Remove Course</button>
+          <button onclick="openSettingsTab('reset')">Reset Timetable</button>
+          <button onclick="openSettingsTab('events')">Events</button>
+        </nav>
+        <div class="settings-panel" id="settingsPanel"></div>
+      </div>
+    </section>
+  </div>
 
   <!-- Sidebar Navigation & Backdrop -->
   <div class="overlay" id="menuOverlay" onclick="toggleMenu()"></div>
@@ -133,16 +155,20 @@
       <div id="timetableContainer" class="timetable-list"></div>
     </div>
     
-    <div id="courseList" class="course-list-container"></div>
+    <div id="courseList" class="course-list-container"><div class="report-actions"><button class="btn-present" onclick="downloadAttendanceCsv()">Export Excel / CSV</button><button class="btn-present" onclick="printAdvisorReport()">Print Advisor PDF</button></div></div>
+    <section id="eventsSection" class="course-list-container" style="display:none;"></section>
   </main>
 
   <!-- Bottom Navigation Bar -->
   <nav class="bottom-nav">
     <button class="nav-btn active" id="nav-courses" onclick="switchTab('courses')">
-      <span style="font-size:1.35rem; margin-bottom:3px;">📊</span>Attendance %
+      <span style="font-size:1.35rem; margin-bottom:3px;">📊</span>Courses
     </button>
     <button class="nav-btn" id="nav-timetable" onclick="switchTab('timetable')">
       <span style="font-size:1.35rem; margin-bottom:3px;">📅</span>Timetable
+    </button>
+    <button class="nav-btn" id="nav-events" onclick="switchTab('events')">
+      <span style="font-size:1.35rem; margin-bottom:3px;">🎟️</span>Events
     </button>
   </nav>
 

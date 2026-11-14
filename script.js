@@ -37,6 +37,7 @@ const DB_KEY = 'attendance_tracker_v43';
 const HISTORY_KEY = 'attendance_history_v43';
 const CALENDAR_KEY = 'academic_calendar_v43';
 const MARKED_DATES_KEY = 'marked_dates_v43';
+const EVENTS_KEY = 'attendance_events_v1';
 const MANUAL_SHOWN_KEY = 'appManualShown_v43';
 const CUSTOM_DEFAULT_SCHEDULE_KEY = 'custom_default_timetable_v43';
 const PRO_STATUS_KEY = 'attendance_app_is_pro_v1';
@@ -44,6 +45,7 @@ const PRO_STATUS_KEY = 'attendance_app_is_pro_v1';
 let currentTab = 'courses';
 let isEditingTimetable = false;
 let inlineEditSchedule = [];
+let inlineEditSchedules = {};
 
 let clockTargetIndex = null;
 let clockTargetField = null;
@@ -56,6 +58,10 @@ let targetPercentage = parseInt(localStorage.getItem('target_percentage'), 10) |
 let historyLog = JSON.parse(localStorage.getItem(HISTORY_KEY)) || [];
 let academicCalendar = JSON.parse(localStorage.getItem(CALENDAR_KEY)) || null;
 let markedDates = JSON.parse(localStorage.getItem(MARKED_DATES_KEY)) || [];
+let events = JSON.parse(localStorage.getItem(EVENTS_KEY)) || [];
+let eventStatusFilter = 'All';
+let eventCategoryFilter = 'All';
+let eventSortOrder = 'asc';
 
 function getTodayString() {
   const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -88,7 +94,15 @@ function getActiveDefaultSchedule() {
 }
 
 function buildInitialDatabase() {
-  return [];
+  const savedDefault = getActiveDefaultSchedule();
+  return Object.entries(savedDefault).map(([code, item]) => ({
+    id: Date.now() + Math.random(),
+    name: item.name || code,
+    code,
+    present: 0,
+    absent: 0,
+    schedule: JSON.parse(JSON.stringify(item.schedule || {}))
+  }));
 }
 
 function loadFromDatabase() {
@@ -313,35 +327,50 @@ function checkLaunchPaywall() {
   }
 }
 // ==========================================
-// PROFESSIONAL CHECKOUT WITH DIRECT APP INTENTS
+// ZERO-TOUCH AUTO-VERIFIED CHECKOUT (NO UTR)
 // ==========================================
-function initiatePayment() {
+let activeOrderUnsubscribe = null;
+
+async function initiatePayment() {
   if (!currentUser) {
     alert("Please sign in with your email first so your semester pass can be linked to your account.");
     openModal('authModal');
     return;
   }
 
+  // 1. Generate unique 6-character order code (e.g. AT4821)
+  const orderRefId = 'AT' + Math.floor(1000 + Math.random() * 9000);
   const upiId = "8073510268@fam";
   const payeeName = "Attendance Tracker";
-  // Send integer amount without decimals (prevents bank gateway decimal rejections)
-  const amountVal = Math.round(subscriptionPrice || 20); 
-  const note = `PASS`;
+  const amountVal = Math.round(subscriptionPrice || 20);
 
-  // Base parameters
-  const queryParams = `pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(payeeName)}&am=${amountVal}&cu=INR&tn=${encodeURIComponent(note)}`;
-
-  // Generic Intent
+  // 2. Lock orderRefId into transaction note (tn) & transaction reference (tr)
+  const queryParams = `pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(payeeName)}&am=${amountVal}&cu=INR&tn=${encodeURIComponent(orderRefId)}&tr=${encodeURIComponent(orderRefId)}`;
+  
   const upiUrl = `upi://pay?${queryParams}`;
-
-  // App-Specific Direct Deep Links (bypasses browser chooser & reduces P2P friction)
   const gpayUrl = `intent://pay?${queryParams}#Intent;scheme=upi;package=com.google.android.apps.nbu.paisa.user;end`;
   const phonePeUrl = `phonepe://pay?${queryParams}`;
   const paytmUrl = `paytmmp://pay?${queryParams}`;
   const bhimUrl = `bhim://pay?${queryParams}`;
   const credUrl = `credpay://upi/pay?${queryParams}`;
-
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(upiUrl)}`;
+
+  // 3. Create pending record in Firestore
+  if (db) {
+    try {
+      await db.collection('payment_orders').doc(orderRefId).set({
+        orderId: orderRefId,
+        uid: currentUser.uid,
+        email: currentUser.email,
+        name: currentUser.displayName || 'Student',
+        amount: amountVal,
+        status: 'pending',
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    } catch (e) {
+      console.warn("Firestore order log error:", e);
+    }
+  }
 
   const modalOverlay = document.getElementById('modalOverlay');
   const modalContent = document.getElementById('modalContent');
@@ -350,18 +379,16 @@ function initiatePayment() {
   document.body.classList.add('scroll-locked');
 
   modalContent.innerHTML = `
+    <!-- Header with Live Order Reference -->
     <div class="checkout-top-bar">
       <div class="checkout-merchant-info">
         <div class="checkout-merchant-icon">🛡️</div>
         <div>
           <div class="checkout-merchant-name">
             Attendance Tracker
-            <span class="badge-verified-pill">
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
-              VERIFIED
-            </span>
+            <span class="badge-verified-pill">VERIFIED</span>
           </div>
-          <div class="checkout-merchant-item">Semester Pro Pass • Lifetime</div>
+          <div class="checkout-merchant-item">Order Ref: <b style="color:#38bdf8; letter-spacing:1px;">${orderRefId}</b></div>
         </div>
       </div>
       
@@ -370,12 +397,7 @@ function initiatePayment() {
           <div class="checkout-price-label">AMOUNT DUE</div>
           <div class="checkout-price-value">₹${amountVal}</div>
         </div>
-        <button type="button" class="checkout-close-btn" onclick="forceCloseModal()" aria-label="Close Checkout">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-          </svg>
-        </button>
+        <button type="button" class="checkout-close-btn" onclick="forceCloseModal()" aria-label="Close Checkout">×</button>
       </div>
     </div>
 
@@ -385,62 +407,74 @@ function initiatePayment() {
     </div>
 
     <div class="checkout-body">
-      <!-- Direct Generic Intent -->
+      <!-- 1-Tap UPI Intent Button -->
       <a href="${upiUrl}" class="btn-checkout-upi-app">
-        <span>📲 Pay via Any Installed UPI App</span>
+        <span>📲 Pay ₹${amountVal} via Any UPI App</span>
       </a>
 
-      <!-- Targeted Direct App Triggers -->
+      <!-- Real App Tiles with Embedded Order Ref -->
       <div class="checkout-brand-icons-row">
-        <!-- Google Pay Direct Intent -->
-        <a href="${gpayUrl}" class="brand-icon-card" title="Open Google Pay" onclick="copyUpiVpa('${upiId}', false)">
-          <img src="gpay_icon.jfif" alt="Google Pay" onerror="this.onerror=null; this.src='https://upload.wikimedia.org/wikipedia/commons/f/f2/Google_Pay_Logo.svg';" />
-        </a>
-
-        <!-- PhonePe Direct Intent -->
-        <a href="${phonePeUrl}" class="brand-icon-card" title="Open PhonePe" onclick="copyUpiVpa('${upiId}', false)">
-          <img src="phonepe_icon.jfif" alt="PhonePe" onerror="this.onerror=null; this.src='https://download.logo.wine/logo/PhonePe/PhonePe-Logo.wine.png';" />
-        </a>
-
-        <!-- Paytm Direct Intent -->
-        <a href="${paytmUrl}" class="brand-icon-card" title="Open Paytm" onclick="copyUpiVpa('${upiId}', false)">
-          <img src="paytm_icon.png" alt="Paytm" onerror="this.onerror=null; this.src='https://asset.brandfetch.io/id_j8vV11K/id_o5V51w_.png';" />
-        </a>
-
-        <!-- BHIM Direct Intent -->
-        <a href="${bhimUrl}" class="brand-icon-card" title="Open BHIM UPI" onclick="copyUpiVpa('${upiId}', false)">
-          <img src="bhim_icon.jfif" alt="BHIM UPI" onerror="this.onerror=null; this.src='https://upload.wikimedia.org/wikipedia/commons/e/e1/BHIM_logo.svg';" />
-        </a>
-
-        <!-- CRED Direct Intent -->
-        <a href="${credUrl}" class="brand-icon-card" title="Open CRED" onclick="copyUpiVpa('${upiId}', false)">
-          <img src="cred_icon.png" alt="CRED" onerror="this.onerror=null; this.src='https://web-images.credcdn.in/_next/assets/images/home-page/cred-logo.png';" />
-        </a>
+        <a href="${gpayUrl}" class="brand-icon-card" title="Google Pay"><img src="gpay_icon.jfif" alt="Google Pay" onerror="this.onerror=null; this.src='https://upload.wikimedia.org/wikipedia/commons/f/f2/Google_Pay_Logo.svg';" /></a>
+        <a href="${phonePeUrl}" class="brand-icon-card" title="PhonePe"><img src="phonepe_icon.jfif" alt="PhonePe" onerror="this.onerror=null; this.src='https://download.logo.wine/logo/PhonePe/PhonePe-Logo.wine.png';" /></a>
+        <a href="${paytmUrl}" class="brand-icon-card" title="Paytm"><img src="paytm_icon.png" alt="Paytm" onerror="this.onerror=null; this.src='https://asset.brandfetch.io/id_j8vV11K/id_o5V51w_.png';" /></a>
+        <a href="${bhimUrl}" class="brand-icon-card" title="BHIM UPI"><img src="bhim_icon.jfif" alt="BHIM UPI" onerror="this.onerror=null; this.src='https://upload.wikimedia.org/wikipedia/commons/e/e1/BHIM_logo.svg';" /></a>
+        <a href="${credUrl}" class="brand-icon-card" title="CRED"><img src="cred_icon.png" alt="CRED" onerror="this.onerror=null; this.src='https://web-images.credcdn.in/_next/assets/images/home-page/cred-logo.png';" /></a>
       </div>
 
-      <!-- QR Frame & 1-Tap Copy -->
+      <!-- Centered QR Presentation -->
       <div class="checkout-qr-frame">
         <img src="${qrUrl}" alt="UPI QR" class="checkout-qr-img" />
         <div class="checkout-copy-row">
           <span class="checkout-upi-text" id="upiVpaText">${upiId}</span>
-          <button type="button" class="btn-copy-upi" onclick="copyUpiVpa('${upiId}', true)">📋 Copy</button>
+          <button type="button" class="btn-copy-upi" onclick="copyUpiVpa('${upiId}')">📋 Copy</button>
         </div>
       </div>
 
-      <!-- UTR Entry Form -->
-      <div class="checkout-utr-section">
-        <div class="checkout-utr-title">Confirm Your Payment</div>
-        <p class="checkout-utr-desc">Enter the 12-digit <b>UPI Reference / UTR Number</b> from your payment receipt:</p>
-        
-        <input type="text" id="paymentUtrInput" class="checkout-utr-input" placeholder="12-Digit UTR Number" maxlength="12" />
-        <div id="utrStatusMsg" style="font-size:0.8rem; font-weight:700; color:var(--absent-btn); min-height:18px; margin-bottom:8px; text-align:center;"></div>
-
-        <button type="button" class="checkout-verify-btn" onclick="submitUtrForVerification()">
-          ✓ Confirm & Activate Pass
-        </button>
+      <!-- Live Auto-Verification Radar Box (Replaces UTR Input) -->
+      <div id="checkoutStatusArea" class="checkout-radar-box">
+        <div class="radar-ping-dot"></div>
+        <div class="radar-text-title">Listening for payment confirmation...</div>
+        <div class="radar-text-sub">Keep this page open. Your app will unlock automatically within seconds once your transfer completes.</div>
       </div>
     </div>
   `;
+
+  // 4. Listen for real-time order approval
+  if (activeOrderUnsubscribe) activeOrderUnsubscribe();
+
+  if (db) {
+    activeOrderUnsubscribe = db.collection('payment_orders').doc(orderRefId).onSnapshot(doc => {
+      if (doc.exists && doc.data().status === 'approved') {
+        if (activeOrderUnsubscribe) {
+          activeOrderUnsubscribe();
+          activeOrderUnsubscribe = null;
+        }
+
+        // Visual success state
+        const statusArea = document.getElementById('checkoutStatusArea');
+        if (statusArea) {
+          statusArea.classList.add('approved');
+          statusArea.innerHTML = `
+            <div style="font-size:1.15rem; font-weight:900; color:var(--present-btn);">✓ Payment Confirmed!</div>
+            <div style="font-size:0.8rem; color:var(--text-sub); margin-top:4px;">Activating Lifetime Pass...</div>
+          `;
+        }
+
+        // Close modal and celebrate
+        setTimeout(() => {
+          forceCloseModal();
+          showVirtualPopup({
+            icon: '🎉',
+            title: 'Welcome to Pro!',
+            message: 'Your payment was automatically confirmed. Lifetime semester access is unlocked!',
+            confirmText: 'Get Started',
+            cancelText: '',
+            onConfirm: () => {}
+          });
+        }, 1200);
+      }
+    });
+  }
 }
 
 // Updated copy helper that supports background copying on app tap
@@ -558,19 +592,14 @@ async function submitUtrForVerification() {
 function openClockPicker(index, field) {
   clockTargetIndex = index;
   clockTargetField = field;
-  
-  const currentVal = inlineEditSchedule[index][field] || '09:00';
-  const [h24, m24] = currentVal.split(':').map(Number);
-  
-  clockCurrentAmPm = h24 >= 12 ? 'PM' : 'AM';
-  clockCurrentHour = h24 % 12 || 12;
-  clockCurrentMinute = Math.round((m24 || 0) / 5) * 5 % 60;
+  const [h, m] = (inlineEditSchedule[index][field] || '09:00').split(':').map(Number);
+  clockCurrentAmPm = h >= 12 ? 'PM' : 'AM';
+  clockCurrentHour = h % 12 || 12;
+  clockCurrentMinute = m || 0;
   clockCurrentView = 'hours';
-
   document.getElementById('clockPickerTitle').innerText = field === 'start' ? 'Set Start Time' : 'Set End Time';
   document.getElementById('clockModalOverlay').classList.add('active');
   document.body.classList.add('scroll-locked');
-
   updateClockDisplay();
   renderClockDial();
 }
@@ -609,16 +638,18 @@ function updateClockDisplay() {
 function renderClockDial() {
   const container = document.getElementById('clockNumbers');
   container.innerHTML = '';
-  const radius = 80;
-  const cx = 110, cy = 110;
+  const dial = document.getElementById('clockDial');
+  const size = dial.clientWidth;
+  const radius = size * 0.36;
+  const cx = size / 2, cy = size / 2;
   const hand = document.getElementById('clockHand');
 
   if (clockCurrentView === 'hours') {
     const hours = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
     hours.forEach(h => {
       const angle = (h * 30 - 90) * (Math.PI / 180);
-      const x = cx + radius * Math.cos(angle) - 15;
-      const y = cy + radius * Math.sin(angle) - 15;
+      const x = cx + radius * Math.cos(angle) - 18;
+      const y = cy + radius * Math.sin(angle) - 18;
 
       const el = document.createElement('div');
       el.className = `clock-number-item ${clockCurrentHour === h ? 'selected' : ''}`;
@@ -633,13 +664,14 @@ function renderClockDial() {
       };
       container.appendChild(el);
     });
+    hand.style.height = `${radius}px`;
     hand.style.transform = `rotate(${clockCurrentHour * 30}deg)`;
   } else {
     const minutes = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
     minutes.forEach(m => {
       const angle = (m * 6 - 90) * (Math.PI / 180);
-      const x = cx + radius * Math.cos(angle) - 15;
-      const y = cy + radius * Math.sin(angle) - 15;
+      const x = cx + radius * Math.cos(angle) - 18;
+      const y = cy + radius * Math.sin(angle) - 18;
 
       const el = document.createElement('div');
       el.className = `clock-number-item ${clockCurrentMinute === m ? 'selected' : ''}`;
@@ -653,7 +685,35 @@ function renderClockDial() {
       };
       container.appendChild(el);
     });
+    hand.style.height = `${radius}px`;
     hand.style.transform = `rotate(${clockCurrentMinute * 6}deg)`;
+  }
+
+  if (!dial.dataset.dragReady) {
+    dial.dataset.dragReady = 'true';
+    const chooseFromPointer = (event) => {
+      if (!dial.hasPointerCapture?.(event.pointerId) && event.type === 'pointermove') return;
+      const rect = dial.getBoundingClientRect();
+      const dx = event.clientX - (rect.left + rect.width / 2);
+      const dy = event.clientY - (rect.top + rect.height / 2);
+      let degrees = (Math.atan2(dy, dx) * 180 / Math.PI + 90 + 360) % 360;
+      if (clockCurrentView === 'hours') {
+        let hour = Math.round(degrees / 30) % 12;
+        clockCurrentHour = hour || 12;
+      } else {
+        clockCurrentMinute = (Math.round(degrees / 6 / 5) * 5) % 60;
+      }
+      updateClockDisplay();
+      renderClockDial();
+    };
+    dial.addEventListener('pointerdown', (event) => {
+      event.preventDefault();
+      dial.setPointerCapture(event.pointerId);
+      chooseFromPointer(event);
+    });
+    dial.addEventListener('pointermove', (event) => {
+      if (dial.hasPointerCapture(event.pointerId)) chooseFromPointer(event);
+    });
   }
 }
 
@@ -706,19 +766,20 @@ function showVirtualPopup({ icon = '📋', title, message, confirmText = '✓ Sa
 
 function toggleTimetableEdit() {
   if (isEditingTimetable) {
-    for (let p of inlineEditSchedule) {
+    inlineEditSchedules[currentSelectedDay] = inlineEditSchedule;
+    for (const [day, schedule] of Object.entries(inlineEditSchedules)) for (let p of schedule) {
       if(!p.start || !p.end || !p.name.trim()) {
-        return alert("Please fill all time and course name fields completely before saving.");
+        return alert(`Please fill all time and course name fields completely for ${day}.`);
       }
       if(p.start >= p.end) {
-        return alert("Start time must be before end time for " + (p.name || 'period') + ".");
+        return alert(`Start time must be before end time for ${p.name || 'period'} on ${day}.`);
       }
     }
 
     showVirtualPopup({
       icon: '💾',
       title: 'Save Timetable Changes?',
-      message: `Do you want to save the updated schedule for <b>${currentSelectedDay}</b>?`,
+      message: `Do you want to save the updated schedules for all edited days?`,
       confirmText: '✓ Save',
       cancelText: '✖ No',
       onConfirm: () => {
@@ -738,17 +799,20 @@ function toggleTimetableEdit() {
 
   } else {
     isEditingTimetable = true;
-    inlineEditSchedule = [];
-    courses.forEach(c => {
-        if(c.schedule && c.schedule[currentSelectedDay]) {
-            c.schedule[currentSelectedDay].forEach(slot => {
-                inlineEditSchedule.push({ start: slot.start, end: slot.end, code: c.code, name: c.name, id: c.id });
-            });
-        }
-    });
-    inlineEditSchedule.sort((a,b) => a.start.localeCompare(b.start));
+    inlineEditSchedules = {};
+    inlineEditSchedule = getScheduleForDay(currentSelectedDay);
     renderUI();
   }
+}
+
+function getScheduleForDay(dayName) {
+  const schedule = [];
+  courses.forEach(c => {
+    (c.schedule && c.schedule[dayName] || []).forEach(slot => {
+      schedule.push({ start: slot.start, end: slot.end, code: c.code, name: c.name, id: c.id });
+    });
+  });
+  return schedule.sort((a,b) => a.start.localeCompare(b.start));
 }
 
 function addInlinePeriod() {
@@ -766,21 +830,24 @@ function removeInlinePeriod(index) {
 }
 
 function saveInlineTimetable(setAsDefault) {
+  inlineEditSchedules[currentSelectedDay] = inlineEditSchedule;
+  Object.entries(inlineEditSchedules).forEach(([day, schedule]) => {
   courses.forEach(c => {
-      if (c.schedule && c.schedule[currentSelectedDay]) {
-          delete c.schedule[currentSelectedDay];
+      if (c.schedule && c.schedule[day]) {
+          delete c.schedule[day];
       }
   });
   
-  inlineEditSchedule.forEach(p => {
+  schedule.forEach(p => {
       let course = courses.find(c => c.name.trim().toUpperCase() === p.name.trim().toUpperCase());
       if (!course) {
           course = { id: Date.now() + Math.random(), name: p.name.trim(), code: p.code || 'CUSTOM', present: 0, absent: 0, schedule: {} };
           courses.push(course);
       }
       if (!course.schedule) course.schedule = {};
-      if (!course.schedule[currentSelectedDay]) course.schedule[currentSelectedDay] = [];
-      course.schedule[currentSelectedDay].push({ start: p.start, end: p.end });
+      if (!course.schedule[day]) course.schedule[day] = [];
+      course.schedule[day].push({ start: p.start, end: p.end });
+  });
   });
 
   if (setAsDefault) {
@@ -976,22 +1043,42 @@ function toggleSlotAttendance(courseId, slotStart, clickedStatus) {
   let dailyMarks = JSON.parse(localStorage.getItem('daily_marks_v41')) || {};
   const currentStatus = dailyMarks[slotKey];
   const course = courses.find(c => c.id === courseId);
+  if (!course) return;
   
-  if (currentStatus === 'present') course.present--;
-  if (currentStatus === 'absent') course.absent--;
-  
-  if (currentStatus === clickedStatus) {
-      delete dailyMarks[slotKey];
-  } else {
-      if (clickedStatus === 'present') course.present++;
-      if (clickedStatus === 'absent') course.absent++;
-      dailyMarks[slotKey] = clickedStatus;
-  }
+  if (currentStatus === clickedStatus) return;
+  // The per-slot mark is the source of truth; aggregate counts are calculated
+  // from it, so do not also mutate course.present/course.absent here.
+  dailyMarks[slotKey] = clickedStatus;
   
   localStorage.setItem('daily_marks_v41', JSON.stringify(dailyMarks));
   saveToDatabase();
   checkAndAutoMarkDay(); 
   renderUI();
+}
+
+function finalizeMissedClasses() {
+  const todayStr = getTodayDateString();
+  const todayName = getTodayString();
+  const now = new Date();
+  const nowStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+  if (todayName === 'Sunday' || isTodayHoliday()) return;
+
+  const dailyMarks = JSON.parse(localStorage.getItem('daily_marks_v41')) || {};
+  let changed = false;
+  courses.forEach(course => {
+    (course.schedule && course.schedule[todayName] || []).forEach(slot => {
+      const slotKey = `${todayStr}_${course.id}_${slot.start}`;
+      // Leave current and future periods open for attendance marking.
+      if (!dailyMarks[slotKey] && nowStr >= slot.end) {
+        dailyMarks[slotKey] = 'absent';
+        changed = true;
+      }
+    });
+  });
+  if (changed) {
+    localStorage.setItem('daily_marks_v41', JSON.stringify(dailyMarks));
+    saveToDatabase();
+  }
 }
 
 function checkAndAutoMarkDay() {
@@ -1043,20 +1130,110 @@ function switchTab(tab) {
   renderUI();
 }
 
+function renderEvents() {
+  const host = document.getElementById('eventsSection');
+  if (!host) return;
+  const today = getTodayDateString();
+  const pastEvents = events.filter(e => e.date < today).sort((a,b) => b.date.localeCompare(a.date));
+  const presentEvents = events.filter(e => e.date === today).sort((a,b) => a.title.localeCompare(b.title));
+  const upcomingEvents = events.filter(e => e.date > today).sort((a,b) => a.date.localeCompare(b.date));
+  const carouselEvents = [...pastEvents, ...presentEvents, ...upcomingEvents];
+  const eventEmojis = {Exam:'📝',Assignment:'📚',Fest:'🎉',Holiday:'🌴',Personal:'✨',Club:'🎭'};
+  const bannerMarkup = carouselEvents.length ? carouselEvents.map(item => {
+    const delta = Math.round((new Date(`${item.date}T00:00:00`) - new Date(`${today}T00:00:00`)) / 86400000);
+    const label = delta < 0 ? `${Math.abs(delta)} days ago` : delta === 0 ? 'Happening today' : delta === 1 ? 'Tomorrow' : `In ${delta} days`;
+    return `<button type="button" class="event-hero ${delta === 0 ? 'event-today' : delta < 0 ? 'event-past' : ''}" onclick="focusEvent('${item.id}')" aria-label="${label}: ${escapeEventText(item.title)}"><span class="event-hero-icon">${eventEmojis[item.category] || '📅'}</span><span class="event-hero-copy"><small>${label}</small><strong>${escapeEventText(item.title)}</strong><span>${item.date} · ${escapeEventText(item.category)}</span></span><span class="event-hero-arrow">›</span></button>`;
+  }).join('') : '<div class="event-hero event-empty"><span class="event-hero-icon">📅</span><span class="event-hero-copy"><small>PLAN AHEAD</small><strong>No events yet</strong><span>Add an event to see it here</span></span></div>';
+  const visible = events
+    .filter(item => eventStatusFilter === 'All' || (eventStatusFilter === 'Upcoming' ? item.date >= today : item.date < today))
+    .filter(item => eventCategoryFilter === 'All' || item.category === eventCategoryFilter)
+    .sort((a, b) => eventSortOrder === 'asc' ? a.date.localeCompare(b.date) : b.date.localeCompare(a.date));
+
+  host.innerHTML = `<h2>Events</h2>
+    <div class="event-carousel" aria-label="Events; swipe left for upcoming and right for past events">${bannerMarkup}</div>
+    <form class="event-form" onsubmit="addEvent(event)">
+      <input id="eventTitle" required maxlength="100" placeholder="Event title">
+      <input id="eventDate" required type="date">
+      <select id="eventCategory" aria-label="Event category"><option>Exam</option><option>Assignment</option><option>Fest</option><option>Holiday</option><option>Personal</option><option>Club</option></select>
+      <button class="btn-present" type="submit">Add Event</button>
+    </form>
+    <div class="event-filters">
+      <select aria-label="Filter by status" onchange="eventStatusFilter=this.value;renderEvents()"><option ${eventStatusFilter==='All'?'selected':''}>All</option><option ${eventStatusFilter==='Upcoming'?'selected':''}>Upcoming</option><option ${eventStatusFilter==='Past'?'selected':''}>Past</option></select>
+      <select aria-label="Filter by category" onchange="eventCategoryFilter=this.value;renderEvents()"><option ${eventCategoryFilter==='All'?'selected':''}>All</option>${['Exam','Assignment','Fest','Holiday','Personal','Club'].map(c=>`<option ${eventCategoryFilter===c?'selected':''}>${c}</option>`).join('')}</select>
+      <select aria-label="Sort events" onchange="eventSortOrder=this.value"><option value="asc" ${eventSortOrder==='asc'?'selected':''}>Date Ascending</option><option value="desc" ${eventSortOrder==='desc'?'selected':''}>Date Descending</option></select>
+    </div>
+    <div class="event-list">${visible.length ? visible.map(item=>`<article class="event-row"><span><b>${escapeEventText(item.title)}</b><br>${item.date} · ${escapeEventText(item.category)}</span><button type="button" aria-label="Remove ${escapeEventText(item.title)}" onclick="deleteEvent('${item.id}')">🗑️ Remove</button></article>`).join('') : '<p>No events match these filters.</p>'}</div>`;
+  const carousel = document.querySelector('.event-carousel');
+  if (carousel && carouselEvents.length) {
+    const currentIndex = pastEvents.length;
+    requestAnimationFrame(() => { carousel.scrollLeft = currentIndex * carousel.clientWidth; });
+    const cards = carousel.querySelectorAll('.event-hero');
+    const observer = new IntersectionObserver(entries => entries.forEach(entry => {
+      entry.target.classList.toggle('event-banner-visible', entry.isIntersecting);
+    }), {root: carousel, threshold: .45});
+    cards.forEach(card => observer.observe(card));
+  }
+}
+
+function focusEvent(id) {
+  const row = [...document.querySelectorAll('.event-row')].find(el => el.innerHTML.includes(id));
+  row?.scrollIntoView({behavior:'smooth', block:'center'});
+  row?.classList.add('event-row-highlight');
+  setTimeout(() => row?.classList.remove('event-row-highlight'), 1600);
+}
+
+function escapeEventText(value) {
+  const element = document.createElement('span');
+  element.textContent = String(value);
+  return element.innerHTML;
+}
+
+function addEvent(event) {
+  event.preventDefault();
+  const title = document.getElementById('eventTitle').value.trim();
+  const date = document.getElementById('eventDate').value;
+  const category = document.getElementById('eventCategory').value;
+  if (!title || !date) return;
+  events.push({ id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, title, date, category });
+  localStorage.setItem(EVENTS_KEY, JSON.stringify(events));
+  addHistory(`Created event: ${title} (${date}, ${category})`);
+  renderEvents();
+}
+
+function deleteEvent(id) {
+  const item = events.find(event => event.id === id);
+  if (!item) return;
+  events = events.filter(event => event.id !== id);
+  localStorage.setItem(EVENTS_KEY, JSON.stringify(events));
+  addHistory(`Deleted event: ${item.title} (${item.date})`);
+  renderEvents();
+}
+
 function changeDay(dayName) { 
+  if (isEditingTimetable) inlineEditSchedules[currentSelectedDay] = inlineEditSchedule;
   currentSelectedDay = dayName; 
+  if (isEditingTimetable) inlineEditSchedule = inlineEditSchedules[dayName] || getScheduleForDay(dayName);
   renderUI(); 
 }
 
 function renderUI() {
+  finalizeMissedClasses();
   const ttSection = document.getElementById('timetableSection');
   const courseSection = document.getElementById('courseList');
+  const eventsSection = document.getElementById('eventsSection');
+  ttSection.style.setProperty('display', currentTab === 'timetable' ? 'block' : 'none', 'important');
+  courseSection.style.setProperty('display', currentTab === 'courses' ? 'flex' : 'none', 'important');
+  eventsSection.style.setProperty('display', currentTab === 'events' ? 'flex' : 'none', 'important');
+  if (currentTab === 'events') renderEvents();
   
   if (currentTab === 'courses') {
       ttSection.style.setProperty('display', 'none', 'important');
       courseSection.style.setProperty('display', 'flex', 'important');
-  } else {
+  } else if (currentTab === 'timetable') {
       ttSection.style.setProperty('display', 'block', 'important');
+      courseSection.style.setProperty('display', 'none', 'important');
+  } else {
+      ttSection.style.setProperty('display', 'none', 'important');
       courseSection.style.setProperty('display', 'none', 'important');
   }
 
@@ -1082,7 +1259,7 @@ function renderUI() {
                  <button type="button" class="time-picker-btn" onclick="openClockPicker(${idx}, 'end')">🕒 ${format12Hour(p.end) || 'End'}</button>
                  <button onclick="removeInlinePeriod(${idx})" style="background:var(--absent-btn); color:white; border:none; border-radius:8px; padding:12px 16px; font-weight:bold; cursor:pointer;">×</button>
               </div>
-              <input type="text" class="modal-input" style="margin:0; padding:12px; font-size: 0.95rem; font-weight:700;" value="${p.name}" placeholder="Full Course Name" onchange="updateInlinePeriod(${idx}, 'name', this.value)">
+              <input type="text" class="modal-input" style="margin:0; padding:12px; font-size: 0.95rem; font-weight:700;" value="${p.name}" placeholder="Full Course Name" oninput="updateInlinePeriod(${idx}, 'name', this.value)">
           </div>`;
       });
       editHtml += `<button onclick="addInlinePeriod()" style="padding:15px; background:var(--bg-color); color:#3498db; border:2px dashed #3498db; border-radius:12px; cursor:pointer; font-weight:800; font-size:1rem;">+ Add Class to ${currentSelectedDay}</button>`;
@@ -1161,7 +1338,7 @@ function renderUI() {
   }
 
   const listContainer = document.getElementById('courseList');
-  listContainer.innerHTML = '';
+  listContainer.innerHTML = `<div class="report-actions"><div class="report-export-actions"><button class="export-csv-btn" onclick="downloadAttendanceCsv()">📊 Export Excel / CSV</button><button class="export-pdf-btn" onclick="printAdvisorReport()">🖨️ Print Attendance Report PDF</button></div><button class="simulator-launch" onclick="openWhatIfSimulator()"><span>🔮</span> What-If Simulator</button></div>`;
   if (courses.length === 0) { 
     listContainer.innerHTML = `<p style="color:var(--text-sub); text-align:center; padding: 40px 0;">No Courses Found. Add courses from the sidebar menu.</p>`; 
     return; 
@@ -1200,6 +1377,77 @@ function renderUI() {
         ${actionHTML}
       </div>`;
   });
+}
+
+function openWhatIfSimulator() {
+  const options = courses.map(c => `<option value="${c.id}">${escapeEventText(c.name)}</option>`).join('');
+  const content = document.getElementById('modalContent');
+  content.className = 'modal-content whatif-modal';
+  content.innerHTML = `<button class="close-btn" onclick="forceCloseModal()" aria-label="Close simulator">×</button><h2>What-If Attendance Simulator</h2>${courses.length ? `<label>Course<select id="whatIfCourse" onchange="updateWhatIfProjection()">${options}</select></label><label>Future classes to attend: <output id="whatIfAttendValue">0</output><input id="whatIfAttend" type="range" min="0" max="100" value="0" oninput="updateWhatIfProjection()"></label><label>Future classes to miss: <output id="whatIfMissValue">0</output><input id="whatIfMiss" type="range" min="0" max="100" value="0" oninput="updateWhatIfProjection()"></label><button class="vpopup-btn vpopup-btn-cancel" onclick="resetWhatIfProjection()">Reset</button><div id="whatIfResult" aria-live="polite"></div>` : '<p>Add a course first to simulate attendance.</p>'}`;
+  document.getElementById('modalOverlay').classList.add('active');
+  document.body.classList.add('scroll-locked');
+  if (courses.length) updateWhatIfProjection();
+}
+
+function updateWhatIfProjection() {
+  const id = document.getElementById('whatIfCourse')?.value;
+  const course = courses.find(c => String(c.id) === id);
+  if (!course) return;
+  const attend = Number(document.getElementById('whatIfAttend').value);
+  const miss = Number(document.getElementById('whatIfMiss').value);
+  document.getElementById('whatIfAttendValue').value = attend;
+  document.getElementById('whatIfMissValue').value = miss;
+  const stats = getCalculatedAttendance()[course.id] || {p:0,a:0};
+  const present = Math.max(0, stats.p + (course.present || 0));
+  const absent = Math.max(0, stats.a + (course.absent || 0));
+  const total = present + absent;
+  const projectedTotal = total + attend + miss;
+  const projected = projectedTotal ? (present + attend) / projectedTotal * 100 : 0;
+  let feedback = 'Set a target attendance percentage to see safety and recovery guidance.';
+  if (targetPercentage) {
+    if (projected >= targetPercentage) {
+      const buffer = Math.max(0, Math.floor(((present + attend) / (targetPercentage / 100)) - projectedTotal + 1e-8));
+      feedback = `<strong>Safe</strong> · Bunk buffer: ${buffer} class${buffer === 1 ? '' : 'es'}.`;
+    } else {
+      const needed = Math.ceil(((targetPercentage / 100 * projectedTotal) - (present + attend)) / (1 - targetPercentage / 100));
+      feedback = `<strong>Shortage</strong> · Attend the next ${needed} consecutive class${needed === 1 ? '' : 'es'} to recover.`;
+    }
+  }
+  document.getElementById('whatIfResult').innerHTML = `Baseline: ${present} present, ${absent} absent (${total} total).<br>Projected attendance: <strong>${projected.toFixed(1)}%</strong><br>${feedback}`;
+}
+
+function resetWhatIfProjection() {
+  document.getElementById('whatIfAttend').value = 0;
+  document.getElementById('whatIfMiss').value = 0;
+  updateWhatIfProjection();
+}
+
+function attendanceReportRows() {
+  const stats = getCalculatedAttendance();
+  return courses.map(course => {
+    const present = Math.max(0, (stats[course.id]?.p || 0) + (course.present || 0));
+    const absent = Math.max(0, (stats[course.id]?.a || 0) + (course.absent || 0));
+    const total = present + absent;
+    const percentage = total ? Math.round(present / total * 100) : 0;
+    const eligible = targetPercentage ? percentage >= targetPercentage : null;
+    return { code: course.code || '—', name: course.name, present, absent, total, percentage, status: eligible === null ? 'Target not set' : eligible ? 'Eligible' : 'Below target' };
+  });
+}
+
+function downloadAttendanceCsv() {
+  const rows = attendanceReportRows();
+  const csvCell = value => `"${String(value).replace(/"/g, '""')}"`;
+  const lines = [['Course Code','Course Name','Present','Absent','Total Classes','Attendance %','Status'], ...rows.map(r=>[r.code,r.name,r.present,r.absent,r.total,`${r.percentage}%`,r.status])];
+  const blob = new Blob([`\uFEFF${lines.map(row=>row.map(csvCell).join(',')).join('\r\n')}`], {type:'text/csv;charset=utf-8'});
+  const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href=url; link.download='attendance-report.csv'; link.click(); URL.revokeObjectURL(url);
+}
+
+function printAdvisorReport() {
+  const rows = attendanceReportRows();
+  const reportWindow = window.open('', '_blank');
+  if (!reportWindow) return alert('Allow pop-ups to print the advisor report.');
+  reportWindow.document.write(`<!doctype html><html><head><title>Attendance Advisor Report</title><style>body{font:14px Arial,sans-serif;margin:32px;color:#172033}h1{text-align:center}table{width:100%;border-collapse:collapse;margin-top:24px}th,td{border:1px solid #555;padding:9px;text-align:left}th{background:#edf2f7}.signatures{display:flex;gap:70px;margin-top:90px}.signatures div{flex:1;border-top:1px solid #222;padding-top:8px;text-align:center}.meta{margin-top:22px}</style></head><body><h1>Attendance Report</h1><p class="meta">Student: ____________________ &nbsp; Term: ____________________ &nbsp; Target: ${targetPercentage ? `${targetPercentage}%` : 'Not set'}</p><table><thead><tr><th>Course Code</th><th>Course</th><th>Present</th><th>Absent</th><th>Total</th><th>Attendance</th><th>Eligibility</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${escapeEventText(r.code)}</td><td>${escapeEventText(r.name)}</td><td>${r.present}</td><td>${r.absent}</td><td>${r.total}</td><td>${r.percentage}%</td><td>${r.status}</td></tr>`).join('')}</tbody></table><div class="signatures"><div>Student Signature</div><div>Mentor / Advisor Signature</div></div><script>window.onload=()=>window.print()<\/script></body></html>`);
+  reportWindow.document.close();
 }
 
 function markAttendance(id, status) {
@@ -1251,6 +1499,37 @@ function toggleMenu() {
     overlay.classList.add('active');
     document.body.classList.add('scroll-locked');
   }
+}
+
+function toggleSettings(forceOpen) {
+  const overlay = document.getElementById('settingsOverlay');
+  const gear = document.getElementById('settingsGear');
+  const open = typeof forceOpen === 'boolean' ? forceOpen : !overlay.classList.contains('active');
+  overlay.classList.toggle('active', open);
+  overlay.setAttribute('aria-hidden', String(!open));
+  gear.classList.toggle('rotated', open);
+  if (open) { document.body.classList.add('scroll-locked'); openSettingsTab('account'); }
+  else { document.body.classList.remove('scroll-locked'); document.getElementById('settingsPanel').innerHTML = ''; }
+}
+
+function openSettingsTab(tab) {
+  const tabs = [...document.querySelectorAll('#settingsTabs button')];
+  const names = ['account','help','history','calendar','target','edit','add','remove','reset'];
+  tabs.forEach((button, index) => button.classList.toggle('active', names[index] === tab));
+  const panel = document.getElementById('settingsPanel');
+  const actionMap = {account:'authModal',help:'userManual',history:'historyLog',calendar:'setupCalendar',target:'setTarget',edit:'editAttendance',add:'addCourse',remove:'removeCourse'};
+  if (tab === 'events') {
+    panel.innerHTML = '<h3>Events</h3><p>Open the Events tab to add and manage exams, assignments, fests, holidays, and personal events.</p><button class="btn-present" onclick="toggleSettings(false);switchTab(\'events\')">Open Events</button>';
+    return;
+  }
+  if (tab === 'reset') { panel.innerHTML = '<h3>Reset Timetable</h3><p>Restore your saved default timetable and clear attendance logs.</p><button class="btn-absent" onclick="toggleSettings(false);resetToDefaultTimetable()">Reset Default Timetable</button>'; return; }
+  const modalType = actionMap[tab];
+  openModal(modalType);
+  const modalContent = document.getElementById('modalContent');
+  panel.innerHTML = modalContent.innerHTML;
+  modalContent.innerHTML = '';
+  document.getElementById('modalOverlay').classList.remove('active');
+  document.body.classList.add('scroll-locked');
 }
 
 function switchAuthMode(mode) {
@@ -1495,6 +1774,10 @@ async function adminRejectPayment(utr) {
 }
 
 function openModal(type) {
+  if (document.getElementById('settingsOverlay')?.classList.contains('active')) {
+    const panel = document.getElementById('settingsPanel');
+    panel.innerHTML = '';
+  }
   const sidebar = document.getElementById('sidebar');
   const overlay = document.getElementById('menuOverlay');
   if (sidebar) sidebar.classList.remove('open');
@@ -1659,6 +1942,7 @@ function openModal(type) {
         let statusClass = '';
         if (academicCalendar.holidays && academicCalendar.holidays.includes(dateStr)) statusClass = 'holiday';
         else if (academicCalendar.importantDates && academicCalendar.importantDates.includes(dateStr)) statusClass = 'important';
+        if (events.some(e => e.date === dateStr)) statusClass += ' has-event';
 
         const isSunday = new Date(year, month, i).getDay() === 0 ? 'sunday' : '';
         const isFuture = dateStr > todayStr ? 'future' : '';
@@ -1875,7 +2159,15 @@ updateHolidayButton();
 listenToAppSettings();
 checkLaunchPaywall();
 renderUI(); 
-setInterval(renderUI, 60000); 
+// Refresh the live timetable periodically without interrupting timetable edits.
+setInterval(() => {
+  const active = document.activeElement;
+  const userIsEnteringData = active && (
+    active.matches('input, textarea, select, [contenteditable="true"]') ||
+    isEditingTimetable
+  );
+  if (!userIsEnteringData && currentTab === 'timetable') renderUI();
+}, 1000); 
 
 if (!localStorage.getItem(MANUAL_SHOWN_KEY)) { 
   localStorage.setItem(MANUAL_SHOWN_KEY, 'true'); 

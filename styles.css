@@ -571,9 +571,58 @@ body.dark-mode .holiday-banner { background: rgba(192, 57, 43, 0.1); border-colo
 .split-screen-overlay.active { display: block; }
 .split-top { position: absolute; top: 0; left: 0; right: 0; height: 50%; background: #222; overflow: hidden; display: flex; justify-content: center; align-items: center; border-bottom: 3px solid var(--border-color); }
 .split-top iframe { width: 100%; height: 100%; border: none; background: white; }
+.split-top #previewWrapper { touch-action: none; }
+.setup-preview-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  transform-origin: center;
+  user-select: none;
+  -webkit-user-drag: none;
+  will-change: transform;
+}
+.preview-zoom-controls {
+  position: absolute;
+  z-index: 12;
+  left: 14px;
+  bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px;
+  border: 1px solid rgba(255,255,255,.22);
+  border-radius: 12px;
+  background: rgba(15,23,42,.88);
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(0,0,0,.24);
+  font-variant-numeric: tabular-nums;
+}
+.preview-zoom-controls button {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 10px;
+  border: 1px solid rgba(255,255,255,.2);
+  border-radius: 8px;
+  background: rgba(255,255,255,.1);
+  color: #fff;
+  font: inherit;
+  font-size: 1.15rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+.preview-zoom-controls button:hover { background: rgba(255,255,255,.2); }
+.preview-zoom-controls button:focus-visible { outline: 3px solid #93c5fd; outline-offset: 2px; }
+.preview-zoom-level { min-width: 48px; text-align: center; font-size: .82rem; font-weight: 700; }
+.split-top > .close-btn { min-width: 44px; min-height: 44px; }
 .split-bottom { position: absolute; top: 50%; left: 0; right: 0; bottom: 0; background: var(--bg-color); overflow: hidden; display: flex; flex-direction: column; }
 .setup-header { flex: none; height: 55px; display: flex; justify-content: space-between; align-items: center; padding: 0 15px; background: var(--card-bg); border-bottom: 1px solid var(--border-color); }
 .setup-container { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 40px; }
+@media (max-width: 600px) {
+  .preview-zoom-controls { left: 8px; bottom: 8px; gap: 4px; padding: 4px; }
+  .preview-zoom-controls button { min-width: 44px; min-height: 44px; }
+}
 .setup-month { margin-top: 20px; padding: 0 15px; }
 .setup-month-title { font-size: 1.1rem; font-weight: 800; margin-bottom: 10px; text-transform: uppercase; color: var(--text-main); border-bottom: 2px solid var(--border-color); padding-bottom: 5px; }
 

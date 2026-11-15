@@ -1302,6 +1302,31 @@ function toggleSettings(forceOpen) {
   else { document.body.classList.remove('scroll-locked'); document.getElementById('settingsPanel').innerHTML = ''; }
 }
 
+function closeSettingsThen(callback) {
+  const overlay = document.getElementById('settingsOverlay');
+  const screen = overlay?.querySelector('.settings-screen');
+  if (!overlay?.classList.contains('active') || !screen) return callback();
+
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let finished = false;
+  let fallbackTimer;
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+    clearTimeout(fallbackTimer);
+    screen.removeEventListener('transitionend', onTransitionEnd);
+    callback();
+  };
+  const onTransitionEnd = event => {
+    if (event.target === screen && event.propertyName === 'transform') finish();
+  };
+
+  screen.addEventListener('transitionend', onTransitionEnd);
+  toggleSettings(false);
+  document.body.classList.add('scroll-locked');
+  fallbackTimer = setTimeout(finish, reducedMotion ? 40 : 480);
+}
+
 function openSettingsTab(tab) {
   const tabs = [...document.querySelectorAll('#settingsTabs [role="tab"]')];
   const activeTab = tabs.find(button => button.dataset.settingsTab === tab);
@@ -1314,6 +1339,10 @@ function openSettingsTab(tab) {
   });
   const panel = document.getElementById('settingsPanel');
   panel.setAttribute('aria-labelledby', activeTab.id);
+  if (tab === 'calendar') {
+    closeSettingsThen(() => openModal('setupCalendar'));
+    return;
+  }
   const actionMap = {account:'authModal',help:'userManual',calendar:'setupCalendar',target:'setTarget',edit:'editAttendance',add:'addCourse',remove:'removeCourse'};
   if (tab === 'semesters') {
     const archive = JSON.parse(localStorage.getItem(SEMESTERS_KEY) || '{}');
@@ -1421,6 +1450,117 @@ let setupBlobUrl = null;
 let setupTempData = {};
 let setupStartDate = null;
 let setupEndDate = null;
+let setupZoomScale = 1;
+let setupZoomX = 0;
+let setupZoomY = 0;
+let setupZoomPointers = new Map();
+let setupZoomGesture = null;
+
+function clampSetupZoomPan() {
+  const wrapper = document.getElementById('previewWrapper');
+  const image = wrapper?.querySelector('.setup-preview-image');
+  if (!wrapper || !image || setupZoomScale <= 1) {
+    setupZoomX = 0;
+    setupZoomY = 0;
+    return;
+  }
+  const bounds = wrapper.getBoundingClientRect();
+  const aspect = image.naturalWidth / image.naturalHeight || 1;
+  const fitWidth = Math.min(bounds.width, bounds.height * aspect);
+  const fitHeight = Math.min(bounds.height, bounds.width / aspect);
+  setupZoomX = Math.max(-fitWidth * (setupZoomScale - 1) / 2, Math.min(fitWidth * (setupZoomScale - 1) / 2, setupZoomX));
+  setupZoomY = Math.max(-fitHeight * (setupZoomScale - 1) / 2, Math.min(fitHeight * (setupZoomScale - 1) / 2, setupZoomY));
+}
+
+function updateSetupImageZoom() {
+  const wrapper = document.getElementById('previewWrapper');
+  const image = wrapper?.querySelector('.setup-preview-image');
+  if (!wrapper || !image) return;
+  clampSetupZoomPan();
+  image.style.transform = `translate3d(${setupZoomX}px, ${setupZoomY}px, 0) scale(${setupZoomScale})`;
+  image.style.cursor = setupZoomScale > 1 ? (setupZoomGesture?.kind === 'pan' ? 'grabbing' : 'grab') : 'default';
+  const indicator = wrapper.querySelector('.preview-zoom-level');
+  if (indicator) indicator.textContent = `${Math.round(setupZoomScale * 100)}%`;
+}
+
+function setSetupImageZoom(nextScale) {
+  setupZoomScale = Math.max(1, Math.min(5, nextScale));
+  if (setupZoomScale === 1) {
+    setupZoomX = 0;
+    setupZoomY = 0;
+  }
+  updateSetupImageZoom();
+}
+
+function adjustSetupImageZoom(direction) {
+  setSetupImageZoom(setupZoomScale * (direction === 'in' ? 1.25 : 0.8));
+}
+
+function resetSetupImageZoom() {
+  setupZoomPointers.clear();
+  setupZoomGesture = null;
+  setupZoomScale = 1;
+  setupZoomX = 0;
+  setupZoomY = 0;
+  updateSetupImageZoom();
+}
+
+function attachSetupImageZoom(wrapper) {
+  const image = wrapper.querySelector('.setup-preview-image');
+  if (!image) return;
+  wrapper.classList.add('zoomable-image-preview');
+  resetSetupImageZoom();
+
+  wrapper.addEventListener('pointerdown', event => {
+    if (event.target.closest('.preview-zoom-controls')) return;
+    setupZoomPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    wrapper.setPointerCapture(event.pointerId);
+    if (setupZoomPointers.size === 1) {
+      setupZoomGesture = { kind: 'pan', x: event.clientX, y: event.clientY, panX: setupZoomX, panY: setupZoomY };
+    } else if (setupZoomPointers.size === 2) {
+      const [a, b] = [...setupZoomPointers.values()];
+      setupZoomGesture = {
+        kind: 'pinch',
+        distance: Math.hypot(a.x - b.x, a.y - b.y),
+        scale: setupZoomScale
+      };
+    }
+    updateSetupImageZoom();
+  });
+
+  wrapper.addEventListener('pointermove', event => {
+    if (!setupZoomPointers.has(event.pointerId)) return;
+    setupZoomPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (setupZoomPointers.size >= 2 && setupZoomGesture?.kind === 'pinch') {
+      const [a, b] = [...setupZoomPointers.values()];
+      const distance = Math.hypot(a.x - b.x, a.y - b.y);
+      if (setupZoomGesture.distance > 0) {
+        setupZoomScale = Math.max(1, Math.min(5, setupZoomGesture.scale * distance / setupZoomGesture.distance));
+      }
+    } else if (setupZoomGesture?.kind === 'pan' && setupZoomScale > 1) {
+      setupZoomX = setupZoomGesture.panX + event.clientX - setupZoomGesture.x;
+      setupZoomY = setupZoomGesture.panY + event.clientY - setupZoomGesture.y;
+    }
+    updateSetupImageZoom();
+  });
+
+  const finishPointer = event => {
+    setupZoomPointers.delete(event.pointerId);
+    if (setupZoomPointers.size === 1) {
+      const [pointer] = setupZoomPointers.values();
+      setupZoomGesture = { kind: 'pan', x: pointer.x, y: pointer.y, panX: setupZoomX, panY: setupZoomY };
+    } else {
+      setupZoomGesture = null;
+    }
+    updateSetupImageZoom();
+  };
+  wrapper.addEventListener('pointerup', finishPointer);
+  wrapper.addEventListener('pointercancel', finishPointer);
+  wrapper.addEventListener('wheel', event => {
+    event.preventDefault();
+    setSetupImageZoom(setupZoomScale * (event.deltaY < 0 ? 1.12 : 0.89));
+  }, { passive: false });
+}
 
 function startCalendarSetup() {
   const fileInput = document.getElementById('calFileInput');
@@ -1436,6 +1576,7 @@ function startCalendarSetup() {
 
   if (!fileInput.files.length) {
     if (!confirmDataChange('Save the semester start and end dates', true)) return;
+    if (document.getElementById('settingsOverlay')?.classList.contains('active')) toggleSettings(false);
     academicCalendar = {
       ...(academicCalendar || {}),
       startDate: setupStartDate,
@@ -1457,9 +1598,11 @@ function startCalendarSetup() {
   const isImage = file.type.match(/image/i) || file.name.match(/\.(jpg|jpeg|png|gif|webp|heic)$/i);
   
   if (isImage) {
-    previewWrapper.innerHTML = `<img id="setupImagePreview" src="${setupBlobUrl}" style="position:absolute; top:0; left:0; width:100%; height:100%; object-fit:contain;" alt="Calendar Preview" />`;
+    previewWrapper.innerHTML = `<img id="setupImagePreview" class="setup-preview-image" src="${setupBlobUrl}" alt="Calendar preview" /><div class="preview-zoom-controls" aria-label="Image zoom controls"><button type="button" onclick="adjustSetupImageZoom('out')" aria-label="Zoom out" title="Zoom out">−</button><span class="preview-zoom-level" aria-live="polite">100%</span><button type="button" onclick="adjustSetupImageZoom('in')" aria-label="Zoom in" title="Zoom in">+</button><button type="button" onclick="resetSetupImageZoom()" aria-label="Reset zoom" title="Reset zoom">Reset</button></div>`;
+    attachSetupImageZoom(previewWrapper);
   } else {
-    previewWrapper.innerHTML = `<iframe src="${setupBlobUrl}" style="position:absolute; top:0; left:0; width:100%; height:100%; border:none; background:white;"></iframe>`;
+    previewWrapper.classList.remove('zoomable-image-preview');
+    previewWrapper.innerHTML = `<iframe src="${setupBlobUrl}" title="Calendar PDF preview" style="position:absolute; top:0; left:0; width:100%; height:100%; border:none; background:white;"></iframe>`;
   }
   
   setupTempData = {}; 
@@ -1469,8 +1612,10 @@ function startCalendarSetup() {
   }
 
   buildSetupCalendar(setupStartDate, setupEndDate);
+  if (document.getElementById('settingsOverlay')?.classList.contains('active')) toggleSettings(false);
   forceCloseModal();
   document.getElementById('splitScreenOverlay').classList.add('active');
+  document.body.classList.add('scroll-locked');
 }
 
 function buildSetupCalendar(startStr, endStr) {
@@ -1546,6 +1691,9 @@ function closeSplitScreen() {
   if (setupBlobUrl) {
     URL.revokeObjectURL(setupBlobUrl);
     setupBlobUrl = null;
+  }
+  if (!document.getElementById('settingsOverlay')?.classList.contains('active') && !document.getElementById('modalOverlay')?.classList.contains('active')) {
+    document.body.classList.remove('scroll-locked');
   }
 }
 

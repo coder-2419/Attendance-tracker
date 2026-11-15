@@ -221,6 +221,27 @@ body.dark-mode .dark-text { opacity: 1; }
   display: block !important; 
 }
 
+/* Keep every app surface inaccessible until Firebase confirms a signed-in user. */
+body.auth-locked { overflow: hidden; }
+body.auth-locked > :not(#modalOverlay) {
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+body.auth-locked > #modalOverlay.active {
+  visibility: visible !important;
+  pointer-events: auto !important;
+}
+.auth-unavailable {
+  margin: 22px 0 4px;
+  padding: 16px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: var(--bg-color);
+  color: var(--text-main);
+  line-height: 1.55;
+}
+.auth-unavailable strong { display:block; margin-bottom:6px; }
+
 .modal-content { 
   margin: 30px auto; 
   background: var(--card-bg); 

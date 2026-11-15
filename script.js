@@ -22,6 +22,25 @@ let currentUser = null;
 let userRole = 'student'; // 'student' or 'admin'
 let userDocUnsubscribe = null;
 
+function setAppLocked(locked) {
+  document.body.classList.toggle('auth-locked', locked);
+  document.querySelectorAll('.header, .settings-overlay, .overlay, .sidebar, #clockModalOverlay, .split-screen-overlay, .main-content, .bottom-nav')
+    .forEach(element => { element.inert = locked; });
+}
+
+function requireSignedIn() {
+  if (currentUser) return true;
+  setAppLocked(true);
+  openModal('authModal');
+  return false;
+}
+
+function showFirstRunManual() {
+  if (!currentUser || localStorage.getItem(MANUAL_SHOWN_KEY)) return;
+  localStorage.setItem(MANUAL_SHOWN_KEY, 'true');
+  setTimeout(() => { if (currentUser) openModal('userManual'); }, 300);
+}
+
 let authMode = 'signin'; 
 
 const DB_KEY = 'attendance_tracker_v43'; 
@@ -214,9 +233,11 @@ if (auth) {
 
     if (user) {
       currentUser = user;
+      setAppLocked(true);
       if (authMenuItem) authMenuItem.innerHTML = `👤 ${user.displayName || user.email.split('@')[0]}`;
       await loadUserDataFromFirestore(user.uid);
       listenToUserDocRealtime(user.uid);
+      setAppLocked(false);
       
       const modalContent = document.getElementById('modalContent');
       const modalOverlay = document.getElementById('modalOverlay');
@@ -226,15 +247,17 @@ if (auth) {
     } else {
       currentUser = null;
       userRole = 'student';
+      setAppLocked(true);
       if (authMenuItem) authMenuItem.innerHTML = `🔑 Sign In / Account`;
-      
-      setTimeout(() => {
-        openModal('authModal');
-      }, 300);
+      openModal('authModal');
     }
     
     renderUI();
+    showFirstRunManual();
   });
+} else {
+  setAppLocked(true);
+  openModal('authModal');
 }
 
 function listenToUserDocRealtime(uid) {
@@ -288,6 +311,7 @@ async function loadUserDataFromFirestore(uid) {
 // ==========================================
 // Unconditional Modal Closer
 function forceCloseModal() {
+  if (!currentUser && document.getElementById('modalContent')?.classList.contains('auth-modal-card')) return;
   const modalOverlay = document.getElementById('modalOverlay');
   if (modalOverlay) {
     modalOverlay.classList.remove('active');
@@ -303,6 +327,7 @@ function forceCloseModal() {
 }
 
 function closeModal(e) {
+  if (!currentUser && document.getElementById('modalContent')?.classList.contains('auth-modal-card')) return;
   if (e && e.target && e.target !== document.getElementById('modalOverlay') && !e.target.closest('.close-btn')) return;
   forceCloseModal();
 }
@@ -854,6 +879,7 @@ function checkAndAutoMarkDay() {
 // 9. TAB ROUTING & CORE UI RENDERER
 // ==========================================
 function switchTab(tab) {
+  if (!requireSignedIn()) return;
   currentTab = tab;
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
   document.getElementById(`nav-${tab}`).classList.add('active');
@@ -959,6 +985,7 @@ function changeDay(dayName) {
 }
 
 function renderUI() {
+  if (!currentUser) return;
   finalizeMissedClasses();
   const ttSection = document.getElementById('timetableSection');
   const courseSection = document.getElementById('courseList');
@@ -1233,6 +1260,7 @@ document.addEventListener('click', (e) => {
 // 10. MODALS, SIDEBAR CONTROLLER & AUTH
 // ==========================================
 function toggleMenu() { 
+  if (!requireSignedIn()) return;
   const sidebar = document.getElementById('sidebar');
   const overlay = document.getElementById('menuOverlay');
   
@@ -1256,6 +1284,7 @@ function toggleMenu() {
 }
 
 function toggleSettings(forceOpen) {
+  if (!requireSignedIn()) return;
   const overlay = document.getElementById('settingsOverlay');
   const gear = document.getElementById('settingsGear');
   const open = typeof forceOpen === 'boolean' ? forceOpen : !overlay.classList.contains('active');
@@ -1561,6 +1590,10 @@ function toggleFullDayPresent(dateString) {
 }
 
 function openModal(type) {
+  if (!currentUser && type !== 'authModal') {
+    requireSignedIn();
+    return;
+  }
   if (document.getElementById('settingsOverlay')?.classList.contains('active')) {
     const panel = document.getElementById('settingsPanel');
     panel.innerHTML = '';
@@ -1581,7 +1614,7 @@ function openModal(type) {
     modalContent.className = 'modal-content';
   }
 
-  let html = `<button class="close-btn" onclick="forceCloseModal()">×</button>`;
+  let html = currentUser ? `<button class="close-btn" onclick="forceCloseModal()">×</button>` : '';
 
   if (type === 'authModal') {
     if (currentUser) {
@@ -1596,6 +1629,20 @@ function openModal(type) {
           <p style="font-size:0.85rem; color:var(--text-sub); margin-bottom:15px;">Your attendance data is synced with Cloud Firestore.</p>
           
           <button class="vpopup-btn vpopup-btn-cancel" style="width:100%; margin-top:5px;" onclick="logoutUser()">Sign Out</button>
+        </div>
+      `;
+    } else if (!auth) {
+      html += `
+        <div class="auth-brand-badge">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+            <polyline points="22 4 12 14.01 9 11.01"></polyline>
+          </svg>
+        </div>
+        <h2>Sign-in unavailable</h2>
+        <div class="auth-unavailable" role="alert">
+          <strong>Firebase isn’t connected for this deployment.</strong>
+          Sign-in can’t start until the site is deployed with its Firebase runtime configuration. Please try again after the app administrator fixes the deployment.
         </div>
       `;
     } else {
@@ -1919,7 +1966,7 @@ async function logoutUser() {
   try {
     await auth.signOut();
     forceCloseModal();
-    alert("Signed out. Operating in offline mode.");
+    alert("Signed out. Sign in again to use the app.");
   } catch (error) {
     alert(error.message);
   }
@@ -1946,7 +1993,4 @@ setInterval(() => {
   if (!userIsEnteringData && currentTab === 'timetable') renderUI();
 }, 1000); 
 
-if (!localStorage.getItem(MANUAL_SHOWN_KEY)) { 
-  localStorage.setItem(MANUAL_SHOWN_KEY, 'true'); 
-  setTimeout(() => openModal('userManual'), 300);
-}
+showFirstRunManual();

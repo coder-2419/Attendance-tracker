@@ -1,13 +1,20 @@
 // ==========================================
 // 1. FIREBASE INITIALIZATION WITH FAILSAFE
 // ==========================================
-const firebaseConfig = window.__FIREBASE_CONFIG__ || null;
+const firebaseConfig = {
+  apiKey: "AIzaSyDfzYCLN2b4SNsUPBL9CqPIWcSTH2WCt9c",
+  authDomain: "attendance-tracker-2fe63.firebaseapp.com",
+  projectId: "attendance-tracker-2fe63",
+  storageBucket: "attendance-tracker-2fe63.firebasestorage.app",
+  messagingSenderId: "266695080777",
+  appId: "1:266695080777:web:a84408e4b87b9e37f77898"
+};
 
 let auth = null;
 let db = null;
 
 try {
-  if (firebaseConfig && typeof firebase !== 'undefined') {
+  if (typeof firebase !== 'undefined') {
     if (!firebase.apps.length) {
       firebase.initializeApp(firebaseConfig);
     }

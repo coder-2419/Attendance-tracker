@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Attendance Tracker</title>
   
   <!-- Google Fonts: Lato (App) & Libre Baskerville (Auth Modal) -->
@@ -10,12 +10,14 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Lato:ital,wght@0,300;0,400;0,700;0,900;1,400&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
 
+  <!-- Generated during GitHub Pages deployment from repository Actions secrets. -->
+  <script src="firebase-config.js"></script>
   <!-- Firebase SDKs (Compat versions) -->
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 
-  <link rel="stylesheet" href="styles.css?v=55">
+  <link rel="stylesheet" href="styles.css?v=56">
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#ffffff">
 </head>
@@ -31,21 +33,22 @@
   <!-- Settings screen -->
   <div class="settings-overlay" id="settingsOverlay" aria-hidden="true">
     <section class="settings-screen">
-      <header class="settings-header"><button class="close-btn" onclick="toggleSettings(false)" aria-label="Close settings">×</button><h2>Settings</h2><div class="theme-toggle-wrapper settings-theme-toggle" onclick="toggleDarkMode()"><div class="neumorphic-toggle"><div class="toggle-thumb"><svg class="sun-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg><svg class="moon-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg></div><span class="toggle-text light-text">LIGHT</span><span class="toggle-text dark-text">DARK</span></div></div></header>
+      <header class="settings-header"><h2>Settings</h2><div class="theme-toggle-wrapper settings-theme-toggle" role="button" aria-label="Toggle dark mode" aria-pressed="false" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleDarkMode()}" onclick="toggleDarkMode()"><div class="neumorphic-toggle"><div class="toggle-thumb"><svg class="sun-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg><svg class="moon-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg></div><span class="toggle-text light-text">LIGHT</span><span class="toggle-text dark-text">DARK</span></div></div><button type="button" class="settings-close" aria-label="Close settings" onclick="toggleSettings(false)">×</button></header>
       <div class="settings-layout">
-        <nav class="settings-tabs" id="settingsTabs">
-          <button onclick="openSettingsTab('account')">Account</button>
-          <button onclick="openSettingsTab('help')">How to Use</button>
-          <button onclick="openSettingsTab('history')">History Log</button>
-          <button onclick="openSettingsTab('calendar')">Academic Calendar</button>
-          <button onclick="openSettingsTab('target')">Target Attendance</button>
-          <button onclick="openSettingsTab('edit')">Edit Attendance</button>
-          <button onclick="openSettingsTab('add')">Add Course</button>
-          <button onclick="openSettingsTab('remove')">Remove Course</button>
-          <button onclick="openSettingsTab('reset')">Reset Timetable</button>
-          <button onclick="openSettingsTab('events')">Events</button>
+        <nav class="settings-tabs" id="settingsTabs" role="tablist" aria-label="Settings sections" aria-orientation="vertical">
+          <button type="button" role="tab" id="settingsTab-account" aria-controls="settingsPanel" aria-selected="true" tabindex="0" data-settings-tab="account" class="active" onclick="openSettingsTab('account')">Account</button>
+          <button type="button" role="tab" id="settingsTab-help" aria-controls="settingsPanel" aria-selected="false" tabindex="-1" data-settings-tab="help" onclick="openSettingsTab('help')">How to Use</button>
+          <button type="button" role="tab" id="settingsTab-calendar" aria-controls="settingsPanel" aria-selected="false" tabindex="-1" data-settings-tab="calendar" onclick="openSettingsTab('calendar')">Academic Calendar</button>
+          <button type="button" role="tab" id="settingsTab-target" aria-controls="settingsPanel" aria-selected="false" tabindex="-1" data-settings-tab="target" onclick="openSettingsTab('target')">Target Attendance</button>
+          <button type="button" role="tab" id="settingsTab-edit" aria-controls="settingsPanel" aria-selected="false" tabindex="-1" data-settings-tab="edit" onclick="openSettingsTab('edit')">Edit Attendance</button>
+          <button type="button" role="tab" id="settingsTab-add" aria-controls="settingsPanel" aria-selected="false" tabindex="-1" data-settings-tab="add" onclick="openSettingsTab('add')">Add Course</button>
+          <button type="button" role="tab" id="settingsTab-remove" aria-controls="settingsPanel" aria-selected="false" tabindex="-1" data-settings-tab="remove" onclick="openSettingsTab('remove')">Remove Course</button>
+          <button type="button" role="tab" id="settingsTab-reset" aria-controls="settingsPanel" aria-selected="false" tabindex="-1" data-settings-tab="reset" onclick="openSettingsTab('reset')">Reset Timetable</button>
+          <button type="button" role="tab" id="settingsTab-events" aria-controls="settingsPanel" aria-selected="false" tabindex="-1" data-settings-tab="events" onclick="openSettingsTab('events')">Events</button>
+          <button type="button" role="tab" id="settingsTab-semesters" aria-controls="settingsPanel" aria-selected="false" tabindex="-1" data-settings-tab="semesters" onclick="openSettingsTab('semesters')">Semesters</button>
+          <button type="button" role="tab" id="settingsTab-sharing" aria-controls="settingsPanel" aria-selected="false" tabindex="-1" data-settings-tab="sharing" onclick="openSettingsTab('sharing')">Share Timetable</button>
         </nav>
-        <div class="settings-panel" id="settingsPanel"></div>
+        <div class="settings-panel" id="settingsPanel" role="tabpanel" aria-labelledby="settingsTab-account" tabindex="0"></div>
       </div>
     </section>
   </div>
@@ -53,7 +56,7 @@
   <!-- Sidebar Navigation & Backdrop -->
   <div class="overlay" id="menuOverlay" onclick="toggleMenu()"></div>
   <nav class="sidebar" id="sidebar">
-    <div class="theme-toggle-wrapper" onclick="toggleDarkMode()">
+    <div class="theme-toggle-wrapper" role="button" aria-label="Toggle dark mode" aria-pressed="false" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleDarkMode()}" onclick="toggleDarkMode()">
       <div class="neumorphic-toggle">
         <div class="toggle-thumb">
           <svg class="sun-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
@@ -65,16 +68,14 @@
     </div>
 
     <ul>
-      <li id="authMenuItem" onclick="openModal('authModal')" style="font-weight: 800; color: #3498db;">🔑 Sign In / Account</li>
-      <li id="adminVerifyMenuItem" onclick="openModal('adminVerifyModal')" style="display:none; font-weight:800; color:#e67e22;">🛡️ Verify Payments</li>
+      <li id="authMenuItem" onclick="openModal('authModal')" style="font-weight: 800; color: var(--primary-accent);">🔑 Sign In / Account</li>
       <li onclick="openModal('userManual')">How to Use the App</li>
-      <li onclick="openModal('historyLog')">View History Log</li>
       <li onclick="openModal('setupCalendar')">Sync Academic Calendar</li>
       <li onclick="openModal('setTarget')">Set Target Attendance</li>
       <li onclick="openModal('editAttendance')">Edit Attendance</li>
       <li onclick="openModal('addCourse')">Add Custom Course</li>
       <li onclick="openModal('removeCourse')">Remove Course</li>
-      <li onclick="resetToDefaultTimetable()" style="color:#e74c3c;">Reset Default Timetable</li>
+      <li onclick="resetToDefaultTimetable()" style="color:var(--status-critical-text);">Reset Default Timetable</li>
     </ul>
   </nav>
 
@@ -155,7 +156,7 @@
       <div id="timetableContainer" class="timetable-list"></div>
     </div>
     
-    <div id="courseList" class="course-list-container"><div class="report-actions"><button class="btn-present" onclick="downloadAttendanceCsv()">Export Excel / CSV</button><button class="btn-present" onclick="printAdvisorReport()">Print Advisor PDF</button></div></div>
+    <div id="courseList" class="course-list-container"><div class="report-actions"><button class="btn-present" onclick="downloadAttendanceCsv()">📊 Export Excel / CSV</button><button class="btn-present" onclick="printAdvisorReport()">📄 Print Attendance Report PDF</button></div></div>
     <section id="eventsSection" class="course-list-container" style="display:none;"></section>
   </main>
 
@@ -172,31 +173,6 @@
     </button>
   </nav>
 
-  <!-- Hard Launch Paywall Overlay -->
-  <div id="paywallOverlay" class="paywall-overlay">
-    <div class="paywall-card">
-      <div class="paywall-badge">CAMPUS PASS</div>
-      <h2>Unlock Attendance Tracker</h2>
-      <p class="paywall-sub">Get lifetime semester access to live period tracking, safe bunk calculations, custom timetables, and academic calendar sync.</p>
-      
-      <div class="paywall-pricing">
-        <span class="currency">₹</span><span class="amount" id="paywallAmountDisplay">19</span>
-        <span class="period">/ semester</span>
-      </div>
-
-      <ul class="paywall-features">
-        <li>✓ Live period attendance & bunk safety meter</li>
-        <li>✓ Full academic calendar holiday auto-sync</li>
-        <li>✓ Custom timetable builder with clock picker</li>
-        <li>✓ Cloud backup & multi-device sync</li>
-      </ul>
-
-      <button class="paywall-btn" id="paywallPayBtn" onclick="initiatePayment()">
-        ⚡ Pay ₹<span id="paywallBtnAmount">19</span> & Unlock
-      </button>
-    </div>
-  </div>
-
-  <script src="script.js?v=55"></script>
+  <script src="script.js?v=56"></script>
 </body>
 </html>

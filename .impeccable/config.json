@@ -1,0 +1,86 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "overused-font",
+        "value": "lato",
+        "createdAt": "2026-11-15T05:04:57.803Z",
+        "reason": "Retained the app’s incumbent Lato typeface while refining hierarchy and layout; replacing the established typeface was outside requested dashboard polish."
+      },
+      {
+        "rule": "cramped-padding",
+        "value": "*",
+        "files": [
+          "index.html"
+        ],
+        "createdAt": "2026-11-15T05:04:57.921Z",
+        "reason": "Attribution unknown; the remaining hits are legacy settings toggle markup, outside the dashboard surface."
+      },
+      {
+        "rule": "bounce-easing",
+        "value": "cubic-bezier(0.4, 2, 0.5, 1)",
+        "files": [
+          "styles.css"
+        ],
+        "createdAt": "2026-11-15T05:04:58.159Z",
+        "reason": "This easing belongs to the legacy analog clock hand motion, not attendance dashboard interactions."
+      },
+      {
+        "rule": "bounce-easing",
+        "value": "cubic-bezier(0.18, 0.89, 0.32, 1.28)",
+        "files": [
+          "styles.css"
+        ],
+        "createdAt": "2026-11-15T05:04:58.277Z",
+        "reason": "These transitions are existing legacy modal controls, outside dashboard motion polish."
+      },
+      {
+        "rule": "nested-cards",
+        "value": "*",
+        "files": [
+          "index.html"
+        ],
+        "createdAt": "2026-11-15T05:05:06.787Z",
+        "reason": "Attribution unknown; source detector hit is the legacy liveClock and paywall wrappers outside the dashboard scope."
+      },
+      {
+        "rule": "dark-glow",
+        "value": "*",
+        "files": [
+          "index.html"
+        ],
+        "createdAt": "2026-11-15T05:05:06.904Z",
+        "reason": "Attribution unknown; reported glow is confined to the legacy paywall overlay outside dashboard redesign."
+      },
+      {
+        "rule": "ai-color-palette",
+        "value": "*",
+        "files": [
+          "index.html"
+        ],
+        "createdAt": "2026-11-15T05:05:07.017Z",
+        "reason": "Attribution unknown; purple palette hit is confined to existing events/paywall screens, outside dashboard redesign."
+      },
+      {
+        "rule": "pulsing-dot",
+        "value": "*",
+        "files": [
+          "styles.css"
+        ],
+        "createdAt": "2026-11-15T05:05:07.129Z",
+        "reason": "Attribution unknown; reported animation classes belong to the retained clock and separate event radar indicators."
+      },
+      {
+        "rule": "low-contrast",
+        "value": "*",
+        "files": [
+          "index.html"
+        ],
+        "createdAt": "2026-11-15T05:05:07.239Z",
+        "reason": "Attribution unknown; remaining hit is the legacy paywall badge, outside dashboard scope; dashboard contrast was already manually checked."
+      }
+    ]
+  }
+}

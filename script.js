@@ -1,20 +1,13 @@
 // ==========================================
 // 1. FIREBASE INITIALIZATION WITH FAILSAFE
 // ==========================================
-const firebaseConfig = {
-  apiKey: "AIzaSyDfzYCLN2b4SNsUPBL9CqPIWcSTH2WCt9c",
-  authDomain: "attendance-tracker-2fe63.firebaseapp.com",
-  projectId: "attendance-tracker-2fe63",
-  storageBucket: "attendance-tracker-2fe63.firebasestorage.app",
-  messagingSenderId: "266695080777",
-  appId: "1:266695080777:web:a84408e4b87b9e37f77898"
-};
+const firebaseConfig = window.__FIREBASE_CONFIG__ || null;
 
 let auth = null;
 let db = null;
 
 try {
-  if (typeof firebase !== 'undefined') {
+  if (firebaseConfig && typeof firebase !== 'undefined') {
     if (!firebase.apps.length) {
       firebase.initializeApp(firebaseConfig);
     }
@@ -26,11 +19,9 @@ try {
 }
 
 let currentUser = null;
-let userRole = 'student'; // 'student', 'pro', or 'admin'
+let userRole = 'student'; // 'student' or 'admin'
 let userDocUnsubscribe = null;
-let settingsUnsubscribe = null;
 
-let subscriptionPrice = parseInt(localStorage.getItem('subscription_price'), 10) || 19;
 let authMode = 'signin'; 
 
 const DB_KEY = 'attendance_tracker_v43'; 
@@ -40,7 +31,9 @@ const MARKED_DATES_KEY = 'marked_dates_v43';
 const EVENTS_KEY = 'attendance_events_v1';
 const MANUAL_SHOWN_KEY = 'appManualShown_v43';
 const CUSTOM_DEFAULT_SCHEDULE_KEY = 'custom_default_timetable_v43';
-const PRO_STATUS_KEY = 'attendance_app_is_pro_v1';
+const SEMESTER_KEY = 'attendance_active_semester_v1';
+const SEMESTERS_KEY = 'attendance_semester_archive_v1';
+let currentSemester = localStorage.getItem(SEMESTER_KEY) || 'Sem 1';
 
 let currentTab = 'courses';
 let isEditingTimetable = false;
@@ -63,6 +56,13 @@ let eventStatusFilter = 'All';
 let eventCategoryFilter = 'All';
 let eventSortOrder = 'asc';
 
+function confirmDataChange(action, syncsToCloud = false) {
+  const destination = syncsToCloud && currentUser
+    ? ' This change will be saved on this device and synced to your account.'
+    : ' This change will be saved on this device.';
+  return window.confirm(`Data change disclaimer: ${action}.${destination} Continue?`);
+}
+
 function getTodayString() {
   const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   return days[new Date().getDay()];
@@ -71,11 +71,16 @@ function getTodayString() {
 let currentSelectedDay = getTodayString();
 let currentCalDate = new Date(); 
 
-if (localStorage.getItem('darkMode') === 'true') document.body.classList.add('dark-mode');
+if (localStorage.getItem('darkMode') === 'true') {
+  document.body.classList.add('dark-mode');
+  document.querySelectorAll('.theme-toggle-wrapper[aria-pressed]').forEach(toggle => toggle.setAttribute('aria-pressed', 'true'));
+}
 
 function toggleDarkMode() {
   document.body.classList.toggle('dark-mode');
-  localStorage.setItem('darkMode', document.body.classList.contains('dark-mode'));
+  const isDark = document.body.classList.contains('dark-mode');
+  localStorage.setItem('darkMode', isDark);
+  document.querySelectorAll('.theme-toggle-wrapper[aria-pressed]').forEach(toggle => toggle.setAttribute('aria-pressed', String(isDark)));
 }
 
 function getTodayDateString() {
@@ -115,48 +120,58 @@ function loadFromDatabase() {
 
 let courses = loadFromDatabase();
 
-// ==========================================
-// 2. DYNAMIC PRICING SYNCHRONIZATION
-// ==========================================
-function updateSubscriptionUI() {
-  const amountDisplay = document.getElementById('paywallAmountDisplay');
-  const btnAmountDisplay = document.getElementById('paywallBtnAmount');
-  if (amountDisplay) amountDisplay.innerText = subscriptionPrice;
-  if (btnAmountDisplay) btnAmountDisplay.innerText = subscriptionPrice;
+function snapshotSemester() {
+  const archive = JSON.parse(localStorage.getItem(SEMESTERS_KEY) || '{}');
+  archive[currentSemester] = { courses, dailyMarks: JSON.parse(localStorage.getItem('daily_marks_v41') || '{}'), markedDates, academicCalendar, targetPercentage };
+  localStorage.setItem(SEMESTERS_KEY, JSON.stringify(archive));
 }
 
-function listenToAppSettings() {
-  if (!db || settingsUnsubscribe) return;
-  settingsUnsubscribe = db.collection('app_settings').doc('config').onSnapshot(doc => {
-    if (doc.exists && doc.data().price) {
-      subscriptionPrice = parseInt(doc.data().price, 10) || 19;
-      localStorage.setItem('subscription_price', subscriptionPrice);
-      updateSubscriptionUI();
-    }
-  }, err => console.warn("App settings listener warning:", err));
+function loadSemester(name) {
+  if (name === currentSemester) return;
+  if (!confirmDataChange(`Switch to ${name}`)) return;
+  snapshotSemester();
+  const archive = JSON.parse(localStorage.getItem(SEMESTERS_KEY) || '{}');
+  currentSemester = name;
+  localStorage.setItem(SEMESTER_KEY, name);
+  const data = archive[name] || { courses: [], dailyMarks: {}, markedDates: [], academicCalendar: null, targetPercentage: null };
+  courses = data.courses || [];
+  markedDates = data.markedDates || [];
+  academicCalendar = data.academicCalendar || null;
+  targetPercentage = data.targetPercentage || null;
+  localStorage.setItem(DB_KEY, JSON.stringify(courses));
+  localStorage.setItem('daily_marks_v41', JSON.stringify(data.dailyMarks || {}));
+  localStorage.setItem(MARKED_DATES_KEY, JSON.stringify(markedDates));
+  if (academicCalendar) localStorage.setItem(CALENDAR_KEY, JSON.stringify(academicCalendar)); else localStorage.removeItem(CALENDAR_KEY);
+  renderUI();
+  openSettingsTab('semesters');
 }
 
-async function saveSubscriptionPrice() {
-  if (!db) return alert("Firebase not connected.");
-  const input = document.getElementById('adminPriceInput');
-  const newPrice = parseInt(input.value, 10);
-  if (isNaN(newPrice) || newPrice < 1) {
-    return alert("Please enter a valid subscription amount.");
-  }
+async function createTimetableShare() {
+  if (!db) return alert('Cloud connection is unavailable.');
+  if (!confirmDataChange('Create a share code that publishes your timetable to Cloud Firestore', true)) return;
+  const code = `TT-${Math.floor(1000 + Math.random() * 9000)}`;
+  const schedule = courses.map(({name,code:courseCode,schedule})=>({name,code:courseCode || '',schedule:schedule || {}}));
+  try { await db.collection('shared_timetables').doc(code).set({schedule,createdAt:firebase.firestore.FieldValue.serverTimestamp()}); document.getElementById('timetableShareCode').textContent=code; }
+  catch(err) { alert(`Could not create share code: ${err.message}`); }
+}
 
+async function importTimetable(mode) {
+  if (!db) return alert('Cloud connection is unavailable.');
+  const code = document.getElementById('timetableImportCode').value.trim().toUpperCase();
+  if (!/^TT-\d{4}$/.test(code)) return alert('Enter a code like TT-4821.');
   try {
-    await db.collection('app_settings').doc('config').set({
-      price: newPrice,
-      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-    }, { merge: true });
-
-    subscriptionPrice = newPrice;
-    localStorage.setItem('subscription_price', newPrice);
-    updateSubscriptionUI();
-    alert(`Subscription price successfully set to ₹${newPrice}!`);
-  } catch (err) {
-    alert("Failed to update subscription price: " + err.message);
-  }
+    const doc = await db.collection('shared_timetables').doc(code).get();
+    if (!doc.exists) return alert('Timetable code not found.');
+    const incoming = doc.data().schedule || [];
+    if (!confirmDataChange(`${mode === 'merge' ? 'Merge' : 'Replace'} your timetable using the shared schedule`, true)) return;
+    if (mode === 'replace') courses = [];
+    incoming.forEach(item => {
+      let course = mode === 'merge' && courses.find(c => c.name.toLowerCase() === item.name.toLowerCase());
+      if (course) course.schedule = {...(course.schedule || {}), ...(item.schedule || {})};
+      else courses.push({id:Date.now()+Math.random(),name:item.name,code:item.code || 'SHARED',present:0,absent:0,schedule:item.schedule || {}});
+    });
+    saveToDatabase(); snapshotSemester(); renderUI(); alert(`Timetable ${mode === 'merge' ? 'merged' : 'replaced'}.`);
+  } catch(err) { alert(`Could not import timetable: ${err.message}`); }
 }
 
 // ==========================================
@@ -166,6 +181,7 @@ function saveToDatabase() {
   localStorage.setItem(DB_KEY, JSON.stringify(courses));
   localStorage.setItem(HISTORY_KEY, JSON.stringify(historyLog));
   localStorage.setItem(MARKED_DATES_KEY, JSON.stringify(markedDates));
+  snapshotSemester();
 
   if (currentUser && db) {
     db.collection('users').doc(currentUser.uid).set({
@@ -191,8 +207,6 @@ function addHistory(action) {
 if (auth) {
   auth.onAuthStateChanged(async (user) => {
     const authMenuItem = document.getElementById('authMenuItem');
-    const adminMenuItem = document.getElementById('adminVerifyMenuItem');
-    
     if (userDocUnsubscribe) {
       userDocUnsubscribe();
       userDocUnsubscribe = null;
@@ -212,16 +226,13 @@ if (auth) {
     } else {
       currentUser = null;
       userRole = 'student';
-      localStorage.removeItem(PRO_STATUS_KEY);
       if (authMenuItem) authMenuItem.innerHTML = `🔑 Sign In / Account`;
-      if (adminMenuItem) adminMenuItem.style.display = 'none';
       
       setTimeout(() => {
         openModal('authModal');
       }, 300);
     }
     
-    checkLaunchPaywall();
     renderUI();
   });
 }
@@ -231,22 +242,7 @@ function listenToUserDocRealtime(uid) {
   userDocUnsubscribe = db.collection('users').doc(uid).onSnapshot(doc => {
     if (doc.exists) {
       const data = doc.data();
-      const adminMenuItem = document.getElementById('adminVerifyMenuItem');
-
-      if (data.role === 'admin') {
-        userRole = 'admin';
-        localStorage.setItem(PRO_STATUS_KEY, 'true');
-        if (adminMenuItem) adminMenuItem.style.display = 'block';
-      } else if (data.isPro || data.role === 'pro') {
-        userRole = 'pro';
-        localStorage.setItem(PRO_STATUS_KEY, 'true');
-        if (adminMenuItem) adminMenuItem.style.display = 'none';
-      } else {
-        userRole = 'student';
-        localStorage.removeItem(PRO_STATUS_KEY);
-        if (adminMenuItem) adminMenuItem.style.display = 'none';
-      }
-      checkLaunchPaywall();
+      userRole = data.role === 'admin' ? 'admin' : 'student';
     }
   });
 }
@@ -259,10 +255,7 @@ async function loadUserDataFromFirestore(uid) {
 
     if (doc.exists) {
       const data = doc.data();
-      userRole = data.role || (data.isPro ? 'pro' : 'student');
-      if (data.isPro || userRole === 'admin' || userRole === 'pro') {
-        localStorage.setItem(PRO_STATUS_KEY, 'true');
-      }
+      userRole = data.role === 'admin' ? 'admin' : 'student';
       if (data.courses) courses = data.courses;
       if (data.historyLog) historyLog = data.historyLog;
       if (data.markedDates) markedDates = data.markedDates;
@@ -279,7 +272,6 @@ async function loadUserDataFromFirestore(uid) {
         email: currentUser.email,
         displayName: currentUser.displayName || '',
         role: 'student',
-        isPro: false,
         courses: courses,
         historyLog: historyLog,
         markedDates: markedDates,
@@ -294,207 +286,6 @@ async function loadUserDataFromFirestore(uid) {
 }
 
 // ==========================================
-// 4. HARD PAYWALL ON LAUNCH
-// ==========================================
-function isUserUnlocked() {
-  if (localStorage.getItem(PRO_STATUS_KEY) === 'true') return true;
-  if (currentUser && (userRole === 'admin' || userRole === 'pro')) {
-    localStorage.setItem(PRO_STATUS_KEY, 'true');
-    return true;
-  }
-  return false;
-}
-
-function checkLaunchPaywall() {
-  const paywallEl = document.getElementById('paywallOverlay');
-  if (!paywallEl) return;
-
-  if (isUserUnlocked()) {
-    paywallEl.classList.remove('active');
-    paywallEl.style.setProperty('display', 'none', 'important');
-    
-    const modalOverlay = document.getElementById('modalOverlay');
-    const clockModal = document.getElementById('clockModalOverlay');
-    const isModalOpen = (modalOverlay && modalOverlay.classList.contains('active')) || 
-                        (clockModal && clockModal.classList.contains('active'));
-    if (!isModalOpen) {
-      document.body.classList.remove('scroll-locked');
-    }
-  } else {
-    paywallEl.classList.add('active');
-    paywallEl.style.setProperty('display', 'flex', 'important');
-    document.body.classList.add('scroll-locked');
-  }
-}
-// ==========================================
-// ZERO-TOUCH AUTO-VERIFIED CHECKOUT (NO UTR)
-// ==========================================
-let activeOrderUnsubscribe = null;
-
-async function initiatePayment() {
-  if (!currentUser) {
-    alert("Please sign in with your email first so your semester pass can be linked to your account.");
-    openModal('authModal');
-    return;
-  }
-
-  // 1. Generate unique 6-character order code (e.g. AT4821)
-  const orderRefId = 'AT' + Math.floor(1000 + Math.random() * 9000);
-  const upiId = "8073510268@fam";
-  const payeeName = "Attendance Tracker";
-  const amountVal = Math.round(subscriptionPrice || 20);
-
-  // 2. Lock orderRefId into transaction note (tn) & transaction reference (tr)
-  const queryParams = `pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(payeeName)}&am=${amountVal}&cu=INR&tn=${encodeURIComponent(orderRefId)}&tr=${encodeURIComponent(orderRefId)}`;
-  
-  const upiUrl = `upi://pay?${queryParams}`;
-  const gpayUrl = `intent://pay?${queryParams}#Intent;scheme=upi;package=com.google.android.apps.nbu.paisa.user;end`;
-  const phonePeUrl = `phonepe://pay?${queryParams}`;
-  const paytmUrl = `paytmmp://pay?${queryParams}`;
-  const bhimUrl = `bhim://pay?${queryParams}`;
-  const credUrl = `credpay://upi/pay?${queryParams}`;
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(upiUrl)}`;
-
-  // 3. Create pending record in Firestore
-  if (db) {
-    try {
-      await db.collection('payment_orders').doc(orderRefId).set({
-        orderId: orderRefId,
-        uid: currentUser.uid,
-        email: currentUser.email,
-        name: currentUser.displayName || 'Student',
-        amount: amountVal,
-        status: 'pending',
-        createdAt: firebase.firestore.FieldValue.serverTimestamp()
-      });
-    } catch (e) {
-      console.warn("Firestore order log error:", e);
-    }
-  }
-
-  const modalOverlay = document.getElementById('modalOverlay');
-  const modalContent = document.getElementById('modalContent');
-  modalContent.className = 'modal-content checkout-card';
-  modalOverlay.classList.add('active');
-  document.body.classList.add('scroll-locked');
-
-  modalContent.innerHTML = `
-    <!-- Header with Live Order Reference -->
-    <div class="checkout-top-bar">
-      <div class="checkout-merchant-info">
-        <div class="checkout-merchant-icon">🛡️</div>
-        <div>
-          <div class="checkout-merchant-name">
-            Attendance Tracker
-            <span class="badge-verified-pill">VERIFIED</span>
-          </div>
-          <div class="checkout-merchant-item">Order Ref: <b style="color:#38bdf8; letter-spacing:1px;">${orderRefId}</b></div>
-        </div>
-      </div>
-      
-      <div class="checkout-top-right">
-        <div class="checkout-price-box">
-          <div class="checkout-price-label">AMOUNT DUE</div>
-          <div class="checkout-price-value">₹${amountVal}</div>
-        </div>
-        <button type="button" class="checkout-close-btn" onclick="forceCloseModal()" aria-label="Close Checkout">×</button>
-      </div>
-    </div>
-
-    <div class="checkout-trust-strip">
-      <span>🔒 256-Bit Encrypted Transfer</span>
-      <span>⚡ Instant Cloud Activation</span>
-    </div>
-
-    <div class="checkout-body">
-      <!-- 1-Tap UPI Intent Button -->
-      <a href="${upiUrl}" class="btn-checkout-upi-app">
-        <span>📲 Pay ₹${amountVal} via Any UPI App</span>
-      </a>
-
-      <!-- Real App Tiles with Embedded Order Ref -->
-      <div class="checkout-brand-icons-row">
-        <a href="${gpayUrl}" class="brand-icon-card" title="Google Pay"><img src="gpay_icon.jfif" alt="Google Pay" onerror="this.onerror=null; this.src='https://upload.wikimedia.org/wikipedia/commons/f/f2/Google_Pay_Logo.svg';" /></a>
-        <a href="${phonePeUrl}" class="brand-icon-card" title="PhonePe"><img src="phonepe_icon.jfif" alt="PhonePe" onerror="this.onerror=null; this.src='https://download.logo.wine/logo/PhonePe/PhonePe-Logo.wine.png';" /></a>
-        <a href="${paytmUrl}" class="brand-icon-card" title="Paytm"><img src="paytm_icon.png" alt="Paytm" onerror="this.onerror=null; this.src='https://asset.brandfetch.io/id_j8vV11K/id_o5V51w_.png';" /></a>
-        <a href="${bhimUrl}" class="brand-icon-card" title="BHIM UPI"><img src="bhim_icon.jfif" alt="BHIM UPI" onerror="this.onerror=null; this.src='https://upload.wikimedia.org/wikipedia/commons/e/e1/BHIM_logo.svg';" /></a>
-        <a href="${credUrl}" class="brand-icon-card" title="CRED"><img src="cred_icon.png" alt="CRED" onerror="this.onerror=null; this.src='https://web-images.credcdn.in/_next/assets/images/home-page/cred-logo.png';" /></a>
-      </div>
-
-      <!-- Centered QR Presentation -->
-      <div class="checkout-qr-frame">
-        <img src="${qrUrl}" alt="UPI QR" class="checkout-qr-img" />
-        <div class="checkout-copy-row">
-          <span class="checkout-upi-text" id="upiVpaText">${upiId}</span>
-          <button type="button" class="btn-copy-upi" onclick="copyUpiVpa('${upiId}')">📋 Copy</button>
-        </div>
-      </div>
-
-      <!-- Live Auto-Verification Radar Box (Replaces UTR Input) -->
-      <div id="checkoutStatusArea" class="checkout-radar-box">
-        <div class="radar-ping-dot"></div>
-        <div class="radar-text-title">Listening for payment confirmation...</div>
-        <div class="radar-text-sub">Keep this page open. Your app will unlock automatically within seconds once your transfer completes.</div>
-      </div>
-    </div>
-  `;
-
-  // 4. Listen for real-time order approval
-  if (activeOrderUnsubscribe) activeOrderUnsubscribe();
-
-  if (db) {
-    activeOrderUnsubscribe = db.collection('payment_orders').doc(orderRefId).onSnapshot(doc => {
-      if (doc.exists && doc.data().status === 'approved') {
-        if (activeOrderUnsubscribe) {
-          activeOrderUnsubscribe();
-          activeOrderUnsubscribe = null;
-        }
-
-        // Visual success state
-        const statusArea = document.getElementById('checkoutStatusArea');
-        if (statusArea) {
-          statusArea.classList.add('approved');
-          statusArea.innerHTML = `
-            <div style="font-size:1.15rem; font-weight:900; color:var(--present-btn);">✓ Payment Confirmed!</div>
-            <div style="font-size:0.8rem; color:var(--text-sub); margin-top:4px;">Activating Lifetime Pass...</div>
-          `;
-        }
-
-        // Close modal and celebrate
-        setTimeout(() => {
-          forceCloseModal();
-          showVirtualPopup({
-            icon: '🎉',
-            title: 'Welcome to Pro!',
-            message: 'Your payment was automatically confirmed. Lifetime semester access is unlocked!',
-            confirmText: 'Get Started',
-            cancelText: '',
-            onConfirm: () => {}
-          });
-        }, 1200);
-      }
-    });
-  }
-}
-
-// Updated copy helper that supports background copying on app tap
-function copyUpiVpa(upiId, showToast = true) {
-  navigator.clipboard.writeText(upiId).then(() => {
-    if (showToast) {
-      const textEl = document.getElementById('upiVpaText');
-      if (textEl) {
-        const original = textEl.innerText;
-        textEl.innerText = 'Copied to clipboard!';
-        textEl.style.color = 'var(--present-btn)';
-        setTimeout(() => {
-          textEl.innerText = original;
-          textEl.style.color = 'var(--text-main)';
-        }, 1500);
-      }
-    }
-  }).catch(() => {});
-}
-
 // Unconditional Modal Closer
 function forceCloseModal() {
   const modalOverlay = document.getElementById('modalOverlay');
@@ -507,83 +298,13 @@ function forceCloseModal() {
     modalContent.className = 'modal-content';
     modalContent.innerHTML = '';
   }
-  const paywallEl = document.getElementById('paywallOverlay');
-  const isPaywallShowing = paywallEl && (paywallEl.classList.contains('active') || paywallEl.style.display === 'flex');
-  if (!isPaywallShowing) {
-    document.body.classList.remove('scroll-locked');
-  }
+  const settingsShowing = document.getElementById('settingsOverlay')?.classList.contains('active');
+  if (!settingsShowing) document.body.classList.remove('scroll-locked');
 }
 
-function closeModal(e) { 
-  if (e && e.target && e.target !== document.getElementById('modalOverlay') && !e.target.closest('.close-btn') && !e.target.closest('.checkout-close-btn')) return; 
+function closeModal(e) {
+  if (e && e.target && e.target !== document.getElementById('modalOverlay') && !e.target.closest('.close-btn')) return;
   forceCloseModal();
-}
-
-function copyUpiVpa(upiId) {
-  navigator.clipboard.writeText(upiId).then(() => {
-    const textEl = document.getElementById('upiVpaText');
-    if (textEl) {
-      const original = textEl.innerText;
-      textEl.innerText = 'Copied to clipboard!';
-      textEl.style.color = 'var(--present-btn)';
-      setTimeout(() => {
-        textEl.innerText = original;
-        textEl.style.color = 'var(--text-main)';
-      }, 1500);
-    }
-  }).catch(() => {
-    alert("UPI ID: " + upiId);
-  });
-}
-
-async function submitUtrForVerification() {
-  const utrInput = document.getElementById('paymentUtrInput');
-  const statusMsg = document.getElementById('utrStatusMsg');
-  const utr = (utrInput.value || '').trim();
-
-  if (!/^\d{12}$/.test(utr)) {
-    statusMsg.style.color = 'var(--absent-btn)';
-    statusMsg.innerText = 'Please enter a valid 12-digit numeric UTR number.';
-    return;
-  }
-
-  statusMsg.style.color = '#3498db';
-  statusMsg.innerText = 'Submitting to database...';
-
-  try {
-    if (!db) throw new Error("Firestore not initialized.");
-    
-    const existing = await db.collection('payment_verifications').doc(utr).get();
-    if (existing.exists && existing.data().status === 'approved') {
-      statusMsg.style.color = 'var(--absent-btn)';
-      statusMsg.innerText = 'This UTR has already been verified for an account.';
-      return;
-    }
-
-    await db.collection('payment_verifications').doc(utr).set({
-      utr: utr,
-      uid: currentUser.uid,
-      email: currentUser.email,
-      name: currentUser.displayName || 'Student',
-      amount: subscriptionPrice,
-      status: 'pending',
-      createdAt: firebase.firestore.FieldValue.serverTimestamp()
-    });
-
-    forceCloseModal();
-    showVirtualPopup({
-      icon: '⏳',
-      title: 'Payment Under Review',
-      message: `Your UTR <b>${utr}</b> was submitted! Your app will unlock automatically as soon as the credit is confirmed.`,
-      confirmText: 'OK',
-      cancelText: '',
-      onConfirm: () => {}
-    });
-
-  } catch (err) {
-    statusMsg.style.color = 'var(--absent-btn)';
-    statusMsg.innerText = 'Submission error: ' + err.message;
-  }
 }
 
 // ==========================================
@@ -608,9 +329,8 @@ function closeClockPicker() {
   const clockModal = document.getElementById('clockModalOverlay');
   if (clockModal) clockModal.classList.remove('active');
   
-  const paywallEl = document.getElementById('paywallOverlay');
-  const isPaywallShowing = paywallEl && (paywallEl.classList.contains('active') || paywallEl.style.display === 'flex');
-  if (!isPaywallShowing) {
+  const settingsShowing = document.getElementById('settingsOverlay')?.classList.contains('active');
+  if (!settingsShowing) {
     document.body.classList.remove('scroll-locked');
   }
 }
@@ -779,7 +499,7 @@ function toggleTimetableEdit() {
     showVirtualPopup({
       icon: '💾',
       title: 'Save Timetable Changes?',
-      message: `Do you want to save the updated schedules for all edited days?`,
+      message: `Disclaimer: Saving will update the timetable on this device${currentUser ? ' and sync it to your account' : ''}. Do you want to continue?`,
       confirmText: '✓ Save',
       cancelText: '✖ No',
       onConfirm: () => {
@@ -871,7 +591,7 @@ function resetToDefaultTimetable() {
   showVirtualPopup({
     icon: '⚠️',
     title: 'Reset Default Timetable?',
-    message: 'Are you sure you want to completely clear your attendance logs and restore the default timetable schedule?',
+    message: `Disclaimer: This will clear your attendance logs and restore the default timetable on this device${currentUser ? ' and sync the changes to your account' : ''}. Continue?`,
     confirmText: '✓ Save',
     cancelText: '✖ No',
     onConfirm: () => {
@@ -923,6 +643,7 @@ function isTodayHoliday() {
 function toggleHoliday() {
   if (getTodayString() === 'Sunday') return; 
   const todayStr = getTodayDateString();
+  if (!confirmDataChange('Change today’s holiday status')) return;
   if (localStorage.getItem('holiday_' + todayStr) === 'true') localStorage.removeItem('holiday_' + todayStr);
   else localStorage.setItem('holiday_' + todayStr, 'true');
   updateHolidayButton(); 
@@ -989,7 +710,10 @@ function getCalculatedAttendance() {
               const slotKey = `${dateStr}_${course.id}_${slot.start}`;
               const slotMark = dailyMarks[slotKey];
 
-              if (isFullDayMarked) {
+              if (slotMark === 'cancelled') {
+                // Cancelled sessions do not contribute to attendance totals.
+                return;
+              } else if (isFullDayMarked) {
                 calc[course.id].p += 1;
               } else if (slotMark === 'present') {
                 calc[course.id].p += 1;
@@ -1028,12 +752,14 @@ function getBunkStatus(present, absent) {
   if (currentPercent >= targetPercentage) {
     const buffer = Math.floor(((present / target) - total) + 0.0001);
     return buffer > 0 
-      ? `<span class="bunk-meter bunk-safe">Safe to bunk ${buffer} class${buffer > 1 ? 'es' : ''}</span>`
-      : `<span class="bunk-meter bunk-safe">On track (0 buffer)</span>`;
+      ? `<span class="bunk-meter bunk-safe"><span class="status-label">Safe</span><strong class="bunk-count">${buffer}</strong> class${buffer > 1 ? 'es' : ''} to bunk</span>`
+      : `<span class="bunk-meter bunk-safe"><span class="status-label">Safe</span>On track · 0 buffer</span>`;
   } else {
     if (target >= 1) return `<span class="bunk-meter bunk-danger">Cannot reach 100%</span>`;
     const required = Math.ceil((((target * total) - present) / (1 - target)) - 0.0001);
-    return `<span class="bunk-meter bunk-danger">Attend next ${required} class${required > 1 ? 'es' : ''}</span>`;
+    const nearTarget = currentPercent >= targetPercentage - 5;
+    const status = nearTarget ? 'Warning' : 'Critical';
+    return `<span class="bunk-meter ${nearTarget ? 'bunk-warning' : 'bunk-danger'}"><span class="status-label">${status}</span>Attend next <strong class="bunk-count">${required}</strong> class${required > 1 ? 'es' : ''}</span>`;
   }
 }
 
@@ -1044,8 +770,16 @@ function toggleSlotAttendance(courseId, slotStart, clickedStatus) {
   const currentStatus = dailyMarks[slotKey];
   const course = courses.find(c => c.id === courseId);
   if (!course) return;
+  if (!confirmDataChange(`Mark ${course.name} ${clickedStatus === 'present' ? 'present' : clickedStatus === 'absent' ? 'absent' : 'cancelled'} for today`, true)) return;
   
-  if (currentStatus === clickedStatus) return;
+  if (currentStatus === clickedStatus) {
+    if (clickedStatus !== 'cancelled') return;
+    delete dailyMarks[slotKey];
+    localStorage.setItem('daily_marks_v41', JSON.stringify(dailyMarks));
+    saveToDatabase();
+    renderUI();
+    return;
+  }
   // The per-slot mark is the source of truth; aggregate counts are calculated
   // from it, so do not also mutate course.present/course.absent here.
   dailyMarks[slotKey] = clickedStatus;
@@ -1134,7 +868,9 @@ function renderEvents() {
   const host = document.getElementById('eventsSection');
   if (!host) return;
   const today = getTodayDateString();
-  const pastEvents = events.filter(e => e.date < today).sort((a,b) => b.date.localeCompare(a.date));
+  // Past events sit before today's banner in the carousel. Oldest-first DOM
+  // ordering makes the nearest past event the first one reached by swiping right.
+  const pastEvents = events.filter(e => e.date < today).sort((a,b) => a.date.localeCompare(b.date));
   const presentEvents = events.filter(e => e.date === today).sort((a,b) => a.title.localeCompare(b.title));
   const upcomingEvents = events.filter(e => e.date > today).sort((a,b) => a.date.localeCompare(b.date));
   const carouselEvents = [...pastEvents, ...presentEvents, ...upcomingEvents];
@@ -1142,7 +878,7 @@ function renderEvents() {
   const bannerMarkup = carouselEvents.length ? carouselEvents.map(item => {
     const delta = Math.round((new Date(`${item.date}T00:00:00`) - new Date(`${today}T00:00:00`)) / 86400000);
     const label = delta < 0 ? `${Math.abs(delta)} days ago` : delta === 0 ? 'Happening today' : delta === 1 ? 'Tomorrow' : `In ${delta} days`;
-    return `<button type="button" class="event-hero ${delta === 0 ? 'event-today' : delta < 0 ? 'event-past' : ''}" onclick="focusEvent('${item.id}')" aria-label="${label}: ${escapeEventText(item.title)}"><span class="event-hero-icon">${eventEmojis[item.category] || '📅'}</span><span class="event-hero-copy"><small>${label}</small><strong>${escapeEventText(item.title)}</strong><span>${item.date} · ${escapeEventText(item.category)}</span></span><span class="event-hero-arrow">›</span></button>`;
+    return `<button type="button" class="event-hero ${delta === 0 ? 'event-today' : delta < 0 ? 'event-past' : ''}" onclick="focusEvent('${escapeEventAttribute(item.id)}')" aria-label="${escapeEventAttribute(label)}: ${escapeEventAttribute(item.title)}"><span class="event-hero-icon">${eventEmojis[item.category] || '📅'}</span><span class="event-hero-copy"><small>${escapeEventText(label)}</small><strong>${escapeEventText(item.title)}</strong><span>${escapeEventText(item.date)} · ${escapeEventText(item.category)}</span></span><span class="event-hero-arrow">›</span></button>`;
   }).join('') : '<div class="event-hero event-empty"><span class="event-hero-icon">📅</span><span class="event-hero-copy"><small>PLAN AHEAD</small><strong>No events yet</strong><span>Add an event to see it here</span></span></div>';
   const visible = events
     .filter(item => eventStatusFilter === 'All' || (eventStatusFilter === 'Upcoming' ? item.date >= today : item.date < today))
@@ -1162,7 +898,7 @@ function renderEvents() {
       <select aria-label="Filter by category" onchange="eventCategoryFilter=this.value;renderEvents()"><option ${eventCategoryFilter==='All'?'selected':''}>All</option>${['Exam','Assignment','Fest','Holiday','Personal','Club'].map(c=>`<option ${eventCategoryFilter===c?'selected':''}>${c}</option>`).join('')}</select>
       <select aria-label="Sort events" onchange="eventSortOrder=this.value"><option value="asc" ${eventSortOrder==='asc'?'selected':''}>Date Ascending</option><option value="desc" ${eventSortOrder==='desc'?'selected':''}>Date Descending</option></select>
     </div>
-    <div class="event-list">${visible.length ? visible.map(item=>`<article class="event-row"><span><b>${escapeEventText(item.title)}</b><br>${item.date} · ${escapeEventText(item.category)}</span><button type="button" aria-label="Remove ${escapeEventText(item.title)}" onclick="deleteEvent('${item.id}')">🗑️ Remove</button></article>`).join('') : '<p>No events match these filters.</p>'}</div>`;
+    <div class="event-list">${visible.length ? visible.map(item=>`<article class="event-row"><span><b>${escapeEventText(item.title)}</b><br>${escapeEventText(item.date)} · ${escapeEventText(item.category)}</span><button type="button" aria-label="Remove ${escapeEventAttribute(item.title)}" onclick="deleteEvent('${escapeEventAttribute(item.id)}')">Remove</button></article>`).join('') : '<p>No events match these filters.</p>'}</div>`;
   const carousel = document.querySelector('.event-carousel');
   if (carousel && carouselEvents.length) {
     const currentIndex = pastEvents.length;
@@ -1188,12 +924,17 @@ function escapeEventText(value) {
   return element.innerHTML;
 }
 
+function escapeEventAttribute(value) {
+  return escapeEventText(value).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 function addEvent(event) {
   event.preventDefault();
   const title = document.getElementById('eventTitle').value.trim();
   const date = document.getElementById('eventDate').value;
   const category = document.getElementById('eventCategory').value;
   if (!title || !date) return;
+  if (!confirmDataChange(`Add the event “${title}”`)) return;
   events.push({ id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, title, date, category });
   localStorage.setItem(EVENTS_KEY, JSON.stringify(events));
   addHistory(`Created event: ${title} (${date}, ${category})`);
@@ -1203,6 +944,7 @@ function addEvent(event) {
 function deleteEvent(id) {
   const item = events.find(event => event.id === id);
   if (!item) return;
+  if (!confirmDataChange(`Delete the event “${item.title}”`)) return;
   events = events.filter(event => event.id !== id);
   localStorage.setItem(EVENTS_KEY, JSON.stringify(events));
   addHistory(`Deleted event: ${item.title} (${item.date})`);
@@ -1221,13 +963,14 @@ function renderUI() {
   const ttSection = document.getElementById('timetableSection');
   const courseSection = document.getElementById('courseList');
   const eventsSection = document.getElementById('eventsSection');
-  ttSection.style.setProperty('display', currentTab === 'timetable' ? 'block' : 'none', 'important');
+  const wideDashboard = window.matchMedia('(min-width: 900px)').matches && currentTab === 'courses';
+  ttSection.style.setProperty('display', (currentTab === 'timetable' || wideDashboard) ? 'block' : 'none', 'important');
   courseSection.style.setProperty('display', currentTab === 'courses' ? 'flex' : 'none', 'important');
   eventsSection.style.setProperty('display', currentTab === 'events' ? 'flex' : 'none', 'important');
   if (currentTab === 'events') renderEvents();
   
   if (currentTab === 'courses') {
-      ttSection.style.setProperty('display', 'none', 'important');
+      ttSection.style.setProperty('display', wideDashboard ? 'block' : 'none', 'important');
       courseSection.style.setProperty('display', 'flex', 'important');
   } else if (currentTab === 'timetable') {
       ttSection.style.setProperty('display', 'block', 'important');
@@ -1259,7 +1002,7 @@ function renderUI() {
                  <button type="button" class="time-picker-btn" onclick="openClockPicker(${idx}, 'end')">🕒 ${format12Hour(p.end) || 'End'}</button>
                  <button onclick="removeInlinePeriod(${idx})" style="background:var(--absent-btn); color:white; border:none; border-radius:8px; padding:12px 16px; font-weight:bold; cursor:pointer;">×</button>
               </div>
-              <input type="text" class="modal-input" style="margin:0; padding:12px; font-size: 0.95rem; font-weight:700;" value="${p.name}" placeholder="Full Course Name" oninput="updateInlinePeriod(${idx}, 'name', this.value)">
+      <input type="text" class="modal-input" style="margin:0; padding:12px; font-size: 0.95rem; font-weight:700;" value="${escapeEventAttribute(p.name)}" placeholder="Full Course Name" oninput="updateInlinePeriod(${idx}, 'name', this.value)">
           </div>`;
       });
       editHtml += `<button onclick="addInlinePeriod()" style="padding:15px; background:var(--bg-color); color:#3498db; border:2px dashed #3498db; border-radius:12px; cursor:pointer; font-weight:800; font-size:1rem;">+ Add Class to ${currentSelectedDay}</button>`;
@@ -1315,11 +1058,13 @@ function renderUI() {
               let mark = dailyMarks[slotKey];
               let presActive = mark === 'present' ? 'selected' : '';
               let absActive = mark === 'absent' ? 'selected' : '';
+              let cancelActive = mark === 'cancelled' ? 'selected' : '';
               
               inlineActions = `
               <div class="timeline-actions">
-                 <button class="btn-card-action btn-present-slot ${presActive}" onclick="toggleSlotAttendance(${cls.id}, '${cls.start}', 'present')">PRESENT</button>
-                 <button class="btn-card-action btn-absent-slot ${absActive}" onclick="toggleSlotAttendance(${cls.id}, '${cls.start}', 'absent')">ABSENT</button>
+                 <button class="btn-card-action btn-present-slot ${presActive}" aria-pressed="${mark === 'present'}" onclick="toggleSlotAttendance(${cls.id}, '${cls.start}', 'present')">Present</button>
+                 <button class="btn-card-action btn-absent-slot ${absActive}" aria-pressed="${mark === 'absent'}" onclick="toggleSlotAttendance(${cls.id}, '${cls.start}', 'absent')">Absent</button>
+                 <button class="btn-card-action btn-cancel-slot ${cancelActive}" aria-pressed="${mark === 'cancelled'}" onclick="toggleSlotAttendance(${cls.id}, '${cls.start}', 'cancelled')">${mark === 'cancelled' ? 'Cancelled · undo' : 'Cancelled'}</button>
               </div>`;
             }
 
@@ -1327,7 +1072,7 @@ function renderUI() {
               <div class="timeline-card ${status}">
                 <div>
                   <div class="timeline-time">${indicator}${format12Hour(cls.start)} - ${format12Hour(cls.end)}</div>
-                  <div class="timeline-course">${cls.name}</div>
+                  <div class="timeline-course">${escapeEventText(cls.name)}</div>
                 </div>
                 ${inlineActions}
               </div>`;
@@ -1338,14 +1083,22 @@ function renderUI() {
   }
 
   const listContainer = document.getElementById('courseList');
-  listContainer.innerHTML = `<div class="report-actions"><div class="report-export-actions"><button class="export-csv-btn" onclick="downloadAttendanceCsv()">📊 Export Excel / CSV</button><button class="export-pdf-btn" onclick="printAdvisorReport()">🖨️ Print Attendance Report PDF</button></div><button class="simulator-launch" onclick="openWhatIfSimulator()"><span>🔮</span> What-If Simulator</button></div>`;
+  listContainer.innerHTML = `<div class="report-actions"><div class="report-export-actions"><button class="export-csv-btn" onclick="downloadAttendanceCsv()">📊 Export Excel / CSV</button><button class="export-pdf-btn" onclick="printAdvisorReport()">📄 Print Attendance Report PDF</button></div><button class="simulator-launch" onclick="openWhatIfSimulator()">What-If Simulator</button></div>`;
   if (courses.length === 0) { 
-    listContainer.innerHTML = `<p style="color:var(--text-sub); text-align:center; padding: 40px 0;">No Courses Found. Add courses from the sidebar menu.</p>`; 
+    listContainer.innerHTML = `<section class="empty-courses"><h2>No courses yet</h2><p>Add your courses to start tracking attendance and planning your safe bunk buffer.</p><button class="btn-present" onclick="openModal('addCourse')">Add a course</button></section>`;
     return; 
   }
 
   const holidayMode = isTodayHoliday() || getTodayString() === 'Sunday';
   const baseStats = getCalculatedAttendance();
+  const summary = courses.reduce((totals, course) => {
+    totals.present += Math.max(0, (baseStats[course.id]?.p || 0) + (course.present || 0));
+    totals.absent += Math.max(0, (baseStats[course.id]?.a || 0) + (course.absent || 0));
+    return totals;
+  }, { present: 0, absent: 0 });
+  const summaryTotal = summary.present + summary.absent;
+  const overallPercentage = summaryTotal ? Math.round(summary.present / summaryTotal * 100) : 0;
+  listContainer.innerHTML += `<section class="attendance-overview" aria-label="Overall attendance summary"><div><span class="overview-label">Overall attendance</span><strong class="overview-value">${overallPercentage}<span>%</span></strong></div><div class="overview-stat"><span>Classes attended</span><strong>${summary.present}<small> / ${summaryTotal}</small></strong></div><div class="overview-stat"><span>Target</span><strong>${targetPercentage ? `${targetPercentage}%` : 'Not set'}</strong></div></section><h2 class="course-list-title">Course attendance</h2>`;
 
   courses.forEach(course => {
     const totalPresent = Math.max(0, (baseStats[course.id]?.p || 0) + (course.present || 0));
@@ -1360,7 +1113,7 @@ function renderUI() {
 
     listContainer.innerHTML += `
       <div class="course-card-wrapper">
-        <div class="course-card" onclick="toggleActionBar(${course.id})">
+        <div class="course-card" role="button" tabindex="0" aria-label="${escapeEventAttribute(course.name)}: ${percentage}% attendance. Show marking actions" onclick="toggleActionBar(${course.id})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleActionBar(${course.id})}">
           <div class="progress-circle">
             <svg width="80" height="80">
               <circle cx="40" cy="40" r="34" stroke="var(--absent-btn)" stroke-width="7" fill="transparent" />
@@ -1369,7 +1122,7 @@ function renderUI() {
             <div class="percentage-text" style="color:var(--text-main); font-size:1.15rem;">${percentage}%</div>
           </div>
           <div class="course-info">
-            <h2>${course.name}</h2>
+            <h2>${escapeEventText(course.name)}</h2>
             <p>Total Classes: ${total}</p>
             ${getBunkStatus(totalPresent, totalAbsent)}
           </div>
@@ -1453,6 +1206,7 @@ function printAdvisorReport() {
 function markAttendance(id, status) {
   const course = courses.find(c => c.id === id);
   if (!course) return;
+  if (!confirmDataChange(`Record one ${status} class for ${course.name}`, true)) return;
   if (status === 'present') course.present = (course.present || 0) + 1;
   if (status === 'absent') course.absent = (course.absent || 0) + 1;
   addHistory(`Manual ${status.toUpperCase()}: ${course.name}`);
@@ -1489,9 +1243,9 @@ function toggleMenu() {
     sidebar.classList.remove('open');
     overlay.classList.remove('active');
     
-    const paywallEl = document.getElementById('paywallOverlay');
-    const isPaywallActive = paywallEl && (paywallEl.classList.contains('active') || paywallEl.style.display === 'flex');
-    if (!isPaywallActive) {
+    const settingsShowing = document.getElementById('settingsOverlay')?.classList.contains('active');
+    const modalShowing = document.getElementById('modalOverlay')?.classList.contains('active');
+    if (!settingsShowing && !modalShowing) {
       document.body.classList.remove('scroll-locked');
     }
   } else {
@@ -1513,11 +1267,62 @@ function toggleSettings(forceOpen) {
 }
 
 function openSettingsTab(tab) {
-  const tabs = [...document.querySelectorAll('#settingsTabs button')];
-  const names = ['account','help','history','calendar','target','edit','add','remove','reset'];
-  tabs.forEach((button, index) => button.classList.toggle('active', names[index] === tab));
+  const tabs = [...document.querySelectorAll('#settingsTabs [role="tab"]')];
+  const activeTab = tabs.find(button => button.dataset.settingsTab === tab);
+  if (!activeTab) return;
+  tabs.forEach(button => {
+    const selected = button === activeTab;
+    button.classList.toggle('active', selected);
+    button.setAttribute('aria-selected', String(selected));
+    button.tabIndex = selected ? 0 : -1;
+  });
   const panel = document.getElementById('settingsPanel');
-  const actionMap = {account:'authModal',help:'userManual',history:'historyLog',calendar:'setupCalendar',target:'setTarget',edit:'editAttendance',add:'addCourse',remove:'removeCourse'};
+  panel.setAttribute('aria-labelledby', activeTab.id);
+  const actionMap = {account:'authModal',help:'userManual',calendar:'setupCalendar',target:'setTarget',edit:'editAttendance',add:'addCourse',remove:'removeCourse'};
+  if (tab === 'semesters') {
+    const archive = JSON.parse(localStorage.getItem(SEMESTERS_KEY) || '{}');
+    const standardSemesters = Array.from({ length: 8 }, (_, index) => `Sem ${index + 1}`);
+    const choices = [...new Set([...standardSemesters, ...Object.keys(archive), currentSemester])];
+    panel.innerHTML = `
+      <section class="settings-tool-section">
+        <h3>Semester Archive</h3>
+        <p>Keep courses, attendance, target, and calendar data organized by semester.</p>
+        <div class="settings-tool-block">
+          <label for="semesterChoice">Choose a semester</label>
+          <div class="settings-tool-controls settings-semester-controls">
+            <select id="semesterChoice">${choices.map(name => `<option value="${escapeEventAttribute(name)}" ${name === currentSemester ? 'selected' : ''}>${escapeEventText(name)}</option>`).join('')}</select>
+            <button type="button" class="btn-present" onclick="loadSemester(document.getElementById('semesterChoice').value)">Open Semester</button>
+          </div>
+          <p class="settings-tool-note">Switching saves the current semester before opening the selected one.</p>
+        </div>
+      </section>`;
+    return;
+  }
+  if (tab === 'sharing') {
+    panel.innerHTML = `
+      <section class="settings-tool-section">
+        <h3>Timetable Sharing</h3>
+        <p>Share your class schedule with a classmate using a short code.</p>
+        <div class="settings-tool-block">
+          <h4>Create a share code</h4>
+          <p>Generate a code for the course schedules saved in this semester.</p>
+          <button type="button" class="btn-present" onclick="createTimetableShare()">Create Share Code</button>
+          <output id="timetableShareCode" class="share-code-output" aria-live="polite"></output>
+        </div>
+        <div class="settings-tool-block">
+          <h4>Import a timetable</h4>
+          <p>Enter a classmate’s code, then choose how it should be applied.</p>
+          <label for="timetableImportCode">Timetable share code</label>
+          <input id="timetableImportCode" class="modal-input" type="text" placeholder="TT-4821" autocomplete="off" spellcheck="false">
+          <div class="settings-tool-controls settings-share-actions">
+            <button type="button" class="btn-present" onclick="importTimetable('merge')">Merge with timetable</button>
+            <button type="button" class="btn-absent" onclick="importTimetable('replace')">Replace timetable</button>
+          </div>
+          <p class="settings-tool-note">Merge combines matching course schedules and adds new courses. Replace uses the imported course list and resets its attendance counts.</p>
+        </div>
+      </section>`;
+    return;
+  }
   if (tab === 'events') {
     panel.innerHTML = '<h3>Events</h3><p>Open the Events tab to add and manage exams, assignments, fests, holidays, and personal events.</p><button class="btn-present" onclick="toggleSettings(false);switchTab(\'events\')">Open Events</button>';
     return;
@@ -1526,11 +1331,50 @@ function openSettingsTab(tab) {
   const modalType = actionMap[tab];
   openModal(modalType);
   const modalContent = document.getElementById('modalContent');
-  panel.innerHTML = modalContent.innerHTML;
+  // Modal templates include their own floating close button. The Settings
+  // screen has a dedicated header close control, so discard the copied one.
+  panel.innerHTML = modalContent.innerHTML.replace(/<button class="close-btn"[^>]*>×<\/button>/, '');
   modalContent.innerHTML = '';
   document.getElementById('modalOverlay').classList.remove('active');
   document.body.classList.add('scroll-locked');
 }
+
+document.getElementById('settingsTabs')?.addEventListener('keydown', event => {
+  const tabs = [...event.currentTarget.querySelectorAll('[role="tab"]')];
+  const currentIndex = tabs.indexOf(document.activeElement);
+  if (currentIndex < 0) return;
+  let nextIndex = currentIndex;
+  if (event.key === 'ArrowRight' || event.key === 'ArrowDown') nextIndex = (currentIndex + 1) % tabs.length;
+  else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+  else if (event.key === 'Home') nextIndex = 0;
+  else if (event.key === 'End') nextIndex = tabs.length - 1;
+  else return;
+  event.preventDefault();
+  tabs[nextIndex].focus();
+  openSettingsTab(tabs[nextIndex].dataset.settingsTab);
+});
+
+const SETTINGS_TAB_ICONS = {
+  account: '<circle cx="12" cy="8" r="3.5"/><path d="M5 20c.8-3.2 3.1-5 7-5s6.2 1.8 7 5"/>',
+  help: '<circle cx="12" cy="12" r="9"/><path d="M9.7 9a2.4 2.4 0 1 1 4.1 1.7c-1 .9-1.8 1.3-1.8 2.8M12 17h.01"/>',
+  calendar: '<rect x="3.5" y="5" width="17" height="16" rx="2"/><path d="M7.5 3v4M16.5 3v4M4 9h16M8 13h.01M12 13h.01M16 13h.01M8 17h.01M12 17h.01"/>',
+  target: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>',
+  edit: '<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
+  add: '<circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/>',
+  remove: '<circle cx="12" cy="12" r="9"/><path d="M8 12h8"/>',
+  reset: '<path d="M4 11a8 8 0 1 1 2.3 5.7M4 5v6h6"/>',
+  events: '<path d="M5 4h14v17H5zM8 2v4M16 2v4M5 9h14M8 13h2M14 13h2M8 17h2"/>',
+  semesters: '<path d="M4 5.5c3-1.5 5.7-1.2 8 1v14c-2.3-2.2-5-2.5-8-1zM20 5.5c-3-1.5-5.7-1.2-8 1v14c2.3-2.2 5-2.5 8-1z"/>',
+  sharing: '<circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="m8.3 10.8 7.4-4.6M8.3 13.2l7.4 4.6"/>'
+};
+document.querySelectorAll('#settingsTabs [role="tab"]').forEach(button => {
+  const icon = SETTINGS_TAB_ICONS[button.dataset.settingsTab];
+  if (icon) button.insertAdjacentHTML('afterbegin', `<svg class="settings-tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icon}</svg>`);
+});
+const settingsTabList = document.getElementById('settingsTabs');
+const syncSettingsTabOrientation = () => settingsTabList?.setAttribute('aria-orientation', matchMedia('(max-width: 600px)').matches ? 'horizontal' : 'vertical');
+syncSettingsTabOrientation();
+window.addEventListener('resize', syncSettingsTabOrientation, { passive: true });
 
 function switchAuthMode(mode) {
   authMode = mode;
@@ -1547,11 +1391,28 @@ function startCalendarSetup() {
   setupStartDate = document.getElementById('termStart').value;
   setupEndDate = document.getElementById('termEnd').value;
 
-  if (!fileInput.files.length || !setupStartDate || !setupEndDate) {
-    return alert("Please upload a file and select both start and end dates.");
+  if (!setupStartDate || !setupEndDate) {
+    return alert("Please select both semester start and end dates.");
   }
   if (new Date(setupStartDate) > new Date(setupEndDate)) {
     return alert("Start date cannot be after the end date.");
+  }
+
+  if (!fileInput.files.length) {
+    if (!confirmDataChange('Save the semester start and end dates', true)) return;
+    academicCalendar = {
+      ...(academicCalendar || {}),
+      startDate: setupStartDate,
+      endDate: setupEndDate,
+      holidays: academicCalendar?.holidays || [],
+      importantDates: academicCalendar?.importantDates || []
+    };
+    localStorage.setItem(CALENDAR_KEY, JSON.stringify(academicCalendar));
+    saveToDatabase();
+    forceCloseModal();
+    renderUI();
+    openModal('calendarMode');
+    return;
   }
 
   const file = fileInput.files[0];
@@ -1628,6 +1489,7 @@ function cyclePaintMode(dateStr, element) {
 }
 
 function saveSetupCalendar() {
+  if (!confirmDataChange('Save the semester dates and calendar markings', true)) return;
   let holidays = [];
   let importantDates = [];
   for (const [date, type] of Object.entries(setupTempData)) {
@@ -1670,6 +1532,7 @@ function toggleFullDayPresent(dateString) {
   }
 
   const isAlreadyMarked = markedDates.includes(dateString);
+  if (!confirmDataChange(`${isAlreadyMarked ? 'Remove the present mark from' : 'Mark'} ${dateString} ${isAlreadyMarked ? '' : 'present'}`.trim(), true)) return;
   if (isAlreadyMarked) {
     markedDates = markedDates.filter(d => d !== dateString);
     addHistory(`Unmarked Day: ${dateString}`);
@@ -1697,82 +1560,6 @@ function toggleFullDayPresent(dateString) {
   renderUI(); 
 }
 
-async function openAdminVerifyModal() {
-  const modalContent = document.getElementById('modalContent');
-  modalContent.className = 'modal-content';
-  modalContent.innerHTML = `
-    <button class="close-btn" onclick="forceCloseModal()">×</button>
-    <h2>Pending UPI Payments</h2>
-    <p style="font-size:0.85rem; color:var(--text-sub); margin-bottom:15px;">Check incoming credits in your UPI app and match the 12-digit UTR:</p>
-    <div id="adminRequestsList" style="max-height: 50vh; overflow-y:auto;">Loading requests...</div>
-  `;
-
-  try {
-    if (!db) throw new Error("Firestore not initialized.");
-    const snapshot = await db.collection('payment_verifications')
-      .where('status', '==', 'pending')
-      .get();
-
-    const listEl = document.getElementById('adminRequestsList');
-    if (snapshot.empty) {
-      listEl.innerHTML = `<p style="color:var(--text-sub); text-align:center; padding: 25px 0;">No pending payments to review.</p>`;
-      return;
-    }
-
-    let html = '';
-    snapshot.forEach(docSnap => {
-      const data = docSnap.data();
-      html += `
-        <div style="background:var(--bg-color); border:1px solid var(--border-color); border-radius:12px; padding:12px; margin-bottom:10px; text-align:left;">
-          <div style="font-weight:800; font-size:0.95rem; color:var(--text-main);">${data.email}</div>
-          <div style="font-size:0.8rem; color:var(--text-sub); margin: 3px 0;">UTR: <b style="letter-spacing:1px; color:#3498db;">${data.utr}</b> (₹${data.amount || subscriptionPrice})</div>
-          <div style="display:flex; gap:8px; margin-top:8px;">
-            <button class="vpopup-btn vpopup-btn-confirm" style="padding:6px 12px; font-size:0.8rem;" onclick="adminApprovePayment('${docSnap.id}', '${data.uid}')">✓ Approve</button>
-            <button class="vpopup-btn vpopup-btn-cancel" style="padding:6px 12px; font-size:0.8rem;" onclick="adminRejectPayment('${docSnap.id}')">✖ Reject</button>
-          </div>
-        </div>
-      `;
-    });
-    listEl.innerHTML = html;
-  } catch (err) {
-    document.getElementById('adminRequestsList').innerHTML = `<p style="color:var(--absent-btn); font-size:0.85rem;">Error loading: ${err.message}</p>`;
-  }
-}
-
-async function adminApprovePayment(utr, studentUid) {
-  try {
-    await db.collection('payment_verifications').doc(utr).update({
-      status: 'approved',
-      approvedAt: firebase.firestore.FieldValue.serverTimestamp()
-    });
-
-    await db.collection('users').doc(studentUid).set({
-      isPro: true,
-      role: 'pro',
-      unlockedAt: firebase.firestore.FieldValue.serverTimestamp()
-    }, { merge: true });
-
-    alert(`UTR ${utr} approved! Student account unlocked.`);
-    openAdminVerifyModal();
-  } catch (err) {
-    alert("Approval failed: " + err.message);
-  }
-}
-
-async function adminRejectPayment(utr) {
-  if (!confirm(`Reject UTR ${utr}?`)) return;
-  try {
-    await db.collection('payment_verifications').doc(utr).update({
-      status: 'rejected',
-      rejectedAt: firebase.firestore.FieldValue.serverTimestamp()
-    });
-    alert("Payment rejected.");
-    openAdminVerifyModal();
-  } catch (err) {
-    alert("Rejection failed: " + err.message);
-  }
-}
-
 function openModal(type) {
   if (document.getElementById('settingsOverlay')?.classList.contains('active')) {
     const panel = document.getElementById('settingsPanel');
@@ -1794,41 +1581,20 @@ function openModal(type) {
     modalContent.className = 'modal-content';
   }
 
-  if (type === 'adminVerifyModal') {
-    openAdminVerifyModal();
-    return;
-  }
-
   let html = `<button class="close-btn" onclick="forceCloseModal()">×</button>`;
 
   if (type === 'authModal') {
     if (currentUser) {
-      let adminPricingSection = '';
-      if (userRole === 'admin') {
-        adminPricingSection = `
-          <div style="background:var(--bg-color); border:1.5px solid var(--border-color); border-radius:14px; padding:15px; margin: 15px 0; text-align:left;">
-            <div style="font-weight:800; font-size:0.95rem; color:var(--text-main); margin-bottom:4px;">⚙️ Subscription Price Setting</div>
-            <p style="font-size:0.75rem; color:var(--text-sub); margin-bottom:10px;">Set the semester fee for all students (in ₹):</p>
-            <div style="display:flex; gap:8px;">
-              <input type="number" id="adminPriceInput" class="modal-input" style="margin-bottom:0; padding:10px; font-weight:800; font-size:1.05rem;" value="${subscriptionPrice}" min="1" />
-              <button class="vpopup-btn vpopup-btn-confirm" style="flex:none; padding:10px 16px; font-size:0.85rem;" onclick="saveSubscriptionPrice()">Save Price</button>
-            </div>
-          </div>
-        `;
-      }
-
       html += `
-        <h2>Student Account</h2>
+        <h2>${userRole === 'admin' ? 'Administrator Account' : 'Student Account'}</h2>
         <div style="text-align:center; padding:15px 0;">
           <p style="font-size:1.15rem; font-weight:700; color:var(--text-main);">${currentUser.displayName || 'Student'}</p>
           <p style="font-size:0.9rem; color:var(--text-sub); margin-bottom:15px;">${currentUser.email}</p>
-          <div style="display:inline-block; padding:6px 14px; border-radius:20px; font-size:0.8rem; font-weight:700; background:${userRole === 'admin' ? 'var(--absent-btn)' : (userRole === 'pro' ? 'var(--present-btn)' : '#3498db')}; color:white; margin-bottom:15px;">
-            ${userRole === 'admin' ? '🛡️ Administrator' : (userRole === 'pro' ? '🎓 Pro Pass Active' : 'Basic Account')}
+          <div style="display:inline-block; padding:6px 14px; border-radius:20px; font-size:0.8rem; font-weight:700; background:${userRole === 'admin' ? 'var(--absent-btn)' : '#3498db'}; color:white; margin-bottom:15px;">
+            ${userRole === 'admin' ? '🛡️ Administrator' : 'Student Account'}
           </div>
           <p style="font-size:0.85rem; color:var(--text-sub); margin-bottom:15px;">Your attendance data is synced with Cloud Firestore.</p>
           
-          ${adminPricingSection}
-
           <button class="vpopup-btn vpopup-btn-cancel" style="width:100%; margin-top:5px;" onclick="logoutUser()">Sign Out</button>
         </div>
       `;
@@ -1887,14 +1653,17 @@ function openModal(type) {
     }
   } else if (type === 'userManual') {
     html += `
-      <h2>How to Use This App</h2>
-      <div style="max-height: 60vh; overflow-y: auto; text-align: left; margin-top:10px;">
-        <h3 style="font-size:1rem; margin-top:10px;">1. Navigation</h3>
-        <p style="font-size:0.85rem; color:var(--text-sub);">Use the bottom bar to switch between <b>Attendance %</b> and the daily <b>Timetable</b>.</p>
-        <h3 style="font-size:1rem; margin-top:10px;">2. Mark Live Attendance</h3>
-        <p style="font-size:0.85rem; color:var(--text-sub);">Tap Present or Absent directly on today's classes in the Timetable tab.</p>
-        <h3 style="font-size:1rem; margin-top:10px;">3. Edit Timetable</h3>
-        <p style="font-size:0.85rem; color:var(--text-sub);">Tap ✏️ to customize today's schedule with the interactive clock picker, then set it as your default schedule.</p>
+      <h2>How to Use Attendance Tracker</h2>
+      <p class="guide-intro">Quick, visual walkthroughs for the main tools. Open a section to see what to tap and what happens next.</p>
+      <div class="feature-guide">
+        <details open><summary>📚 Courses and attendance</summary><p>Each course shows your attendance percentage, total classes, and target status. Tap a course card to open its attendance actions.</p><div class="guide-demo" aria-label="Example attendance buttons"><span class="guide-demo-label">COURSE ACTIONS</span><div class="guide-demo-row"><span class="guide-demo-course">🧪 Chemistry</span><button type="button" class="guide-demo-button demo-present" tabindex="-1">✓ Present</button><button type="button" class="guide-demo-button demo-absent" tabindex="-1">✕ Absent</button></div></div><p>Use <b>What‑If Simulator</b> to preview future classes without changing saved attendance. Download <b>Export Excel / CSV</b> or open <b>Print Attendance Report PDF</b> for a printable report.</p></details>
+        <details><summary>🗓️ Timetable and marking a class</summary><p>Choose a day to view that day’s classes. Use <b>Present</b>, <b>Absent</b>, or <b>Cancelled</b> on a class. If a class passes without a mark, it is automatically recorded absent when its end time passes.</p><div class="guide-demo" aria-label="Example timetable class"><span class="guide-demo-label">TODAY · 10:00 AM</span><div class="guide-demo-row"><span class="guide-demo-course">⚛️ Physics</span><button type="button" class="guide-demo-button demo-present" tabindex="-1">✓ Present</button><button type="button" class="guide-demo-button demo-absent" tabindex="-1">✕ Absent</button></div></div><p>Tap ✏️ to edit the timetable across days. Set start and end times, add or remove class rows, then save. The follow-up asks whether to make the saved schedule your default.</p></details>
+        <details><summary>🎯 Target and attendance editing</summary><p>In Settings, <b>Target Attendance</b> sets your goal percentage. Course cards then show how many classes you can safely miss or how many consecutive classes you need to attend to recover. <b>Edit Attendance</b> adjusts a course’s saved present and total counts; review the confirmation before saving.</p><div class="guide-demo" aria-label="Example settings controls"><span class="guide-demo-label">SETTINGS</span><div class="guide-demo-row"><span class="guide-demo-course">🎯 Target</span><span class="guide-demo-value">75%</span><button type="button" class="guide-demo-button demo-present" tabindex="-1">Save Target</button></div></div></details>
+        <details><summary>📅 Semester calendar</summary><p>Open Settings → <b>Academic Calendar</b> and enter the semester start and end dates. Attendance dates before the semester begins and future dates are blocked. Adding an image or PDF is optional. Open the calendar from the header clock; tap an eligible date to mark or unmark the whole day present.</p></details>
+        <details><summary>🎟️ Events</summary><p>Open the <b>Events</b> bottom tab. Add a title, date, and category (Exam, Assignment, Fest, Holiday, Personal, or Club). Use the filters to view all, upcoming, or past events; filter by category and sort by date. Events stay on this device. The banner starts with today’s event, or the nearest upcoming event if there is none today. Swipe left for upcoming events and right for past events; the nearest past event appears first. Dates with events are flagged on the calendar.</p><div class="guide-demo" aria-label="Example event controls"><span class="guide-demo-label">EVENTS</span><div class="guide-demo-row"><span class="guide-demo-course">🎟️ Add an event</span><span class="guide-demo-value">Title · Date · Category</span><button type="button" class="guide-demo-button demo-present" tabindex="-1">＋ Add</button></div></div></details>
+        <details><summary>🛠️ Settings and semesters</summary><p>The gear opens Settings. Use its sections to manage account, this guide, calendar dates, target, attendance, courses, timetable reset, events, timetable sharing, and semester archives. Reset restores the default timetable and clears attendance history for the active semester. <b>Semesters</b> keeps data separate across Sem 1 through Sem 8; confirm before switching.</p></details>
+        <details><summary>🔗 Share a timetable</summary><p>In Settings → <b>Share Timetable</b>, create a code and share it with a classmate. They can enter the code and choose <b>Merge</b> to combine schedules or <b>Replace</b> to use the shared schedule instead. Sharing and importing require the cloud connection and ask for confirmation before changes.</p></details>
+        <details><summary>🌗 Theme and account sync</summary><p>Use the light/dark switch in Settings to change the display. Sign in from <b>Account</b> to sync attendance data to Cloud Firestore. Event lists are device-local and are not shared across devices. A data disclaimer appears before saved changes; choose Cancel to leave the saved data as it was.</p></details>
       </div>`;
   } else if (type === 'historyLog') {
     html += `<h2>History Log</h2><div class="history-list">`;
@@ -1905,15 +1674,15 @@ function openModal(type) {
     html += `</div>`;
   } else if (type === 'setupCalendar') {
     html += `
-      <h2>Upload Academic Calendar</h2>
+      <h2>Set Semester Dates</h2>
       <div style="text-align:left; margin-top:15px;">
-        <label style="font-size:0.85rem; color:var(--text-sub);">Select Calendar (Image or PDF)</label>
+        <label style="font-size:0.85rem; color:var(--text-sub);">Optional calendar reference (image or PDF)</label>
         <input type="file" id="calFileInput" accept="image/*, application/pdf" class="modal-input" />
-        <label style="font-size:0.85rem; color:var(--text-sub);">Term Start Date</label>
-        <input type="date" id="termStart" class="modal-input" />
-        <label style="font-size:0.85rem; color:var(--text-sub);">Term End Date</label>
-        <input type="date" id="termEnd" class="modal-input" />
-        <button class="btn-present" style="width:100%; padding:12px;" onclick="startCalendarSetup()">Start Setup Mode</button>
+        <label style="font-size:0.85rem; color:var(--text-sub);">Semester Start Date</label>
+        <input type="date" id="termStart" class="modal-input" value="${academicCalendar?.startDate || ''}" required />
+        <label style="font-size:0.85rem; color:var(--text-sub);">Semester End Date</label>
+        <input type="date" id="termEnd" class="modal-input" value="${academicCalendar?.endDate || ''}" required />
+        <button class="btn-present" style="width:100%; padding:12px;" onclick="startCalendarSetup()">${academicCalendar?.startDate ? 'Save Semester Dates' : 'Continue'}</button>
       </div>`;
   } else if (type === 'calendarMode') {
     if (!academicCalendar) {
@@ -1946,8 +1715,10 @@ function openModal(type) {
 
         const isSunday = new Date(year, month, i).getDay() === 0 ? 'sunday' : '';
         const isFuture = dateStr > todayStr ? 'future' : '';
+        const isBeforeSemester = dateStr < academicCalendar.startDate ? 'before-semester' : '';
         const isMarked = markedDates.includes(dateStr) ? 'present' : '';
-        html += `<div class="cal-day ${statusClass} ${isSunday} ${isFuture} ${isMarked}" onclick="toggleFullDayPresent('${dateStr}')"><span>${i}</span></div>`;
+        const isBlocked = Boolean(isFuture || isBeforeSemester);
+        html += `<div class="cal-day ${statusClass} ${isSunday} ${isFuture} ${isBeforeSemester} ${isMarked}" ${isBlocked ? 'aria-disabled="true"' : `onclick="toggleFullDayPresent('${dateStr}')"`}><span>${i}</span></div>`;
       }
       
       html += `</div>
@@ -1988,7 +1759,7 @@ function openModal(type) {
     if (courses.length === 0) {
       html += `<h2>Edit Attendance</h2><p style="color:var(--text-sub); margin-top:15px;">No courses available.</p>`;
     } else {
-      let options = courses.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+      let options = courses.map(c => `<option value="${c.id}">${escapeEventText(c.name)}</option>`).join('');
       html += `
         <h2>Edit Attendance</h2>
         <div style="margin-top:15px; text-align: left;">
@@ -2007,7 +1778,7 @@ function openModal(type) {
     courses.forEach(c => {
       html += `
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; border-bottom:1px solid var(--border-color); padding-bottom:8px;">
-          <span style="font-size:0.9rem; font-weight:700;">${c.name}</span>
+          <span style="font-size:0.9rem; font-weight:700;">${escapeEventText(c.name)}</span>
           <button onclick="removeCourseById(${c.id})" style="background:var(--absent-btn); color:white; border:none; width:30px; height:30px; border-radius:50%; font-weight:bold; cursor:pointer;">×</button>
         </div>`;
     });
@@ -2020,7 +1791,7 @@ function openModal(type) {
 function loadCourseToEdit() {
   const select = document.getElementById('editCourseSelect');
   if (!select) return;
-  const course = courses.find(c => c.id === parseInt(select.value, 10));
+  const course = courses.find(c => String(c.id) === select.value);
   if (!course) return;
   const baseStats = getCalculatedAttendance();
   const totalPresent = Math.max(0, (baseStats[course.id]?.p || 0) + (course.present || 0));
@@ -2044,11 +1815,12 @@ function syncEditFields(source) {
 
 function saveSingleCourseAttendance() {
   const select = document.getElementById('editCourseSelect');
-  const course = courses.find(c => c.id === parseInt(select.value, 10));
+  const course = courses.find(c => String(c.id) === select.value);
   if (!course) return;
   let p = parseInt(document.getElementById('editPresent').value, 10) || 0;
   let t = parseInt(document.getElementById('editTotal').value, 10) || 0;
   if (p > t) t = p;
+  if (!confirmDataChange(`Save attendance changes for ${course.name} (present: ${p}, total: ${t})`, true)) return;
   const baseStats = getCalculatedAttendance();
   course.present = p - (baseStats[course.id]?.p || 0);
   course.absent = (t - p) - (baseStats[course.id]?.a || 0);
@@ -2065,6 +1837,7 @@ function handleAddCourse() {
   const start = document.getElementById('newCourseStart').value;
   const end = document.getElementById('newCourseEnd').value;
   if (!name) return alert("Please enter a course name.");
+  if (!confirmDataChange(`Add the course “${name}”`, true)) return;
   let schedule = {};
   if (start && end) schedule[day] = [{ start: start, end: end }];
   courses.push({ id: Date.now(), name: name, code: code || 'CUSTOM', present: 0, absent: 0, schedule: schedule });
@@ -2077,6 +1850,7 @@ function handleAddCourse() {
 function saveTargetPercentage() {
   const newTarget = parseInt(document.getElementById('targetInput').value, 10);
   if (isNaN(newTarget) || newTarget < 1 || newTarget > 100) return alert("Enter valid % (1-100)");
+  if (!confirmDataChange(`Save the attendance target as ${newTarget}%`, true)) return;
   targetPercentage = newTarget;
   localStorage.setItem('target_percentage', targetPercentage);
   renderUI();
@@ -2086,7 +1860,7 @@ function saveTargetPercentage() {
 function removeCourseById(id) {
   const course = courses.find(c => c.id === id);
   if (!course) return;
-  if (confirm(`Remove ${course.name}?`)) {
+  if (confirmDataChange(`Remove the course “${course.name}”`, true)) {
     courses = courses.filter(c => c.id !== id);
     addHistory(`Removed Course: ${course.name}`);
     saveToDatabase(); 
@@ -2156,9 +1930,12 @@ async function logoutUser() {
 // ==========================================
 startLiveClock(); 
 updateHolidayButton(); 
-listenToAppSettings();
-checkLaunchPaywall();
 renderUI(); 
+let dashboardResizeTimer;
+window.addEventListener('resize', () => {
+  clearTimeout(dashboardResizeTimer);
+  dashboardResizeTimer = setTimeout(renderUI, 120);
+}, { passive: true });
 // Refresh the live timetable periodically without interrupting timetable edits.
 setInterval(() => {
   const active = document.activeElement;

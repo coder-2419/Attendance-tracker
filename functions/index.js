@@ -6,13 +6,11 @@ if (!admin.apps.length) {
 }
 const db = admin.firestore();
 
-// Set your private shared secret phrase
-const WEBHOOK_SECRET = "MY_SUPER_SECRET_KEY_8073";
-
-exports.autoVerifyUpiWebhook = functions.https.onRequest(async (req, res) => {
+// Store this value in Firebase Secret Manager; never commit webhook secrets.
+exports.autoVerifyUpiWebhook = functions.runWith({ secrets: ["UPI_WEBHOOK_SECRET"] }).https.onRequest(async (req, res) => {
   // 1. Authorization check
   const incomingSecret = req.headers["x-webhook-secret"] || (req.body && req.body.secret);
-  if (incomingSecret !== WEBHOOK_SECRET) {
+  if (!process.env.UPI_WEBHOOK_SECRET || incomingSecret !== process.env.UPI_WEBHOOK_SECRET) {
     return res.status(401).send("Unauthorized request");
   }
 

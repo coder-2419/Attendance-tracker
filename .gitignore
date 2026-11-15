@@ -12,6 +12,7 @@ firebase-debug.*.log*
 
 # Firebase config
 firebase-config.js
+firebase-config.local.js
 .env.local
 
 # Uncomment this if you'd like others to create their own Firebase project.
@@ -66,6 +67,8 @@ node_modules/
 
 # dotenv environment variables file
 .env
+.env.*
+!.env.example
 
 # dataconnect generated files
 .dataconnect

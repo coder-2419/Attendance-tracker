@@ -18,7 +18,7 @@ A mobile-friendly attendance planner for tracking course attendance, viewing a w
 
 Open `index.html` through a local web server. Firebase is optional for local attendance tracking; without runtime Firebase configuration, cloud sign-in, syncing, and timetable sharing are disabled while local features continue to work.
 
-To enable Firebase locally, create an ignored `firebase-config.js` file in the project root with your Firebase Web app configuration:
+To enable Firebase locally, copy `firebase-config.example.js` to `firebase-config.js` and fill in your Firebase Web app configuration:
 
 ```js
 window.__FIREBASE_CONFIG__ = {
@@ -31,14 +31,14 @@ window.__FIREBASE_CONFIG__ = {
 };
 ```
 
-This file is excluded by `.gitignore`; do not commit it.
+`firebase-config.js` is excluded by `.gitignore`; do not commit it. Firebase Web configuration is public client data, so this keeps it out of source control but does not make the deployed browser config secret.
 
 ## Deploy to GitHub Pages
 
-The workflow at `.github/workflows/deploy.yml` builds the Firebase runtime config from GitHub Actions secrets and deploys the repository to GitHub Pages whenever code is pushed to `main` (or when manually run).
+The workflow at `.github/workflows/deploy.yml` builds the Firebase runtime config from GitHub Actions settings and deploys the repository to GitHub Pages whenever code is pushed to `main` (or when manually run). It checks repository secrets first, then repository variables. A `.env` file is not loaded by GitHub Pages. Values included in a Pages build are visible to site visitors, even when supplied to the build as GitHub Secrets.
 
-1. In the repository on GitHub, open **Settings → Secrets and variables → Actions → New repository secret**.
-2. Add these six secrets from the Firebase project’s Web app configuration:
+1. In the repository on GitHub, open **Settings → Secrets and variables → Actions**.
+2. Add the six names below on the **Variables** tab as repository variables (they are public client configuration, not secrets). Use the exact values from the Firebase project’s Web app configuration:
    - `FIREBASE_API_KEY`
    - `FIREBASE_AUTH_DOMAIN`
    - `FIREBASE_PROJECT_ID`
@@ -48,11 +48,37 @@ The workflow at `.github/workflows/deploy.yml` builds the Firebase runtime confi
 3. In **Settings → Pages**, set the build and deployment source to **GitHub Actions**.
 4. Push to `main`, or run **Actions → Deploy Attendance Tracker to GitHub Pages → Run workflow**.
 
-The deployment fails with a clear message if any required secret is missing. After a successful run, the workflow publishes the site URL in its deployment summary.
+The deployment fails with a clear message if any required value is missing. After a successful run, the workflow publishes the site URL in its deployment summary.
 
 ## Firebase configuration and security
 
-Firebase browser configuration is generated only during deployment, so values are not present in the latest source files. A browser app must still receive its Firebase Web configuration at runtime; visitors can inspect it in the deployed site. Firebase Web API keys identify the project and are not authorization to read or write data by themselves. Secure access with Firebase Authentication, Firestore Security Rules, and API key restrictions. Since this project’s prior source included its web config, review/restrict that key in Google Cloud Console if the repository was public; changing the source does not erase values from earlier Git commits.
+The Firebase web `apiKey` identifies the Firebase project; it is not an admin credential and cannot replace Firebase Authentication or Firestore Rules. Any browser configuration (including one generated from a GitHub Secret) is readable from the deployed site. Do not put service account JSON, Admin SDK private keys, webhook secrets, or paid third-party API secrets in this frontend or in GitHub Pages build variables.
+
+### Restrict the browser API key
+
+In Google Cloud Console, open **APIs & Services → Credentials**, select the Firebase browser key, and set **Application restrictions → Websites**. Add the production referrer `https://coder-2419.github.io/*` and the exact localhost origin/port used for development (for example `http://localhost:5500/*`). Under **API restrictions**, allow only the Firebase APIs required by this app, including Identity Toolkit, Token Service, Cloud Firestore, and Cloud Datastore. Check the Firebase-provided key's current restrictions before changing them; overly narrow API restrictions can break sign-in or Firestore.
+
+### Publish Firestore rules
+
+`firestore.rules` limits each signed-in user to their own user document, prevents clients from changing the role field, and permits signed-in timetable share-code creation/import. Other collections are denied by default. Publish the rules from the repository root with Firebase CLI after reviewing them:
+
+```sh
+firebase deploy --only firestore:rules
+```
+
+This command updates the live database security policy. The rules are also linked from `firebase.json` for Firebase CLI deployments. GitHub Pages does not publish Firestore rules.
+
+### App Check (optional)
+
+Register the web app in **Firebase Console → App Check** with reCAPTCHA v3, deploy the App Check client integration and monitor valid traffic before enabling enforcement. Keep the reCAPTCHA secret in Firebase Console; a reCAPTCHA site key is public client configuration. Enforcing App Check before a working client is deployed can block app requests.
+
+### Legacy payment webhook secret
+
+The legacy webhook function reads `UPI_WEBHOOK_SECRET` from Firebase Secret Manager. Before deploying that function, set a new value with `firebase functions:secrets:set UPI_WEBHOOK_SECRET`, then deploy with `firebase deploy --only functions:autoVerifyUpiWebhook`. The old in-source placeholder is no longer used. Do not use the same secret that may have appeared in a previous public commit.
+
+### Local keys and Git history
+
+The local `firebase-config.js` file is ignored by Git, and `firebase-config.example.js` contains placeholders only. `.env` files are ignored too, but GitHub Pages does not read them. Removing a value from the current files does not erase old commits. Since the Firebase web key is public by design, restrict it in Google Cloud Console; if a true private credential was committed, revoke/rotate it and clean repository history separately.
 
 ## Data notes
 

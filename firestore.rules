@@ -1,0 +1,82 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function ownsUser(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    function validUserDocument(data) {
+      return data.keys().hasOnly([
+          'email', 'displayName', 'role', 'courses', 'historyLog',
+          'markedDates', 'academicCalendar', 'targetPercentage',
+          'createdAt', 'lastUpdated', 'isPro', 'unlockedAt'
+        ])
+        && data.get('email', '') is string
+        && data.get('displayName', '') is string
+        && data.get('role', 'student') in ['student', 'admin', 'pro']
+        && data.get('courses', []) is list
+        && data.get('courses', []).size() <= 100
+        && data.get('historyLog', []) is list
+        && data.get('historyLog', []).size() <= 50
+        && data.get('markedDates', []) is list
+        && data.get('markedDates', []).size() <= 2000
+        && (!('academicCalendar' in data)
+          || data.academicCalendar == null
+          || data.academicCalendar is map)
+        && (!('targetPercentage' in data)
+          || data.targetPercentage == null
+          || (data.targetPercentage is int
+            && data.targetPercentage >= 1
+            && data.targetPercentage <= 100))
+        && (!('createdAt' in data) || data.createdAt is timestamp)
+        && (!('lastUpdated' in data)
+          || (data.lastUpdated is timestamp && data.lastUpdated == request.time))
+        && (!('isPro' in data) || data.isPro is bool)
+        && (!('unlockedAt' in data) || data.unlockedAt is timestamp);
+    }
+
+    match /users/{userId} {
+      allow get: if ownsUser(userId);
+      allow list: if false;
+
+      allow create: if ownsUser(userId)
+        && request.resource.data.keys().hasAll([
+          'email', 'displayName', 'role', 'courses', 'historyLog',
+          'markedDates', 'academicCalendar', 'targetPercentage', 'createdAt'
+        ])
+        && validUserDocument(request.resource.data)
+        && request.resource.data.role == 'student'
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.createdAt == request.time;
+
+      allow update: if ownsUser(userId)
+        && validUserDocument(request.resource.data)
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.get('role', 'student')
+          == resource.data.get('role', 'student')
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'email', 'courses', 'historyLog', 'markedDates',
+          'academicCalendar', 'targetPercentage', 'lastUpdated'
+        ]);
+
+      allow delete: if false;
+    }
+
+    match /shared_timetables/{code} {
+      allow get: if signedIn() && code.matches('TT-[0-9]{4}');
+      allow list: if false;
+      allow create: if signedIn()
+        && code.matches('TT-[0-9]{4}')
+        && request.resource.data.keys().hasOnly(['schedule', 'createdAt'])
+        && request.resource.data.keys().hasAll(['schedule', 'createdAt'])
+        && request.resource.data.schedule is list
+        && request.resource.data.schedule.size() <= 100
+        && request.resource.data.createdAt == request.time;
+      allow update, delete: if false;
+    }
+  }
+}

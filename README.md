@@ -53,17 +53,6 @@ Use Attendance Tracker on mobile or desktop, switch between light and dark theme
 3. Add or edit your weekly timetable, then set the semester start and end dates.
 4. Mark classes as you go. Check the course cards whenever you want a quick progress view.
 
-## Deploy to GitHub Pages
-
-The GitHub Actions workflow deploys the site when code is pushed to `main` or when the workflow is run manually. In the repository, open **Settings → Pages** and choose **GitHub Actions** as the build and deployment source. Firestore rules are deployed separately; GitHub Pages does not publish them.
-
-## Data and security
-
-- Course, timetable, calendar, semester, and attendance data are stored in browser local storage and synced to the signed-in user’s Firestore document when cloud access is configured. A failed cloud write keeps a retryable copy on that device.
-- Event data stays on that device by design.
-- The Firebase Web API key is public client configuration, not an admin credential. Restrict it to the app’s website origins and never commit service account keys, Admin SDK credentials, or other private secrets.
-- `firestore.rules` limits user document access to its owner and protects account roles. To publish the rules with Firebase CLI, run this from the project folder:
-
   ```sh
   firebase deploy --only firestore:rules --project attendance-tracker-2fe63
   ```

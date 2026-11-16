@@ -60,6 +60,75 @@ const CUSTOM_DEFAULT_SCHEDULE_KEY = 'custom_default_timetable_v43';
 const SEMESTER_KEY = 'attendance_active_semester_v1';
 const SEMESTERS_KEY = 'attendance_semester_archive_v1';
 let currentSemester = localStorage.getItem(SEMESTER_KEY) || 'Sem 1';
+let cloudSaveQueue = Promise.resolve();
+let cloudSyncNoticeTimer = null;
+
+function pendingSyncKey(uid) {
+  return `attendance_pending_sync_v1_${uid}`;
+}
+
+function showCloudSyncNotice(message) {
+  let notice = document.getElementById('cloudSyncNotice');
+  if (!notice) {
+    notice = document.createElement('div');
+    notice.id = 'cloudSyncNotice';
+    notice.className = 'cloud-sync-notice';
+    notice.setAttribute('role', 'status');
+    document.body.appendChild(notice);
+  }
+  notice.textContent = message;
+  notice.classList.add('visible');
+  clearTimeout(cloudSyncNoticeTimer);
+  cloudSyncNoticeTimer = setTimeout(() => notice.classList.remove('visible'), 8000);
+}
+
+function applyUserDataToApp(data) {
+  if (Array.isArray(data.courses)) courses = data.courses;
+  if (Array.isArray(data.historyLog)) historyLog = data.historyLog;
+  if (Array.isArray(data.markedDates)) markedDates = data.markedDates;
+  if ('academicCalendar' in data) academicCalendar = data.academicCalendar || null;
+  if ('targetPercentage' in data) targetPercentage = data.targetPercentage || null;
+  if (data.dailyMarks && typeof data.dailyMarks === 'object') {
+    localStorage.setItem('daily_marks_v41', JSON.stringify(data.dailyMarks));
+  }
+  if (data.semesterArchive && typeof data.semesterArchive === 'object') {
+    localStorage.setItem(SEMESTERS_KEY, JSON.stringify(data.semesterArchive));
+  }
+  if (data.currentSemester) {
+    currentSemester = data.currentSemester;
+    localStorage.setItem(SEMESTER_KEY, currentSemester);
+  }
+  if (data.defaultTimetable && typeof data.defaultTimetable === 'object') {
+    localStorage.setItem(CUSTOM_DEFAULT_SCHEDULE_KEY, JSON.stringify(data.defaultTimetable));
+  }
+  if (Array.isArray(data.manualHolidays)) restoreManualHolidayOverrides(data.manualHolidays);
+
+  localStorage.setItem(DB_KEY, JSON.stringify(courses));
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(historyLog));
+  localStorage.setItem(MARKED_DATES_KEY, JSON.stringify(markedDates));
+  if (academicCalendar) localStorage.setItem(CALENDAR_KEY, JSON.stringify(academicCalendar));
+  else localStorage.removeItem(CALENDAR_KEY);
+  if (targetPercentage) localStorage.setItem('target_percentage', targetPercentage);
+  else localStorage.removeItem('target_percentage');
+}
+
+function readDailyMarks() {
+  try { return JSON.parse(localStorage.getItem('daily_marks_v41') || '{}'); }
+  catch { return {}; }
+}
+
+function getManualHolidayOverrides() {
+  return Object.keys(localStorage)
+    .filter(key => key.startsWith('holiday_') && localStorage.getItem(key) === 'true')
+    .map(key => key.slice('holiday_'.length));
+}
+
+function restoreManualHolidayOverrides(dates = []) {
+  Object.keys(localStorage)
+    .filter(key => key.startsWith('holiday_'))
+    .forEach(key => localStorage.removeItem(key));
+  dates.forEach(date => localStorage.setItem(`holiday_${date}`, 'true'));
+}
 
 let currentTab = 'courses';
 let isEditingTimetable = false;
@@ -154,7 +223,7 @@ function snapshotSemester() {
 
 function loadSemester(name) {
   if (name === currentSemester) return;
-  if (!confirmDataChange(`Switch to ${name}`)) return;
+  if (!confirmDataChange(`Switch to ${name}`, true)) return;
   snapshotSemester();
   const archive = JSON.parse(localStorage.getItem(SEMESTERS_KEY) || '{}');
   currentSemester = name;
@@ -168,6 +237,7 @@ function loadSemester(name) {
   localStorage.setItem('daily_marks_v41', JSON.stringify(data.dailyMarks || {}));
   localStorage.setItem(MARKED_DATES_KEY, JSON.stringify(markedDates));
   if (academicCalendar) localStorage.setItem(CALENDAR_KEY, JSON.stringify(academicCalendar)); else localStorage.removeItem(CALENDAR_KEY);
+  saveToDatabase();
   renderUI();
   openSettingsTab('semesters');
 }
@@ -207,18 +277,44 @@ function saveToDatabase() {
   localStorage.setItem(DB_KEY, JSON.stringify(courses));
   localStorage.setItem(HISTORY_KEY, JSON.stringify(historyLog));
   localStorage.setItem(MARKED_DATES_KEY, JSON.stringify(markedDates));
+  localStorage.setItem(SEMESTER_KEY, currentSemester);
   snapshotSemester();
 
   if (currentUser && db) {
-    db.collection('users').doc(currentUser.uid).set({
+    const uid = currentUser.uid;
+    const snapshot = JSON.parse(JSON.stringify({
       email: currentUser.email,
       courses: courses,
       historyLog: historyLog,
       markedDates: markedDates,
       academicCalendar: academicCalendar,
       targetPercentage: targetPercentage,
+      dailyMarks: readDailyMarks(),
+      semesterArchive: JSON.parse(localStorage.getItem(SEMESTERS_KEY) || '{}'),
+      currentSemester: currentSemester,
+      defaultTimetable: JSON.parse(localStorage.getItem(CUSTOM_DEFAULT_SCHEDULE_KEY) || '{}'),
+      manualHolidays: getManualHolidayOverrides()
+    }));
+    const payload = {
+      ...snapshot,
       lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
-    }, { merge: true }).catch(err => console.error("Cloud save failed:", err));
+    };
+    const pendingKey = pendingSyncKey(uid);
+    // Keep a per-account outbox until Firestore confirms the write. If a refresh
+    // happens while offline or rules reject the write, the newest edit survives.
+    localStorage.setItem(pendingKey, JSON.stringify(snapshot));
+    // Serialize writes so rapid attendance taps cannot finish out of order and
+    // replace a newer snapshot with an older one.
+    cloudSaveQueue = cloudSaveQueue.catch(() => {}).then(() =>
+      db.collection('users').doc(uid).set(payload, { merge: true })
+    ).then(() => {
+      if (localStorage.getItem(pendingKey) === JSON.stringify(snapshot)) {
+        localStorage.removeItem(pendingKey);
+      }
+    }).catch(err => {
+      console.error('Cloud save failed:', err);
+      showCloudSyncNotice(`Saved on this device, but cloud sync failed (${err.code || err.message}). Your edit is queued to retry.`);
+    });
   }
 }
 
@@ -283,20 +379,38 @@ async function loadUserDataFromFirestore(uid) {
     const userDocRef = db.collection('users').doc(uid);
     const doc = await userDocRef.get();
 
+    const pendingKey = pendingSyncKey(uid);
+    const pendingData = localStorage.getItem(pendingKey);
+    if (pendingData) {
+      const localChanges = JSON.parse(pendingData);
+      applyUserDataToApp(localChanges);
+      userRole = doc.exists && doc.data().role === 'admin' ? 'admin' : 'student';
+      const retryPayload = doc.exists
+        ? { ...localChanges, lastUpdated: firebase.firestore.FieldValue.serverTimestamp() }
+        : {
+            ...localChanges,
+            displayName: currentUser.displayName || '',
+            role: 'student',
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+          };
+      try {
+        await userDocRef.set(retryPayload, { merge: doc.exists });
+        if (localStorage.getItem(pendingKey) === pendingData) localStorage.removeItem(pendingKey);
+      } catch (err) {
+        console.error('Queued Firestore sync failed:', err);
+        showCloudSyncNotice(`Your saved edits are still on this device. Cloud sync failed (${err.code || err.message}); check Firestore rules and connection.`);
+      }
+      return;
+    }
+
     if (doc.exists) {
       const data = doc.data();
       userRole = data.role === 'admin' ? 'admin' : 'student';
-      if (data.courses) courses = data.courses;
-      if (data.historyLog) historyLog = data.historyLog;
-      if (data.markedDates) markedDates = data.markedDates;
-      if (data.academicCalendar) academicCalendar = data.academicCalendar;
-      if (data.targetPercentage) targetPercentage = data.targetPercentage;
-      
-      localStorage.setItem(DB_KEY, JSON.stringify(courses));
-      localStorage.setItem(HISTORY_KEY, JSON.stringify(historyLog));
-      localStorage.setItem(MARKED_DATES_KEY, JSON.stringify(markedDates));
-      if (academicCalendar) localStorage.setItem(CALENDAR_KEY, JSON.stringify(academicCalendar));
-      if (targetPercentage) localStorage.setItem('target_percentage', targetPercentage);
+      applyUserDataToApp(data);
+      if (data.dailyMarks) {
+        const archive = JSON.parse(localStorage.getItem(SEMESTERS_KEY) || '{}');
+        if (!archive[currentSemester]) snapshotSemester();
+      }
     } else {
       await userDocRef.set({
         email: currentUser.email,
@@ -307,11 +421,17 @@ async function loadUserDataFromFirestore(uid) {
         markedDates: markedDates,
         academicCalendar: academicCalendar,
         targetPercentage: targetPercentage,
+        dailyMarks: readDailyMarks(),
+        semesterArchive: JSON.parse(localStorage.getItem(SEMESTERS_KEY) || '{}'),
+        currentSemester: currentSemester,
+        defaultTimetable: JSON.parse(localStorage.getItem(CUSTOM_DEFAULT_SCHEDULE_KEY) || '{}'),
+        manualHolidays: getManualHolidayOverrides(),
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
       });
     }
   } catch (err) {
     console.error("Firestore sync error:", err);
+    showCloudSyncNotice(`Could not load your cloud data (${err.code || err.message}). This device’s saved data is still available.`);
   }
 }
 
@@ -675,9 +795,10 @@ function isTodayHoliday() {
 function toggleHoliday() {
   if (getTodayString() === 'Sunday') return; 
   const todayStr = getTodayDateString();
-  if (!confirmDataChange('Change today’s holiday status')) return;
+  if (!confirmDataChange('Change today’s holiday status', true)) return;
   if (localStorage.getItem('holiday_' + todayStr) === 'true') localStorage.removeItem('holiday_' + todayStr);
   else localStorage.setItem('holiday_' + todayStr, 'true');
+  saveToDatabase();
   updateHolidayButton(); 
   renderUI(); 
 }
@@ -879,6 +1000,7 @@ function checkAndAutoMarkDay() {
       }
     });
     localStorage.setItem('daily_marks_v41', JSON.stringify(dailyMarks));
+    saveToDatabase();
   }
 }
 
@@ -1679,6 +1801,7 @@ function saveSetupCalendar() {
   }
   academicCalendar = { startDate: setupStartDate, endDate: setupEndDate, holidays: holidays, importantDates: importantDates };
   localStorage.setItem(CALENDAR_KEY, JSON.stringify(academicCalendar));
+  saveToDatabase();
   alert("Calendar Saved Successfully!");
   closeSplitScreen();
   renderUI(); 
@@ -2055,6 +2178,7 @@ function saveTargetPercentage() {
   if (!confirmDataChange(`Save the attendance target as ${newTarget}%`, true)) return;
   targetPercentage = newTarget;
   localStorage.setItem('target_percentage', targetPercentage);
+  saveToDatabase();
   renderUI();
   forceCloseModal();
 }

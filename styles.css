@@ -987,3 +987,54 @@ body.dark-mode .settings-tool-block { background: color-mix(in srgb, var(--card-
 @media (prefers-reduced-motion: reduce) {
   .feature-guide details, .feature-guide summary { scroll-behavior: auto; }
 }
+
+/* Attendance controls use a quiet tint until chosen, then a solid status color. */
+.btn-card-action.btn-present-slot,
+.btn-card-action.btn-absent-slot {
+  border: 1px solid transparent;
+  color: var(--text-main);
+  opacity: 1;
+  box-shadow: none;
+  transform: none;
+}
+.btn-card-action.btn-present-slot { background: #e1f4e8; border-color: #acd9bb; color: #175b32; }
+.btn-card-action.btn-absent-slot { background: #fbe7e5; border-color: #e8b8b2; color: #812a22; }
+.btn-card-action.btn-present-slot:hover { background: #d0ebd9; }
+.btn-card-action.btn-absent-slot:hover { background: #f4d6d2; }
+.btn-card-action.btn-present-slot.selected { background: #176b3a; border-color: #176b3a; color: #fff; }
+.btn-card-action.btn-absent-slot.selected { background: #a83227; border-color: #a83227; color: #fff; }
+.btn-card-action.btn-cancel-slot { color: #fff; }
+.btn-card-action:focus-visible { outline: 3px solid var(--primary-accent); outline-offset: 2px; }
+body.dark-mode .btn-card-action.btn-present-slot { background: #203c2c; border-color: #3c7851; color: #c7f2d3; }
+body.dark-mode .btn-card-action.btn-absent-slot { background: #492d2b; border-color: #89524b; color: #ffd2cd; }
+body.dark-mode .btn-card-action.btn-present-slot:hover { background: #294d37; }
+body.dark-mode .btn-card-action.btn-absent-slot:hover { background: #5a3632; }
+body.dark-mode .btn-card-action.btn-present-slot.selected { background: #176b3a; border-color: #39a765; color: #fff; }
+body.dark-mode .btn-card-action.btn-absent-slot.selected { background: #a83227; border-color: #df6a5f; color: #fff; }
+
+.cloud-sync-notice {
+  position: fixed;
+  z-index: 10050;
+  inset-inline: 16px;
+  bottom: calc(86px + env(safe-area-inset-bottom));
+  width: fit-content;
+  max-width: min(620px, calc(100vw - 32px));
+  margin-inline: auto;
+  padding: 12px 16px;
+  border: 1px solid #d8a259;
+  border-radius: 10px;
+  background: #fff5df;
+  color: #573a0d;
+  font-size: .9rem;
+  line-height: 1.45;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, .18);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(8px);
+  transition: opacity .18s ease, transform .18s ease;
+}
+.cloud-sync-notice.visible { opacity: 1; transform: translateY(0); }
+body.dark-mode .cloud-sync-notice { background: #493819; border-color: #9e7938; color: #fff0c8; }
+@media (prefers-reduced-motion: reduce) {
+  .cloud-sync-notice { transition: none; }
+}

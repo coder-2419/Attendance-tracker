@@ -13,6 +13,8 @@ service cloud.firestore {
       return data.keys().hasOnly([
           'email', 'displayName', 'role', 'courses', 'historyLog',
           'markedDates', 'academicCalendar', 'targetPercentage',
+          'dailyMarks', 'semesterArchive', 'currentSemester',
+          'defaultTimetable', 'manualHolidays',
           'createdAt', 'lastUpdated', 'isPro', 'unlockedAt'
         ])
         && data.get('email', '') is string
@@ -24,6 +26,16 @@ service cloud.firestore {
         && data.get('historyLog', []).size() <= 50
         && data.get('markedDates', []) is list
         && data.get('markedDates', []).size() <= 2000
+        && data.get('dailyMarks', {}) is map
+        && data.get('dailyMarks', {}).keys().size() <= 12000
+        && data.get('semesterArchive', {}) is map
+        && data.get('semesterArchive', {}).keys().size() <= 8
+        && data.get('currentSemester', 'Sem 1') is string
+        && data.get('currentSemester', 'Sem 1').size() <= 40
+        && data.get('defaultTimetable', {}) is map
+        && data.get('defaultTimetable', {}).keys().size() <= 100
+        && data.get('manualHolidays', []) is list
+        && data.get('manualHolidays', []).size() <= 366
         && (!('academicCalendar' in data)
           || data.academicCalendar == null
           || data.academicCalendar is map)
@@ -46,7 +58,9 @@ service cloud.firestore {
       allow create: if ownsUser(userId)
         && request.resource.data.keys().hasAll([
           'email', 'displayName', 'role', 'courses', 'historyLog',
-          'markedDates', 'academicCalendar', 'targetPercentage', 'createdAt'
+          'markedDates', 'academicCalendar', 'targetPercentage', 'dailyMarks',
+          'semesterArchive', 'currentSemester', 'defaultTimetable',
+          'manualHolidays', 'createdAt'
         ])
         && validUserDocument(request.resource.data)
         && request.resource.data.role == 'student'
@@ -60,7 +74,9 @@ service cloud.firestore {
           == resource.data.get('role', 'student')
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'email', 'courses', 'historyLog', 'markedDates',
-          'academicCalendar', 'targetPercentage', 'lastUpdated'
+          'academicCalendar', 'targetPercentage', 'dailyMarks',
+          'semesterArchive', 'currentSemester', 'defaultTimetable',
+          'manualHolidays', 'lastUpdated'
         ]);
 
       allow delete: if false;

@@ -1,57 +1,81 @@
-# Attendance Tracker
+<p align="center"><img src="icon.svg" alt="Attendance Tracker app icon" width="88" height="88" /></p>
+<h1 align="center">Attendance Tracker</h1>
+<p align="center"><strong>Know where you stand. Plan what comes next.</strong></p>
+<p align="center">Keep course attendance, daily classes, semester dates, and important events together—so you can make informed choices all semester long.</p>
+<p align="center"><a href="https://coder-2419.github.io/Attendance-tracker/"><strong>Open Attendance Tracker →</strong></a></p>
 
-A mobile-friendly attendance planner for tracking course attendance, viewing a weekly timetable, planning around target percentages, and organizing semester events.
+---
 
-## Features
+## Your semester, easier to manage
 
-- Course attendance percentages, present/absent counts, target status, and safe bunk or recovery guidance.
-- Daily timetable with per-class attendance marking and automatic absent marking after a class ends.
-- What-If simulator for previewing future classes without changing saved attendance.
-- CSV export and a printable attendance report.
-- Semester calendar with start/end dates, blocked dates before the semester begins, and full-day attendance marks.
-- Events with categories, filters, date sorting, and a horizontally browsable event banner. Events are saved only on the current device.
-- Separate Sem 1–Sem 8 course and attendance archives.
-- Timetable sharing by code with merge and replace options.
-- Local persistence, optional Cloud Firestore sync for signed-in users, and light/dark themes.
+Attendance Tracker turns scattered class records into a simple daily routine: see your progress, mark each class, and understand how your next decision could affect your target.
+
+### 📊 See your attendance clearly
+
+- Track present and absent counts and percentages for every course.
+- Set a target and see your bunk buffer—or how many classes you need to attend to recover.
+- Export your records as **Excel / CSV** or print a clean **attendance report PDF**.
+
+### 🗓️ Stay on top of today
+
+- View your classes in a day-by-day timetable and mark each one **Present**, **Absent**, or **Cancelled**.
+- Unmarked classes are recorded absent after their scheduled end time.
+- Edit your timetable across the week, then choose whether to save it as your default.
+
+### 🔭 Make a plan before you miss a class
+
+Use the **What-If Simulator** to explore future attendance scenarios. Choose a course, adjust classes to attend or miss, and see the projected percentage and target status update instantly. Your experiments never change your saved attendance.
+
+### 📅 Make the semester calendar yours
+
+Set the semester start and end dates once. Dates before the semester starts and future dates are blocked for attendance marking. Mark eligible days present, and use the calendar to spot dates with scheduled events.
+
+### 🎟️ Keep important dates in view
+
+Add exams, assignments, fests, holidays, personal plans, and club events. Filter and sort the list, then swipe through the event banner to see what’s coming up or what just passed.
+
+> Events are stored on the current device and do not sync between devices.
+
+### 🎓 Keep semesters separate
+
+Switch between **Sem 1–Sem 8**, each with its own courses, attendance, calendar, and target. Share a timetable with classmates using a code, then merge it with your schedule or replace your timetable.
+
+### 🌙 Made for everyday use
+
+Use Attendance Tracker on mobile or desktop, switch between light and dark themes, and sign in to access your account data and cloud sync.
+
+---
+
+## Get started
+
+1. [Open the app](https://coder-2419.github.io/Attendance-tracker/) and sign in.
+2. Add your courses and set your attendance target in **Settings**.
+3. Add or edit your weekly timetable, then set the semester start and end dates.
+4. Mark classes as you go. Check the course cards whenever you want a quick progress view.
 
 ## Run locally
 
-Open `index.html` through a local web server. Firebase Web app configuration is defined in `script.js` and is used by both local development and the deployed site.
+Serve the project folder over HTTP, then open the local address in your browser. For example, with Python installed:
+
+```sh
+python -m http.server 5500
+```
+
+Then visit `http://localhost:5500`. Firebase Web configuration is in `script.js`; Firebase Authentication and Firestore rules must allow the local origin for cloud features to work.
 
 ## Deploy to GitHub Pages
 
-The workflow at `.github/workflows/deploy.yml` deploys the repository to GitHub Pages whenever code is pushed to `main` (or when manually run). It does not need Firebase Actions secrets or variables. In **Settings → Pages**, set the build and deployment source to **GitHub Actions**. After a successful workflow run, the deployment summary includes the site URL.
+The GitHub Actions workflow deploys the site when code is pushed to `main` or when the workflow is run manually. In the repository, open **Settings → Pages** and choose **GitHub Actions** as the build and deployment source. Firestore rules are deployed separately; GitHub Pages does not publish them.
 
-## Firebase configuration and security
+## Data and security
 
-The Firebase web `apiKey` identifies the Firebase project; it is not an admin credential and cannot replace Firebase Authentication or Firestore Rules. The Firebase web config in `script.js` is public and readable from the deployed site. Do not put service account JSON, Admin SDK private keys, webhook secrets, or paid third-party API secrets in this frontend or in GitHub Pages build variables.
+- Course, timetable, calendar, semester, and attendance data are stored in browser local storage and synced to the signed-in user’s Firestore document when cloud access is configured. A failed cloud write keeps a retryable copy on that device.
+- Event data stays on that device by design.
+- The Firebase Web API key is public client configuration, not an admin credential. Restrict it to the app’s website origins and never commit service account keys, Admin SDK credentials, or other private secrets.
+- `firestore.rules` limits user document access to its owner and protects account roles. To publish the rules with Firebase CLI, run this from the project folder:
 
-### Restrict the browser API key
+  ```sh
+  firebase deploy --only firestore:rules --project attendance-tracker-2fe63
+  ```
 
-In Google Cloud Console, open **APIs & Services → Credentials**, select the Firebase browser key, and set **Application restrictions → Websites**. Add the production referrer `https://coder-2419.github.io/*` and the exact localhost origin/port used for development (for example `http://localhost:5500/*`). Under **API restrictions**, allow only the Firebase APIs required by this app, including Identity Toolkit, Token Service, Cloud Firestore, and Cloud Datastore. Check the Firebase-provided key's current restrictions before changing them; overly narrow API restrictions can break sign-in or Firestore.
-
-### Publish Firestore rules
-
-`firestore.rules` limits each signed-in user to their own user document, prevents clients from changing the role field, and permits signed-in timetable share-code creation/import. Other collections are denied by default. Publish the rules from the repository root with Firebase CLI after reviewing them:
-
-```sh
-firebase deploy --only firestore:rules
-```
-
-This command updates the live database security policy. The rules are also linked from `firebase.json` for Firebase CLI deployments. GitHub Pages does not publish Firestore rules.
-
-### App Check (optional)
-
-Register the web app in **Firebase Console → App Check** with reCAPTCHA v3, deploy the App Check client integration and monitor valid traffic before enabling enforcement. Keep the reCAPTCHA secret in Firebase Console; a reCAPTCHA site key is public client configuration. Enforcing App Check before a working client is deployed can block app requests.
-
-### Legacy payment webhook secret
-
-The legacy webhook function reads `UPI_WEBHOOK_SECRET` from Firebase Secret Manager. Before deploying that function, set a new value with `firebase functions:secrets:set UPI_WEBHOOK_SECRET`, then deploy with `firebase deploy --only functions:autoVerifyUpiWebhook`. The old in-source placeholder is no longer used. Do not use the same secret that may have appeared in a previous public commit.
-
-### Local keys and Git history
-
-`.env` files are ignored by Git, but GitHub Pages does not read them. Removing a value from the current files does not erase old commits. Since the Firebase web key is public by design, restrict it in Google Cloud Console; if a true private credential was committed, revoke/rotate it and clean repository history separately.
-
-## Data notes
-
-Attendance, course, calendar, semester, and event data use browser local storage. Signed-in attendance data can sync to the app’s Firestore user document. Events remain device-local and are not synced across devices. Clearing browser storage removes local-only data; export or preserve it before clearing browser data.
+Clearing browser storage removes device-local data. Export a report or preserve important information before clearing it.

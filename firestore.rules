@@ -10,16 +10,9 @@ service cloud.firestore {
     }
 
     function validUserDocument(data) {
-      return data.keys().hasOnly([
-          'email', 'displayName', 'role', 'courses', 'historyLog',
-          'markedDates', 'academicCalendar', 'targetPercentage',
-          'dailyMarks', 'semesterArchive', 'currentSemester',
-          'defaultTimetable', 'manualHolidays',
-          'createdAt', 'lastUpdated', 'isPro', 'unlockedAt'
-        ])
-        && data.get('email', '') is string
+      return data.get('email', '') is string
         && data.get('displayName', '') is string
-        && data.get('role', 'student') in ['student', 'admin', 'pro']
+        && data.get('role', 'student') in ['student', 'normal', 'user', 'admin', 'pro']
         && data.get('courses', []) is list
         && data.get('courses', []).size() <= 100
         && data.get('historyLog', []) is list
@@ -46,9 +39,7 @@ service cloud.firestore {
             && data.targetPercentage <= 100))
         && (!('createdAt' in data) || data.createdAt is timestamp)
         && (!('lastUpdated' in data)
-          || (data.lastUpdated is timestamp && data.lastUpdated == request.time))
-        && (!('isPro' in data) || data.isPro is bool)
-        && (!('unlockedAt' in data) || data.unlockedAt is timestamp);
+          || (data.lastUpdated is timestamp && data.lastUpdated == request.time));
     }
 
     match /users/{userId} {
@@ -56,6 +47,12 @@ service cloud.firestore {
       allow list: if false;
 
       allow create: if ownsUser(userId)
+        && request.resource.data.keys().hasOnly([
+          'email', 'displayName', 'role', 'courses', 'historyLog',
+          'markedDates', 'academicCalendar', 'targetPercentage', 'dailyMarks',
+          'semesterArchive', 'currentSemester', 'defaultTimetable',
+          'manualHolidays', 'createdAt'
+        ])
         && request.resource.data.keys().hasAll([
           'email', 'displayName', 'role', 'courses', 'historyLog',
           'markedDates', 'academicCalendar', 'targetPercentage', 'dailyMarks',

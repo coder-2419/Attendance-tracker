@@ -923,7 +923,6 @@ function toggleSlotAttendance(courseId, slotStart, clickedStatus) {
   const currentStatus = dailyMarks[slotKey];
   const course = courses.find(c => c.id === courseId);
   if (!course) return;
-  if (!confirmDataChange(`Mark ${course.name} ${clickedStatus === 'present' ? 'present' : clickedStatus === 'absent' ? 'absent' : 'cancelled'} for today`, true)) return;
   
   if (currentStatus === clickedStatus) {
     if (clickedStatus !== 'cancelled') return;
@@ -1362,7 +1361,6 @@ function printAdvisorReport() {
 function markAttendance(id, status) {
   const course = courses.find(c => c.id === id);
   if (!course) return;
-  if (!confirmDataChange(`Record one ${status} class for ${course.name}`, true)) return;
   if (status === 'present') course.present = (course.present || 0) + 1;
   if (status === 'absent') course.absent = (course.absent || 0) + 1;
   addHistory(`Manual ${status.toUpperCase()}: ${course.name}`);
@@ -1839,7 +1837,6 @@ function toggleFullDayPresent(dateString) {
   }
 
   const isAlreadyMarked = markedDates.includes(dateString);
-  if (!confirmDataChange(`${isAlreadyMarked ? 'Remove the present mark from' : 'Mark'} ${dateString} ${isAlreadyMarked ? '' : 'present'}`.trim(), true)) return;
   if (isAlreadyMarked) {
     markedDates = markedDates.filter(d => d !== dateString);
     addHistory(`Unmarked Day: ${dateString}`);

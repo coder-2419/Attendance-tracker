@@ -53,16 +53,6 @@ Use Attendance Tracker on mobile or desktop, switch between light and dark theme
 3. Add or edit your weekly timetable, then set the semester start and end dates.
 4. Mark classes as you go. Check the course cards whenever you want a quick progress view.
 
-## Run locally
-
-Serve the project folder over HTTP, then open the local address in your browser. For example, with Python installed:
-
-```sh
-python -m http.server 5500
-```
-
-Then visit `http://localhost:5500`. Firebase Web configuration is in `script.js`; Firebase Authentication and Firestore rules must allow the local origin for cloud features to work.
-
 ## Deploy to GitHub Pages
 
 The GitHub Actions workflow deploys the site when code is pushed to `main` or when the workflow is run manually. In the repository, open **Settings → Pages** and choose **GitHub Actions** as the build and deployment source. Firestore rules are deployed separately; GitHub Pages does not publish them.

@@ -15,7 +15,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 
-  <link rel="stylesheet" href="styles.css?v=60">
+  <link rel="stylesheet" href="styles.css?v=62">
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#ffffff">
 </head>
@@ -81,6 +81,9 @@
   <div class="modal-overlay" id="modalOverlay" onclick="closeModal(event)">
     <div class="modal-content" id="modalContent" onclick="event.stopPropagation()"></div>
   </div>
+
+  <!-- Branded replacement for browser-native alerts and confirms -->
+  <div class="app-prompt-overlay" id="appPromptOverlay" aria-hidden="true"></div>
 
   <!-- Clock Picker Modal -->
   <div class="modal-overlay" id="clockModalOverlay">
@@ -171,6 +174,6 @@
     </button>
   </nav>
 
-  <script src="script.js?v=61"></script>
+  <script src="script.js?v=64"></script>
 </body>
 </html>

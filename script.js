@@ -151,11 +151,128 @@ let eventStatusFilter = 'All';
 let eventCategoryFilter = 'All';
 let eventSortOrder = 'asc';
 
-function confirmDataChange(action, syncsToCloud = false) {
+let appPromptQueue = [];
+let activeAppPrompt = null;
+let activePromptReturnFocus = null;
+
+function showAppPrompt(options = {}) {
+  return new Promise(resolve => {
+    appPromptQueue.push({ options, resolve });
+    renderNextAppPrompt();
+  });
+}
+
+function showAppAlert(message, title = 'Notice') {
+  return showAppPrompt({
+    kind: 'alert',
+    title,
+    message: String(message ?? ''),
+    confirmText: 'Got it',
+    cancelText: ''
+  });
+}
+
+function renderNextAppPrompt() {
+  if (activeAppPrompt || !appPromptQueue.length) return;
+  const entry = appPromptQueue.shift();
+  const { options, resolve } = entry;
+  const overlay = document.getElementById('appPromptOverlay');
+  if (!overlay) {
+    resolve(false);
+    return;
+  }
+
+  activeAppPrompt = { resolve, options };
+  activePromptReturnFocus = document.activeElement;
+  const isAlert = options.kind === 'alert';
+  const icon = options.icon || (options.tone === 'danger'
+    ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2.8 19h18.4L12 3Z"/><path d="M12 9v4m0 3h.01"/></svg>'
+    : isAlert
+      ? '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></svg>'
+      : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Z"/><path d="M12 11v5m0-8h.01"/></svg>');
+  const title = options.title || (isAlert ? 'Notice' : 'Confirm this change');
+  const confirmText = options.confirmText || (isAlert ? 'Got it' : 'Continue');
+  const cancelText = options.cancelText === undefined ? 'Cancel' : options.cancelText;
+
+  overlay.innerHTML = `
+    <section class="app-prompt-card ${options.tone === 'danger' ? 'is-danger' : ''}"
+      role="alertdialog" aria-modal="true" aria-labelledby="appPromptTitle"
+      aria-describedby="appPromptMessage" tabindex="-1">
+      <div class="app-prompt-icon" aria-hidden="true">${icon}</div>
+      <h2 id="appPromptTitle">${escapeEventText(title)}</h2>
+      <p id="appPromptMessage">${escapeEventText(options.message || '')}</p>
+      <div class="app-prompt-actions">
+        ${cancelText ? `<button type="button" class="app-prompt-secondary" data-prompt-cancel>${escapeEventText(cancelText)}</button>` : ''}
+        <button type="button" class="app-prompt-primary" data-prompt-confirm>${escapeEventText(confirmText)}</button>
+      </div>
+    </section>`;
+  overlay.classList.add('active');
+  overlay.setAttribute('aria-hidden', 'false');
+  document.body.classList.add('scroll-locked');
+  overlay.onclick = event => {
+    if (event.target === overlay) closeAppPrompt(isAlert);
+  };
+  overlay.querySelector('[data-prompt-cancel]')?.addEventListener('click', () => closeAppPrompt(false));
+  overlay.querySelector('[data-prompt-confirm]')?.addEventListener('click', () => closeAppPrompt(true));
+  overlay.onkeydown = event => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeAppPrompt(isAlert);
+      return;
+    }
+    if (event.key !== 'Tab') return;
+    const controls = [...overlay.querySelectorAll('button:not([disabled])')];
+    if (!controls.length) return;
+    if (event.shiftKey && document.activeElement === controls[0]) {
+      event.preventDefault(); controls[controls.length - 1].focus();
+    } else if (!event.shiftKey && document.activeElement === controls[controls.length - 1]) {
+      event.preventDefault(); controls[0].focus();
+    }
+  };
+  const initialFocus = options.tone === 'danger' && cancelText
+    ? overlay.querySelector('[data-prompt-cancel]')
+    : overlay.querySelector('[data-prompt-confirm]');
+  initialFocus?.focus();
+}
+
+function closeAppPrompt(result) {
+  if (!activeAppPrompt) return;
+  const { resolve } = activeAppPrompt;
+  const overlay = document.getElementById('appPromptOverlay');
+  activeAppPrompt = null;
+  if (overlay) {
+    overlay.classList.remove('active');
+    overlay.setAttribute('aria-hidden', 'true');
+    overlay.innerHTML = '';
+    overlay.onclick = null;
+    overlay.onkeydown = null;
+  }
+  const otherOverlayOpen = ['modalOverlay', 'clockModalOverlay', 'settingsOverlay', 'splitScreenOverlay']
+    .some(id => document.getElementById(id)?.classList.contains('active'));
+  if (!otherOverlayOpen) document.body.classList.remove('scroll-locked');
+  resolve(result);
+  if (activePromptReturnFocus?.isConnected) activePromptReturnFocus.focus();
+  activePromptReturnFocus = null;
+  queueMicrotask(renderNextAppPrompt);
+}
+
+// Route any remaining legacy alert() call sites through the same in-app surface.
+window.alert = message => showAppAlert(message);
+
+async function confirmDataChange(action, syncsToCloud = false) {
   const destination = syncsToCloud && currentUser
-    ? ' This change will be saved on this device and synced to your account.'
-    : ' This change will be saved on this device.';
-  return window.confirm(`Data change disclaimer: ${action}.${destination} Continue?`);
+    ? 'This will be saved on this device and synced to your account.'
+    : 'This will be saved on this device.';
+  const isDestructive = /delete|remove|reset|clear/i.test(action);
+  const confirmText = /delete/i.test(action) ? 'Delete' : /remove/i.test(action) ? 'Remove' : isDestructive ? 'Reset' : 'Continue';
+  return showAppPrompt({
+    kind: 'confirm',
+    title: 'Confirm this change',
+    message: `${action}. ${destination}`,
+    confirmText,
+    cancelText: 'Cancel',
+    tone: isDestructive ? 'danger' : 'neutral'
+  });
 }
 
 function getTodayString() {
@@ -221,9 +338,9 @@ function snapshotSemester() {
   localStorage.setItem(SEMESTERS_KEY, JSON.stringify(archive));
 }
 
-function loadSemester(name) {
+async function loadSemester(name) {
   if (name === currentSemester) return;
-  if (!confirmDataChange(`Switch to ${name}`, true)) return;
+  if (!(await confirmDataChange(`Switch to ${name}`, true))) return;
   snapshotSemester();
   const archive = JSON.parse(localStorage.getItem(SEMESTERS_KEY) || '{}');
   currentSemester = name;
@@ -244,7 +361,7 @@ function loadSemester(name) {
 
 async function createTimetableShare() {
   if (!db) return alert('Cloud connection is unavailable.');
-  if (!confirmDataChange('Create a share code that publishes your timetable to Cloud Firestore', true)) return;
+  if (!(await confirmDataChange('Create a share code that publishes your timetable to Cloud Firestore', true))) return;
   const code = `TT-${Math.floor(1000 + Math.random() * 9000)}`;
   const schedule = courses.map(({name,code:courseCode,schedule})=>({name,code:courseCode || '',schedule:schedule || {}}));
   try { await db.collection('shared_timetables').doc(code).set({schedule,createdAt:firebase.firestore.FieldValue.serverTimestamp()}); document.getElementById('timetableShareCode').textContent=code; }
@@ -259,7 +376,7 @@ async function importTimetable(mode) {
     const doc = await db.collection('shared_timetables').doc(code).get();
     if (!doc.exists) return alert('Timetable code not found.');
     const incoming = doc.data().schedule || [];
-    if (!confirmDataChange(`${mode === 'merge' ? 'Merge' : 'Replace'} your timetable using the shared schedule`, true)) return;
+    if (!(await confirmDataChange(`${mode === 'merge' ? 'Merge' : 'Replace'} your timetable using the shared schedule`, true))) return;
     if (mode === 'replace') courses = [];
     incoming.forEach(item => {
       let course = mode === 'merge' && courses.find(c => c.name.toLowerCase() === item.name.toLowerCase());
@@ -606,34 +723,24 @@ function confirmClockTime() {
 // 7. TIMETABLE EDITING & POPUPS
 // ==========================================
 function showVirtualPopup({ icon = '📋', title, message, confirmText = '✓ Save', cancelText = '✖ No', onConfirm, onCancel }) {
-  const modalOverlay = document.getElementById('modalOverlay');
-  const modalContent = document.getElementById('modalContent');
-  modalContent.className = 'modal-content';
-  modalOverlay.classList.add('active');
-  document.body.classList.add('scroll-locked');
-  
-  modalContent.innerHTML = `
-    <div class="vpopup-container">
-      <div class="vpopup-icon">${icon}</div>
-      <h3 class="vpopup-title">${title}</h3>
-      <p class="vpopup-msg">${message}</p>
-      <div class="vpopup-actions">
-        ${cancelText ? `<button id="vpopupCancel" class="vpopup-btn vpopup-btn-cancel">${cancelText}</button>` : ''}
-        <button id="vpopupConfirm" class="vpopup-btn vpopup-btn-confirm">${confirmText}</button>
-      </div>
-    </div>
-  `;
-  
-  if (cancelText) {
-    document.getElementById('vpopupCancel').onclick = () => {
-      forceCloseModal();
-      if (onCancel) onCancel();
-    };
-  }
-  document.getElementById('vpopupConfirm').onclick = () => {
-    forceCloseModal();
-    if (onConfirm) onConfirm();
-  };
+  const isDanger = /reset|clear|delete/i.test(title);
+  const iconMarkup = isDanger
+    ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2.8 19h18.4L12 3Z"/><path d="M12 9v4m0 3h.01"/></svg>'
+    : /default/i.test(title)
+      ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v15H4zM8 3v4m8-4v4M4 10h16"/><path d="m9 15 2 2 4-4"/></svg>'
+      : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h11l4 4v14H5zM8 3v6h9V3M8 21v-8h9v8"/></svg>';
+  showAppPrompt({
+    kind: 'confirm',
+    icon: iconMarkup,
+    title,
+    message: message.replace(/<\/?b>/g, ''),
+    confirmText,
+    cancelText: cancelText || 'Cancel',
+    tone: isDanger ? 'danger' : 'neutral'
+  }).then(accepted => {
+    if (accepted) onConfirm?.();
+    else onCancel?.();
+  });
 }
 
 function toggleTimetableEdit() {
@@ -652,16 +759,16 @@ function toggleTimetableEdit() {
       icon: '💾',
       title: 'Save Timetable Changes?',
       message: `Disclaimer: Saving will update the timetable on this device${currentUser ? ' and sync it to your account' : ''}. Do you want to continue?`,
-      confirmText: '✓ Save',
-      cancelText: '✖ No',
+      confirmText: 'Save changes',
+      cancelText: 'Cancel',
       onConfirm: () => {
         setTimeout(() => {
           showVirtualPopup({
             icon: '⚙️',
             title: 'Update Default Timetable?',
             message: `Do you also want to save this as the <b>default timetable</b>? (This will be restored if you click "Reset Default Timetable").`,
-            confirmText: '✓ Save',
-            cancelText: '✖ No',
+            confirmText: 'Save as default',
+            cancelText: 'No thanks',
             onConfirm: () => saveInlineTimetable(true),
             onCancel: () => saveInlineTimetable(false)
           });
@@ -744,8 +851,8 @@ function resetToDefaultTimetable() {
     icon: '⚠️',
     title: 'Reset Default Timetable?',
     message: `Disclaimer: This will clear your attendance logs and restore the default timetable on this device${currentUser ? ' and sync the changes to your account' : ''}. Continue?`,
-    confirmText: '✓ Save',
-    cancelText: '✖ No',
+    confirmText: 'Reset timetable',
+    cancelText: 'Cancel',
     onConfirm: () => {
       courses = buildInitialDatabase();
       markedDates = [];
@@ -792,10 +899,10 @@ function isTodayHoliday() {
   return manualHoliday || calendarHoliday; 
 }
 
-function toggleHoliday() {
+async function toggleHoliday() {
   if (getTodayString() === 'Sunday') return; 
   const todayStr = getTodayDateString();
-  if (!confirmDataChange('Change today’s holiday status', true)) return;
+  if (!(await confirmDataChange('Change today’s holiday status', true))) return;
   if (localStorage.getItem('holiday_' + todayStr) === 'true') localStorage.removeItem('holiday_' + todayStr);
   else localStorage.setItem('holiday_' + todayStr, 'true');
   saveToDatabase();
@@ -1082,23 +1189,23 @@ function escapeEventAttribute(value) {
   return escapeEventText(value).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
-function addEvent(event) {
+async function addEvent(event) {
   event.preventDefault();
   const title = document.getElementById('eventTitle').value.trim();
   const date = document.getElementById('eventDate').value;
   const category = document.getElementById('eventCategory').value;
   if (!title || !date) return;
-  if (!confirmDataChange(`Add the event “${title}”`)) return;
+  if (!(await confirmDataChange(`Add the event “${title}”`))) return;
   events.push({ id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, title, date, category });
   localStorage.setItem(EVENTS_KEY, JSON.stringify(events));
   addHistory(`Created event: ${title} (${date}, ${category})`);
   renderEvents();
 }
 
-function deleteEvent(id) {
+async function deleteEvent(id) {
   const item = events.find(event => event.id === id);
   if (!item) return;
-  if (!confirmDataChange(`Delete the event “${item.title}”`)) return;
+  if (!(await confirmDataChange(`Delete the event “${item.title}”`))) return;
   events = events.filter(event => event.id !== id);
   localStorage.setItem(EVENTS_KEY, JSON.stringify(events));
   addHistory(`Deleted event: ${item.title} (${item.date})`);
@@ -1114,6 +1221,9 @@ function changeDay(dayName) {
 
 function renderUI() {
   if (!currentUser) return;
+  // Mobile virtual keyboards resize the viewport. Do not rebuild the editor
+  // while a timetable field is focused or the browser drops that input focus.
+  if (isEditingTimetable && document.activeElement?.matches('input, textarea, select, [contenteditable="true"]')) return;
   finalizeMissedClasses();
   const ttSection = document.getElementById('timetableSection');
   const courseSection = document.getElementById('courseList');
@@ -1682,7 +1792,7 @@ function attachSetupImageZoom(wrapper) {
   }, { passive: false });
 }
 
-function startCalendarSetup() {
+async function startCalendarSetup() {
   const fileInput = document.getElementById('calFileInput');
   setupStartDate = document.getElementById('termStart').value;
   setupEndDate = document.getElementById('termEnd').value;
@@ -1695,7 +1805,7 @@ function startCalendarSetup() {
   }
 
   if (!fileInput.files.length) {
-    if (!confirmDataChange('Save the semester start and end dates', true)) return;
+    if (!(await confirmDataChange('Save the semester start and end dates', true))) return;
     if (document.getElementById('settingsOverlay')?.classList.contains('active')) toggleSettings(false);
     academicCalendar = {
       ...(academicCalendar || {}),
@@ -1789,8 +1899,8 @@ function cyclePaintMode(dateStr, element) {
   }
 }
 
-function saveSetupCalendar() {
-  if (!confirmDataChange('Save the semester dates and calendar markings', true)) return;
+async function saveSetupCalendar() {
+  if (!(await confirmDataChange('Save the semester dates and calendar markings', true))) return;
   let holidays = [];
   let importantDates = [];
   for (const [date, type] of Object.entries(setupTempData)) {
@@ -1824,7 +1934,7 @@ function changeCalendarMonth(dir) {
   openModal('calendarMode');
 }
 
-function toggleFullDayPresent(dateString) {
+async function toggleFullDayPresent(dateString) {
   if (!academicCalendar || !academicCalendar.startDate) {
     alert("Please sync your Academic Calendar first to set the term start date."); return;
   }
@@ -2135,14 +2245,14 @@ function syncEditFields(source) {
   }
 }
 
-function saveSingleCourseAttendance() {
+async function saveSingleCourseAttendance() {
   const select = document.getElementById('editCourseSelect');
   const course = courses.find(c => String(c.id) === select.value);
   if (!course) return;
   let p = parseInt(document.getElementById('editPresent').value, 10) || 0;
   let t = parseInt(document.getElementById('editTotal').value, 10) || 0;
   if (p > t) t = p;
-  if (!confirmDataChange(`Save attendance changes for ${course.name} (present: ${p}, total: ${t})`, true)) return;
+  if (!(await confirmDataChange(`Save attendance changes for ${course.name} (present: ${p}, total: ${t})`, true))) return;
   const baseStats = getCalculatedAttendance();
   course.present = p - (baseStats[course.id]?.p || 0);
   course.absent = (t - p) - (baseStats[course.id]?.a || 0);
@@ -2152,14 +2262,14 @@ function saveSingleCourseAttendance() {
   forceCloseModal();
 }
 
-function handleAddCourse() {
+async function handleAddCourse() {
   const name = document.getElementById('newCourseName').value.trim();
   const code = document.getElementById('newCourseCode').value.trim();
   const day = document.getElementById('newCourseDay').value;
   const start = document.getElementById('newCourseStart').value;
   const end = document.getElementById('newCourseEnd').value;
   if (!name) return alert("Please enter a course name.");
-  if (!confirmDataChange(`Add the course “${name}”`, true)) return;
+  if (!(await confirmDataChange(`Add the course “${name}”`, true))) return;
   let schedule = {};
   if (start && end) schedule[day] = [{ start: start, end: end }];
   courses.push({ id: Date.now(), name: name, code: code || 'CUSTOM', present: 0, absent: 0, schedule: schedule });
@@ -2169,10 +2279,10 @@ function handleAddCourse() {
   forceCloseModal();
 }
 
-function saveTargetPercentage() {
+async function saveTargetPercentage() {
   const newTarget = parseInt(document.getElementById('targetInput').value, 10);
   if (isNaN(newTarget) || newTarget < 1 || newTarget > 100) return alert("Enter valid % (1-100)");
-  if (!confirmDataChange(`Save the attendance target as ${newTarget}%`, true)) return;
+  if (!(await confirmDataChange(`Save the attendance target as ${newTarget}%`, true))) return;
   targetPercentage = newTarget;
   localStorage.setItem('target_percentage', targetPercentage);
   saveToDatabase();
@@ -2180,10 +2290,10 @@ function saveTargetPercentage() {
   forceCloseModal();
 }
 
-function removeCourseById(id) {
+async function removeCourseById(id) {
   const course = courses.find(c => c.id === id);
   if (!course) return;
-  if (confirmDataChange(`Remove the course “${course.name}”`, true)) {
+  if (await confirmDataChange(`Remove the course “${course.name}”`, true)) {
     courses = courses.filter(c => c.id !== id);
     addHistory(`Removed Course: ${course.name}`);
     saveToDatabase(); 
@@ -2217,7 +2327,13 @@ async function loginWithEmail() {
     alert("Signed in successfully!");
   } catch (error) {
     if (error.code === 'auth/user-not-found') {
-      if (confirm("Account not found. Create a new account with this email?")) {
+      if (await showAppPrompt({
+        kind: 'confirm',
+        title: 'Create an account?',
+        message: 'No account was found for this email. Create one now?',
+        confirmText: 'Create account',
+        cancelText: 'Cancel'
+      })) {
         registerWithEmail(email, pass);
       }
     } else {
@@ -2257,7 +2373,12 @@ renderUI();
 let dashboardResizeTimer;
 window.addEventListener('resize', () => {
   clearTimeout(dashboardResizeTimer);
-  dashboardResizeTimer = setTimeout(renderUI, 120);
+  dashboardResizeTimer = setTimeout(() => {
+    if (isEditingTimetable) return;
+    const active = document.activeElement;
+    if (active?.matches('input, textarea, select, [contenteditable="true"]')) return;
+    renderUI();
+  }, 120);
 }, { passive: true });
 // Refresh the live timetable periodically without interrupting timetable edits.
 setInterval(() => {

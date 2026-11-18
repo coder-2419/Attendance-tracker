@@ -1011,6 +1011,17 @@ body.dark-mode .btn-card-action.btn-present-slot:hover { background: #294d37; }
 body.dark-mode .btn-card-action.btn-absent-slot:hover { background: #5a3632; }
 body.dark-mode .btn-card-action.btn-present-slot.selected { background: #176b3a; border-color: #39a765; color: #fff; }
 body.dark-mode .btn-card-action.btn-absent-slot.selected { background: #a83227; border-color: #df6a5f; color: #fff; }
+.timetable-bulk-action { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; padding: 2px 0 4px; }
+.timetable-bulk-action span { color: var(--text-sub); font-size: .9rem; font-weight: 700; }
+.timetable-bulk-action button { min-height: 44px; padding: 9px 15px; border: 1px solid #176b3a; border-radius: 10px; background: #176b3a; color: #fff; font: inherit; font-weight: 800; cursor: pointer; }
+.timetable-bulk-action button:hover:not(:disabled) { background: #12572f; }
+.timetable-bulk-action button:focus-visible { outline: 3px solid var(--primary-accent); outline-offset: 2px; }
+.timetable-bulk-action button:disabled { border-color: #a7cfb3; background: #e1f4e8; color: #175b32; cursor: default; }
+body.dark-mode .timetable-bulk-action button:disabled { border-color: #3c7851; background: #203c2c; color: #c7f2d3; }
+@media (max-width: 480px) {
+  .timetable-bulk-action { align-items: stretch; flex-direction: column; }
+  .timetable-bulk-action button { width: 100%; }
+}
 
 .cloud-sync-notice {
   position: fixed;

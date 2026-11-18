@@ -1057,6 +1057,24 @@ function finalizeMissedClasses() {
   if (todayName === 'Sunday' || isTodayHoliday()) return;
 
   const dailyMarks = JSON.parse(localStorage.getItem('daily_marks_v41')) || {};
+  if (markedDates.includes(todayStr)) {
+    let repairedMarks = false;
+    courses.forEach(course => {
+      (course.schedule && course.schedule[todayName] || []).forEach(slot => {
+        const slotKey = `${todayStr}_${course.id}_${slot.start}`;
+        if (!dailyMarks[slotKey]) {
+          dailyMarks[slotKey] = 'present';
+          repairedMarks = true;
+        }
+      });
+    });
+    if (repairedMarks) {
+      localStorage.setItem('daily_marks_v41', JSON.stringify(dailyMarks));
+      saveToDatabase();
+    }
+    return;
+  }
+
   let changed = false;
   courses.forEach(course => {
     (course.schedule && course.schedule[todayName] || []).forEach(slot => {
@@ -1097,17 +1115,27 @@ function checkAndAutoMarkDay() {
     markedDates.push(todayStr); 
     addHistory(`All classes attended! Auto-marked calendar for ${todayStr}.`);
     localStorage.setItem(MARKED_DATES_KEY, JSON.stringify(markedDates));
-    
-    courses.forEach(c => {
-      if (c.schedule && c.schedule[todayName]) {
-        c.schedule[todayName].forEach(slot => {
-          delete dailyMarks[`${todayStr}_${c.id}_${slot.start}`];
-        });
-      }
-    });
-    localStorage.setItem('daily_marks_v41', JSON.stringify(dailyMarks));
     saveToDatabase();
   }
+}
+
+function markAllClassesPresent() {
+  const todayName = getTodayString();
+  if (currentSelectedDay !== todayName || todayName === 'Sunday' || isTodayHoliday()) return;
+  const todayStr = getTodayDateString();
+  const scheduledClasses = courses.flatMap(course =>
+    (course.schedule && course.schedule[todayName] || []).map(slot => ({ course, slot }))
+  );
+  if (!scheduledClasses.length) return;
+
+  const dailyMarks = JSON.parse(localStorage.getItem('daily_marks_v41')) || {};
+  scheduledClasses.forEach(({ course, slot }) => {
+    dailyMarks[`${todayStr}_${course.id}_${slot.start}`] = 'present';
+  });
+  localStorage.setItem('daily_marks_v41', JSON.stringify(dailyMarks));
+  checkAndAutoMarkDay();
+  saveToDatabase();
+  renderUI();
 }
 
 // ==========================================
@@ -1302,6 +1330,12 @@ function renderUI() {
         } else {
           todaysClasses.sort((a, b) => a.start.localeCompare(b.start));
           let html = '';
+          if (isToday) {
+            const dailyMarks = JSON.parse(localStorage.getItem('daily_marks_v41')) || {};
+            const presentCount = todaysClasses.filter(cls => dailyMarks[`${getTodayDateString()}_${cls.id}_${cls.start}`] === 'present').length;
+            const allClassesPresent = presentCount === todaysClasses.length;
+            html += `<div class="timetable-bulk-action"><span>${presentCount} of ${todaysClasses.length} classes marked present</span><button type="button" onclick="markAllClassesPresent()" ${allClassesPresent ? 'disabled' : ''}>${allClassesPresent ? 'All present ✓' : '✓ Mark all present'}</button></div>`;
+          }
 
           todaysClasses.forEach(cls => {
             let status = '';

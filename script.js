@@ -102,6 +102,10 @@ function applyUserDataToApp(data) {
     localStorage.setItem(CUSTOM_DEFAULT_SCHEDULE_KEY, JSON.stringify(data.defaultTimetable));
   }
   if (Array.isArray(data.manualHolidays)) restoreManualHolidayOverrides(data.manualHolidays);
+  if (Array.isArray(data.events)) {
+    events = data.events;
+    localStorage.setItem(EVENTS_KEY, JSON.stringify(events));
+  }
 
   localStorage.setItem(DB_KEY, JSON.stringify(courses));
   localStorage.setItem(HISTORY_KEY, JSON.stringify(historyLog));
@@ -283,9 +287,17 @@ function getTodayString() {
 let currentSelectedDay = getTodayString();
 let currentCalDate = new Date(); 
 
+function updateThemeColorMeta(isDark) {
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) {
+    meta.setAttribute('content', isDark ? '#0b111e' : '#f3f6fa');
+  }
+}
+
 if (localStorage.getItem('darkMode') === 'true') {
   document.body.classList.add('dark-mode');
   document.querySelectorAll('.theme-toggle-wrapper[aria-pressed]').forEach(toggle => toggle.setAttribute('aria-pressed', 'true'));
+  updateThemeColorMeta(true);
 }
 
 function toggleDarkMode() {
@@ -293,6 +305,7 @@ function toggleDarkMode() {
   const isDark = document.body.classList.contains('dark-mode');
   localStorage.setItem('darkMode', isDark);
   document.querySelectorAll('.theme-toggle-wrapper[aria-pressed]').forEach(toggle => toggle.setAttribute('aria-pressed', String(isDark)));
+  updateThemeColorMeta(isDark);
 }
 
 function getTodayDateString() {
@@ -394,6 +407,7 @@ function saveToDatabase() {
   localStorage.setItem(DB_KEY, JSON.stringify(courses));
   localStorage.setItem(HISTORY_KEY, JSON.stringify(historyLog));
   localStorage.setItem(MARKED_DATES_KEY, JSON.stringify(markedDates));
+  localStorage.setItem(EVENTS_KEY, JSON.stringify(events));
   localStorage.setItem(SEMESTER_KEY, currentSemester);
   snapshotSemester();
 
@@ -410,7 +424,8 @@ function saveToDatabase() {
       semesterArchive: JSON.parse(localStorage.getItem(SEMESTERS_KEY) || '{}'),
       currentSemester: currentSemester,
       defaultTimetable: JSON.parse(localStorage.getItem(CUSTOM_DEFAULT_SCHEDULE_KEY) || '{}'),
-      manualHolidays: getManualHolidayOverrides()
+      manualHolidays: getManualHolidayOverrides(),
+      events: events
     }));
     const payload = {
       ...snapshot,
@@ -486,6 +501,10 @@ function listenToUserDocRealtime(uid) {
     if (doc.exists) {
       const data = doc.data();
       userRole = data.role === 'admin' ? 'admin' : 'student';
+      if (!doc.metadata.hasPendingWrites && !localStorage.getItem(pendingSyncKey(uid))) {
+        applyUserDataToApp(data);
+        renderUI();
+      }
     }
   });
 }
@@ -543,6 +562,7 @@ async function loadUserDataFromFirestore(uid) {
         currentSemester: currentSemester,
         defaultTimetable: JSON.parse(localStorage.getItem(CUSTOM_DEFAULT_SCHEDULE_KEY) || '{}'),
         manualHolidays: getManualHolidayOverrides(),
+        events: events,
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
       });
     }
@@ -1223,21 +1243,23 @@ async function addEvent(event) {
   const date = document.getElementById('eventDate').value;
   const category = document.getElementById('eventCategory').value;
   if (!title || !date) return;
-  if (!(await confirmDataChange(`Add the event “${title}”`))) return;
+  if (!(await confirmDataChange(`Add the event “${title}”`, true))) return;
   events.push({ id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, title, date, category });
   localStorage.setItem(EVENTS_KEY, JSON.stringify(events));
   addHistory(`Created event: ${title} (${date}, ${category})`);
   renderEvents();
+  renderUI();
 }
 
 async function deleteEvent(id) {
   const item = events.find(event => event.id === id);
   if (!item) return;
-  if (!(await confirmDataChange(`Delete the event “${item.title}”`))) return;
+  if (!(await confirmDataChange(`Delete the event “${item.title}”`, true))) return;
   events = events.filter(event => event.id !== id);
   localStorage.setItem(EVENTS_KEY, JSON.stringify(events));
   addHistory(`Deleted event: ${item.title} (${item.date})`);
   renderEvents();
+  renderUI();
 }
 
 function changeDay(dayName) { 
@@ -2126,10 +2148,10 @@ function openModal(type) {
         <details><summary>🗓️ Timetable and marking a class</summary><p>Choose a day to view that day’s classes. Use <b>Present</b>, <b>Absent</b>, or <b>Cancelled</b> on a class. If a class passes without a mark, it is automatically recorded absent when its end time passes.</p><div class="guide-demo" aria-label="Example timetable class"><span class="guide-demo-label">TODAY · 10:00 AM</span><div class="guide-demo-row"><span class="guide-demo-course">⚛️ Physics</span><button type="button" class="guide-demo-button demo-present" tabindex="-1">✓ Present</button><button type="button" class="guide-demo-button demo-absent" tabindex="-1">✕ Absent</button></div></div><p>Tap ✏️ to edit the timetable across days. Set start and end times, add or remove class rows, then save. The follow-up asks whether to make the saved schedule your default.</p></details>
         <details><summary>🎯 Target and attendance editing</summary><p>In Settings, <b>Target Attendance</b> sets your goal percentage. Course cards then show how many classes you can safely miss or how many consecutive classes you need to attend to recover. <b>Edit Attendance</b> adjusts a course’s saved present and total counts; review the confirmation before saving.</p><div class="guide-demo" aria-label="Example settings controls"><span class="guide-demo-label">SETTINGS</span><div class="guide-demo-row"><span class="guide-demo-course">🎯 Target</span><span class="guide-demo-value">75%</span><button type="button" class="guide-demo-button demo-present" tabindex="-1">Save Target</button></div></div></details>
         <details><summary>📅 Semester calendar</summary><p>Open Settings → <b>Academic Calendar</b> and enter the semester start and end dates. Attendance dates before the semester begins and future dates are blocked. Adding an image or PDF is optional. Open the calendar from the header clock; tap an eligible date to mark or unmark the whole day present.</p></details>
-        <details><summary>🎟️ Events</summary><p>Open the <b>Events</b> bottom tab. Add a title, date, and category (Exam, Assignment, Fest, Holiday, Personal, or Club). Use the filters to view all, upcoming, or past events; filter by category and sort by date. Events stay on this device. The banner starts with today’s event, or the nearest upcoming event if there is none today. Swipe left for upcoming events and right for past events; the nearest past event appears first. Dates with events are flagged on the calendar.</p><div class="guide-demo" aria-label="Example event controls"><span class="guide-demo-label">EVENTS</span><div class="guide-demo-row"><span class="guide-demo-course">🎟️ Add an event</span><span class="guide-demo-value">Title · Date · Category</span><button type="button" class="guide-demo-button demo-present" tabindex="-1">＋ Add</button></div></div></details>
+        <details><summary>🎟️ Events</summary><p>Open the <b>Events</b> bottom tab. Add a title, date, and category (Exam, Assignment, Fest, Holiday, Personal, or Club). Use the filters to view all, upcoming, or past events; filter by category and sort by date. Events sync across all your devices when signed in. The banner starts with today’s event, or the nearest upcoming event if there is none today. Swipe left for upcoming events and right for past events; the nearest past event appears first. Dates with events are flagged on the calendar.</p><div class="guide-demo" aria-label="Example event controls"><span class="guide-demo-label">EVENTS</span><div class="guide-demo-row"><span class="guide-demo-course">🎟️ Add an event</span><span class="guide-demo-value">Title · Date · Category</span><button type="button" class="guide-demo-button demo-present" tabindex="-1">＋ Add</button></div></div></details>
         <details><summary>🛠️ Settings and semesters</summary><p>The gear opens Settings. Use its sections to manage account, this guide, calendar dates, target, attendance, courses, timetable reset, events, timetable sharing, and semester archives. Reset restores the default timetable and clears attendance history for the active semester. <b>Semesters</b> keeps data separate across Sem 1 through Sem 8; confirm before switching.</p></details>
         <details><summary>🔗 Share a timetable</summary><p>In Settings → <b>Share Timetable</b>, create a code and share it with a classmate. They can enter the code and choose <b>Merge</b> to combine schedules or <b>Replace</b> to use the shared schedule instead. Sharing and importing require the cloud connection and ask for confirmation before changes.</p></details>
-        <details><summary>🌗 Theme and account sync</summary><p>Use the light/dark switch in Settings to change the display. Sign in from <b>Account</b> to sync attendance data to Cloud Firestore. Event lists are device-local and are not shared across devices. A data disclaimer appears before saved changes; choose Cancel to leave the saved data as it was.</p></details>
+        <details><summary>🌗 Theme and account sync</summary><p>Use the light/dark switch in Settings to change the display. Sign in from <b>Account</b> to sync attendance and event data to Cloud Firestore across your devices. A data disclaimer appears before saved changes; choose Cancel to leave the saved data as it was.</p></details>
       </div>`;
   } else if (type === 'historyLog') {
     html += `<h2>History Log</h2><div class="history-list">`;
